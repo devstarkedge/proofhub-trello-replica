@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import { useState, useContext } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'react-toastify';
@@ -40,7 +40,6 @@ const LoginPage = () => {
         .toLowerCase();         // normalize
     }
 
-      
     if (name === 'password') {
       value = value.replace(/\s/g, '');
     }

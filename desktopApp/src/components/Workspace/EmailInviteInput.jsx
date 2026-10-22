@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { X, Mail } from 'lucide-react';
 import { EMAIL_REGEX } from '../ProjectModals/shared/constants';
 

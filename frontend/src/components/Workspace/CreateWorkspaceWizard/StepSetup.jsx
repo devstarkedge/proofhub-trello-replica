@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { INDUSTRY_OPTIONS, COMPANY_SIZE_OPTIONS, WORKSPACE_TYPE_RULES } from './shared/constants';
 import EmailInviteInput from '../EmailInviteInput';
 

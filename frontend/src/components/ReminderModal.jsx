@@ -1,10 +1,6 @@
-import React, { useState, useEffect, useCallback, memo, useRef } from 'react';
+import { useState, useEffect, useCallback, memo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  X, Calendar, Clock, Bell, User, Mail, Phone, Copy,
-  Send, Save, CheckCircle2, AlertCircle, ChevronDown,
-  History, MessageSquare, Loader, ExternalLink, RefreshCw
-} from 'lucide-react';
+import { X, Calendar, Clock, Bell, User, Mail, Phone, Copy, Send, Save, AlertCircle, ChevronDown, History, MessageSquare, Loader, ExternalLink, RefreshCw } from 'lucide-react';
 import { toast } from 'react-toastify';
 import Database from '../services/database';
 

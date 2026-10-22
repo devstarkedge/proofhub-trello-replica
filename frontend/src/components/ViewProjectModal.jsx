@@ -3,29 +3,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  X,
-  Eye,
-  FileText,
-  Calendar,
-  Clock,
-  Globe,
-  DollarSign,
-  Link2,
-  Users,
-  Shield,
-  Tag,
-  Mail,
-  Phone,
-  Info,
-  Image as ImageIcon,
-  History,
-  Pencil
-} from 'lucide-react';
+import { X, Eye, FileText, Users, Shield, Info, History, Pencil } from 'lucide-react';
 import Database from '../services/database';
 import EnterpriseFileUploader from './EnterpriseFileUploader';
 import ActivityTimeline from './ActivityTimeline';
-import HtmlContent from './ui/HtmlContent';
+
 import ViewDetailsTab from './ProjectModals/tabs/ViewDetailsTab';
 
 import { drawerVariants, overlayVariants } from './ProjectModals/shared/animations';

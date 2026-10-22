@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { UserCog, Mail, ChevronRight, Users } from 'lucide-react';
 
 const METHODS = [

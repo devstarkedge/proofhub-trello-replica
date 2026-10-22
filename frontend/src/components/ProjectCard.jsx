@@ -1,15 +1,8 @@
-import React, { useState, useRef, useEffect, memo, useContext, useMemo } from 'react';
+import { useState, useRef, useEffect, memo, useContext, useMemo } from 'react';
 import useThemeStore from '../store/themeStore';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Calendar, Users, TrendingUp, Clock,
-  CheckCircle2, AlertCircle, MoreVertical,
-  Edit, Trash2, Eye, Target, Star,
-  Activity, Layers, Sparkles, ArrowRight,
-  Briefcase, MapPin, Zap, Shield, Crown, Building2,
-  ImageIcon, Pencil, Check, Loader2
-} from 'lucide-react';
+import { Calendar, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit, Trash2, Eye, Target, Star, Activity, Layers, Sparkles, ArrowRight, Zap, Crown, Building2, Check, Loader2 } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 
 const ProjectCard = ({
@@ -291,7 +284,6 @@ const ProjectCard = ({
   };
 
   const currentTheme = themeGradients[themeColor] || themeGradients['blue'];
-
 
 
   return (

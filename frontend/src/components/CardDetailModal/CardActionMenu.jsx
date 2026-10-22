@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MoreVertical, Share2, Link as LinkIcon, Trash2, ArrowRightLeft, Copy, Archive, ArchiveRestore, ArrowUpCircle } from "lucide-react";
 import DeletePopup from "../ui/DeletePopup";
@@ -288,5 +288,4 @@ const CardActionMenu = ({
 };
 
 export default CardActionMenu;
-
 

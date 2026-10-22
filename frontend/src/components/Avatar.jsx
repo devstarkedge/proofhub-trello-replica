@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useCallback } from 'react';
+import { useState, useEffect, memo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Shield, Crown, BadgeCheck } from 'lucide-react';
 import { getGradient } from '../utils/avatarGradient';

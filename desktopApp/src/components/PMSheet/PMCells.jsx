@@ -1,5 +1,4 @@
-import React, { useState } from 'react';
-import { User } from 'lucide-react';
+import { useState } from 'react';
 
 /**
  * CoordinatorDisplay - Shows coordinators with avatar stack and hover dropdown

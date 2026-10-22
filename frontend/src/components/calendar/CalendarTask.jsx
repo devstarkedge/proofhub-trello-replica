@@ -1,4 +1,4 @@
-import React, { memo, useState, useRef } from 'react';
+import { memo, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import { Repeat, AlertTriangle } from 'lucide-react';

@@ -1,18 +1,14 @@
-import React, { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { motion } from 'framer-motion';
 import { toast } from 'react-toastify';
-import {
-  Settings as SettingsIcon, Moon, Sun, Monitor, Bell, BellOff,
-  Shield, Eye, EyeOff, Lock, Save, Loader2, CheckCircle,
-  XCircle, Palette, Globe, UserCheck, Activity, MessageSquare
-} from 'lucide-react';
+import { Bell, Eye, EyeOff, Lock, Save, Loader2 } from 'lucide-react';
 import api from '../services/api';
 import AuthContext from '../context/AuthContext';
 import NotificationContext from '../context/NotificationContext';
 import Loading from '../components/Loading';
 import SlackSettings from '../components/SlackSettings';
 import ChatIntegrationSettings from '../components/ChatIntegrationSettings';
-import { validateField, validatePasswordMatch, validateForm, validationRules } from '../utils/validationUtils';
+import { validateField, validatePasswordMatch, validateForm } from '../utils/validationUtils';
 
 const Settings = () => {
   const { user, setUser } = useContext(AuthContext);

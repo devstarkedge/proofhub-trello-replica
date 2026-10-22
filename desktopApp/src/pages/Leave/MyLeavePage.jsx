@@ -1,4 +1,4 @@
-import React, { useContext, useState } from 'react';
+import { useContext, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { CalendarCheck2, Plus, X } from 'lucide-react';
 import { Button } from '../../components/ui/button';

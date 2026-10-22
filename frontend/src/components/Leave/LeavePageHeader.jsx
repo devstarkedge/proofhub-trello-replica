@@ -1,4 +1,4 @@
-import React from 'react';
+
 
 const LeavePageHeader = ({ title, description, icon: Icon, action }) => (
   <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">

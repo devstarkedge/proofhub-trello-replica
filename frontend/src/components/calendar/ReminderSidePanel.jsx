@@ -1,11 +1,6 @@
-import React, { memo, useState, useEffect, useCallback } from 'react';
+import { memo, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  X, Calendar, Clock, User, Mail, Phone, FileText,
-  CheckCircle2, AlertCircle, AlertTriangle, Send,
-  MessageSquare, ChevronLeft, ChevronRight, Loader,
-  ExternalLink, Copy, Edit2, Trash2, MoreVertical
-} from 'lucide-react';
+import { X, Calendar, Clock, User, Mail, Phone, FileText, CheckCircle2, AlertCircle, AlertTriangle, Send, MessageSquare, ChevronLeft, ChevronRight, Loader, Copy, Edit2, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import Database from '../../services/database';
 
@@ -166,7 +161,6 @@ const ReminderSidePanel = memo(({
       setActionLoading(prev => ({ ...prev, [reminder._id]: null }));
     }
   };
-
 
   const panelVariants = {
     hidden: { x: '100%', opacity: 0 },

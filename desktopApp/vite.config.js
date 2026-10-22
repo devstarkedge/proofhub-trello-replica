@@ -41,6 +41,9 @@ export default ({ mode, command }) => {
         this.emitFile({ type: 'asset', fileName: 'desktop-config.json', source: JSON.stringify({ backendURL: backend }) })
       },
     }],
+    // Test HTML under artifacts/ can point outside the desktop renderer.
+    // Discover dependencies from the app entry instead of every HTML file.
+    optimizeDeps: { entries: ['index.html'] },
     server: {
       host: '127.0.0.1',
       port: 5175,
@@ -74,8 +77,8 @@ export default ({ mode, command }) => {
             // Vendor chunks
             vendor: ['react', 'react-dom', 'react-router-dom'],
             ui: ['lucide-react', 'framer-motion', 'react-toastify'],
-            charts: ['chart.js', 'react-chartjs-2', 'recharts'],
-            calendar: ['@fullcalendar/react', '@fullcalendar/daygrid', '@fullcalendar/interaction', 'fullcalendar'],
+            charts: ['recharts'],
+            calendar: ['@fullcalendar/react', '@fullcalendar/daygrid', '@fullcalendar/interaction', '@fullcalendar/timegrid'],
             query: ['@tanstack/react-query'],
             utils: ['axios', 'socket.io-client', 'idb'],
           },

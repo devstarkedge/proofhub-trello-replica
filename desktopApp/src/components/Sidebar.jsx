@@ -1,5 +1,5 @@
-import React, { useContext, useState, useEffect } from 'react';
-import { Home, Folder, Users, Settings, UserCheck, Bell, CalendarClock, X, FileSpreadsheet, ChevronDown, ChevronRight, DollarSign, Zap, TrendingUp, ShieldCheck, ClipboardCheck, CalendarDays, Fingerprint } from 'lucide-react';
+import { useContext, useState, useEffect } from 'react';
+import { Home, Users, Settings, UserCheck, Bell, CalendarClock, ChevronDown, ChevronRight, DollarSign, Zap, TrendingUp, ShieldCheck, CalendarDays, Fingerprint } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import AuthContext from '../context/AuthContext';
@@ -169,7 +169,6 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
   };
 
 
-
   // Get icon color configuration
   const getIconConfig = (path) => {
     if (path && path.startsWith('/leave')) return iconColors['/leave'];
@@ -330,7 +329,6 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
               }}>
                 {label}
               </span>
-
 
             {/* Live pending count (e.g. Join Requests) */}
             {!!badge && (

@@ -1,6 +1,6 @@
 import useAttendanceSession from '../../hooks/useAttendanceSession';
 import { formatHours } from '../../utils/duration';
-import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 import { Plus, X, Ban } from 'lucide-react';
 import { Button } from '../../components/ui/button';

@@ -1,19 +1,6 @@
-import React, { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { 
-  Save,
-  X,
-  Users,
-  FolderKanban,
-  Plus,
-  Trash2,
-  GripVertical,
-  Eye,
-  EyeOff,
-  ArrowLeft,
-  AlertCircle,
-  Check
-} from 'lucide-react';
+import { Save, Users, FolderKanban, ArrowLeft, AlertCircle, Check } from 'lucide-react';
 import api from '../../services/api';
 import AuthContext from '../../context/AuthContext';
 import { toast } from 'react-toastify';

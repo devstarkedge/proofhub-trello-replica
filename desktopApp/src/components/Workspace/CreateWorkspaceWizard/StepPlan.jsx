@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { Check, Users, MessageCircle, Sparkles } from 'lucide-react';
 
 const PLANS = [

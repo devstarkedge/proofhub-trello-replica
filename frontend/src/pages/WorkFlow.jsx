@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Plus } from 'lucide-react';
 import Database from '../services/database';
 import Board from '../components/Board';
-import { lazy } from 'react';
+
 import EditProjectModal from '../components/EditProjectModal';
 import DepartmentContext from '../context/DepartmentContext';
 import socketService from '../services/socket';

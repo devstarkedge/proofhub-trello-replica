@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Loader, Inbox } from 'lucide-react';
 import { useDebounce } from '../../../hooks/useDebounce';
 import { listInvitations } from '../../../services/invitationManagementApi';

@@ -2,8 +2,7 @@
  * Socket.IO Emitters
  * 
  * Consolidated emitter functions used by controllers/services to push
- * real-time updates to connected clients. Replaces both the server.js
- * inline emitters and utils/socketEmitter.js.
+ * real-time updates to connected clients.
  * 
  * Usage: import { emitters } from './realtime/emitters.js';
  */

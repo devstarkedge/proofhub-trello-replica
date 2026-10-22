@@ -8,7 +8,7 @@ import SlackWorkspace from '../../models/SlackWorkspace.js';
 import SlackApiClient from './SlackApiClient.js';
 import SlackBlockKitBuilder from './SlackBlockKitBuilder.js';
 import Card from '../../models/Card.js';
-import Board from '../../models/Board.js';
+import '../../models/Board.js';
 import { queueAppHomeUpdate } from './SlackNotificationQueue.js';
 
 const blockBuilder = new SlackBlockKitBuilder(process.env.FRONTEND_URL);

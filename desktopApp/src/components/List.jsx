@@ -1,4 +1,4 @@
-import React, { useState, memo, useCallback, useMemo, useRef, useEffect } from 'react';
+import { useState, memo, useCallback, useMemo, useRef, useEffect } from 'react';
 import { Plus, MoreHorizontal, X, Palette, Trash2, Edit3, Sparkles, Type } from 'lucide-react';
 import { Droppable, Draggable } from '@hello-pangea/dnd';
 import Card from './Card';

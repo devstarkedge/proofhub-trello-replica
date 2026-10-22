@@ -1,11 +1,7 @@
-import React, { memo, useState, useEffect, useCallback } from 'react';
+import { memo, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  X, Activity, Filter, Calendar, ChevronRight, ChevronDown,
-  Clock, FileText, MessageSquare, Users, Paperclip, AlertCircle,
-  RefreshCw, CheckCircle
-} from 'lucide-react';
+import { motion } from 'framer-motion';
+import { X, Activity, Filter, Calendar, ChevronRight, Clock, FileText, MessageSquare, Users, Paperclip, AlertCircle, RefreshCw, CheckCircle } from 'lucide-react';
 import useMyShortcutsStore from '../../store/myShortcutsStore';
 
 const ActivityModal = ({ isOpen, onClose }) => {

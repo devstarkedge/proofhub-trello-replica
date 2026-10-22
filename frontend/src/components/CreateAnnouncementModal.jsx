@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Upload, Calendar, Clock, Users, Pin, Sparkles, Send, FileText, Image, File as FileIcon, AlertCircle, CheckCircle, RefreshCw, Trash2, HardDrive, Loader2 } from 'lucide-react';
+import { X, Upload, Calendar, Clock, Users, Pin, Sparkles, Send, FileText, Image, File as FileIcon, AlertCircle, CheckCircle, RefreshCw, HardDrive, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';

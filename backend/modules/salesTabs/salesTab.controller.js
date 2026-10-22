@@ -8,7 +8,7 @@ import { workspaceAdmins } from '../../services/workspaceAudience.js';
 import * as tabService from './salesTab.service.js';
 import { validateTabBody, sanitizeTabBody } from './salesTab.validation.js';
 import SalesTab from './salesTab.model.js';
-import User from '../../models/User.js';
+import '../../models/User.js';
 import Notification from '../../models/Notification.js';
 import notificationService from '../../utils/notificationService.js';
 import {

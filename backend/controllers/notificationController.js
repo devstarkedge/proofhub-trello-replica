@@ -1,6 +1,6 @@
 import Notification from '../models/Notification.js';
-import User from '../models/User.js';
-import { emitNotification } from '../realtime/index.js';
+import '../models/User.js';
+import '../realtime/index.js';
 import { publishInboxChange } from '../realtime/notificationEvents.js';
 import notificationService from '../utils/notificationService.js';
 

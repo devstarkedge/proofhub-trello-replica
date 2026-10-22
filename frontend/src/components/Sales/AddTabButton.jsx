@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { Plus, Bookmark } from 'lucide-react';
+import { useMemo } from 'react';
+import { Bookmark } from 'lucide-react';
 import useSalesStore from '../../store/salesStore';
 
 const AddTabButton = ({ onClick }) => {

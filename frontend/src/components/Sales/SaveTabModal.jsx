@@ -1,10 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  X, Save, Eye, EyeOff, Bell, BellOff, AlertTriangle,
-  Lock, Globe, Columns, Filter, SortAsc,
-  Zap, Clock, Mail, Volume2,
-} from 'lucide-react';
+import { X, Save, Bell, AlertTriangle, Lock, Globe, Filter, SortAsc, Zap, Clock, Mail, Volume2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import useSalesStore from '../../store/salesStore';
 

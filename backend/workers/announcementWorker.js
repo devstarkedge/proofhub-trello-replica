@@ -14,12 +14,12 @@ import { emitAnnouncementEvent } from '../services/announcementEvents.js';
 import { Worker } from 'bullmq';
 import { getWorkerConnection } from '../queues/connection.js';
 import Announcement from '../models/Announcement.js';
-import User from '../models/User.js';
-import Notification from '../models/Notification.js';
+import '../models/User.js';
+import '../models/Notification.js';
 import { getIO } from '../realtime/index.js';
 import notificationService from '../utils/notificationService.js';
-import { scheduleAnnouncementArchive } from '../schedulers/announcementScheduler.js';
-import config from '../config/index.js';
+import '../schedulers/announcementScheduler.js';
+import '../config/index.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 import { persistAnnouncementBroadcastState } from '../services/announcementBroadcastState.js';
 

@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { AnimatePresence, motion } from 'framer-motion';
 import { Bell, Lock, X } from 'lucide-react';
 

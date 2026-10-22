@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { hoursToMinutes, minutesToHours } from '../../utils/duration';
 
 /** Edits hours while the parent and API retain canonical integer minutes. */

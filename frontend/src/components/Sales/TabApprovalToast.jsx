@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Check, X, Clock, Globe, Bell, AlertTriangle } from 'lucide-react';
 import useSalesStore from '../../store/salesStore';

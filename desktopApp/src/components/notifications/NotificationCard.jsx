@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { motion } from 'framer-motion';
 import {
   Bell, CheckCircle, Trash2, Archive,

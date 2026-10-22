@@ -1,9 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Plus, Upload, Download, Settings, Columns, History, 
-  ChevronDown, FileSpreadsheet, FileText
-} from 'lucide-react';
+import { Plus, Upload, Download, Columns, History, ChevronDown, FileSpreadsheet, FileText } from 'lucide-react';
 import useSalesStore from '../../store/salesStore';
 
 const SalesToolbar = ({
@@ -142,7 +139,6 @@ const SalesToolbar = ({
 
             {/* Divider */}
             <div className="hidden sm:block w-px h-8 bg-gray-200 dark:bg-gray-700 mx-1" />
-
 
 
             {/* Create Column */}

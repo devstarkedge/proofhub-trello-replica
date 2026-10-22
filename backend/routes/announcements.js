@@ -23,9 +23,9 @@ import {
   getUnreadCount,
   getEngagementStats
 } from '../controllers/announcementController.js';
-import { protect, authorize } from '../middleware/authMiddleware.js';
+import { protect } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
-import upload, { uploadToCloudinaryMiddleware } from '../middleware/upload.js';
+import { uploadToCloudinaryMiddleware } from '../middleware/upload.js';
 
 const router = express.Router();
 

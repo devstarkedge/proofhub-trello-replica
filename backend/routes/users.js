@@ -3,7 +3,7 @@ import multer from 'multer';
 import { getUsers, getUser, updateUser, deleteUser, verifyUser, getProfile, updateProfile, updateSettings, assignUser, declineUser, getVerifiedUsers, getUsersByDepartments, getManagerUsers, changeUserRole, getUserPagePermissions, patchUserPagePermissions } from '../controllers/userController.js';
 import { uploadAvatar, uploadAvatarFromGoogleDrive, removeAvatar } from '../controllers/avatarController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
-import { hrOrAdmin, managerHrOrAdmin, ownerOrAdminManager } from '../middleware/rbacMiddleware.js';
+import { hrOrAdmin, ownerOrAdminManager } from '../middleware/rbacMiddleware.js';
 import { allowRolesOrAccessControlManage } from '../middleware/requireAccessControl.js';
 import { getPushStatusForDevice, getVapidKeys, removeUserPushSubscription, saveUserPushSubscription } from '../utils/pushNotification.js';
 

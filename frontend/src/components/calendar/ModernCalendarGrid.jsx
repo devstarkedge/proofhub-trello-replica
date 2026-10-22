@@ -1,9 +1,6 @@
-import React, { useState, useEffect, useCallback, memo, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  ChevronLeft, ChevronRight, Calendar as CalendarIcon,
-  Loader, RefreshCw, Settings
-} from 'lucide-react';
+import { useState, useEffect, useCallback, memo, useMemo } from 'react';
+import { motion } from 'framer-motion';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Loader, RefreshCw } from 'lucide-react';
 import Database from '../../services/database';
 import CalendarCell from './CalendarCell';
 import ReminderSidePanel from './ReminderSidePanel';

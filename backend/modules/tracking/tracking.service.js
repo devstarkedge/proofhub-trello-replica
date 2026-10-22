@@ -6,7 +6,7 @@ import List from '../../models/List.js';
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import AttendanceSession from '../attendance/attendanceSession.model.js';
 import { id } from '../../authz/engine.js';
-import { can, projectVisibilityFilter, trackingContext,withTrackingProjects } from './tracking.authorization.js';
+import { can, trackingContext, withTrackingProjects } from './tracking.authorization.js';
 import { getActiveWorkspaceId, run } from '../workspaces/workspaceContext.js';
 import { emitToUser } from '../../realtime/emitters.js';
 import { TrackingPolicy, WorkSession, TrackingDevice, TrackingCaptureLease, TaskAssignmentEvent, ActivityInterval,TrackingAgenda } from './tracking.models.js';

@@ -1,19 +1,7 @@
-import React, { memo, useState, useEffect, useCallback } from 'react';
+import { memo, useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Shield, 
-  Plus, 
-  Edit2, 
-  Trash2, 
-  Users, 
-  Lock, 
-  Check, 
-  X,
-  ChevronRight,
-  Settings,
-  RefreshCw
-} from 'lucide-react';
-import useRoleStore, { PERMISSION_CATEGORIES, ALL_PERMISSION_KEYS, SYSTEM_ROLES } from '../../store/roleStore';
+import { Shield, Plus, Edit2, Trash2, Lock, Check, X, ChevronRight, Settings, RefreshCw } from 'lucide-react';
+import useRoleStore, { PERMISSION_CATEGORIES, ALL_PERMISSION_KEYS } from '../../store/roleStore';
 import useThemeStore from '../../store/themeStore';
 
 /**

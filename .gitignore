@@ -29,3 +29,4 @@ backend/tests/attendance/*
 !desktopApp/electron/tests/tracking-runtime.test.cjs
 
 !backend/tests/tracking/navigation.browser.mjs
+!backend/tests/tracking/createTask.browser.mjs

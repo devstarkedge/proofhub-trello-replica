@@ -1,4 +1,4 @@
-import React, { memo, useCallback } from 'react';
+import { memo, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Search, Filter, Users, Pencil, FileText, Crown, Shield, User as UserIcon } from 'lucide-react';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../ui/dropdown-menu';

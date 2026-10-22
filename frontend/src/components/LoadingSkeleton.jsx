@@ -1,4 +1,3 @@
-import React from 'react';
 
 
 const SkeletonCard = () => (
@@ -252,7 +251,6 @@ const TeamManagementSkeleton = () => (
   </div>
 );
 
-
 const HRPanelSkeleton = () => (
   <div className="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 h-full">
     <main className="p-6">
@@ -403,7 +401,6 @@ const ClientRemindersSkeleton = () => (
   </div>
 );
 
-
 const AnnouncementsSkeleton = () => (
   <div className="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 h-full">
     <main className="p-6 space-y-6">
@@ -502,7 +499,6 @@ const AnnouncementsListSkeleton = () => (
   </div>
 );
 
-
 const ListViewSkeleton = () => (
   <div className="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 h-full">
       <div className="max-w-screen-2xl mx-auto py-8 px-4 sm:px-6 lg:px-8 relative z-10">
@@ -582,6 +578,5 @@ const ListViewSkeleton = () => (
 );
 
 export { HomePageSkeleton, DepartmentSkeleton, SkeletonCard, WorkflowSkeleton, HRPanelSkeleton, TeamManagementSkeleton, ClientRemindersSkeleton, AnnouncementsSkeleton, AnnouncementsListSkeleton, ListViewSkeleton };
-
 
 export default HomePageSkeleton;

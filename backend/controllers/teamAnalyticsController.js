@@ -4,7 +4,7 @@ import Subtask from '../models/Subtask.js';
 import SubtaskNano from '../models/SubtaskNano.js';
 import User from '../models/User.js';
 import Department from '../models/Department.js';
-import Board from '../models/Board.js';
+import '../models/Board.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { getExpectedMinutesByUser, getExpectedMinutesForRange, resolveWorkspaceDay } from '../modules/leave/workCalendarResolver.service.js';

@@ -1,22 +1,6 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  FileText,
-  Loader,
-  Edit2,
-  CheckCircle,
-  Trash2,
-  Tag,
-  Users,
-  Clock,
-  AlertCircle,
-  ArrowRight,
-  PlusCircle,
-  MinusCircle,
-  Flag,
-  Calendar,
-  Link as LinkIcon,
-} from "lucide-react";
+import { FileText, Loader, Edit2, CheckCircle, Trash2, Tag, Clock, AlertCircle, ArrowRight, PlusCircle, MinusCircle, Flag, Calendar, Link as LinkIcon } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 const ActivitySection = ({ activities, loading, teamMembers = [], assigneeDetailsById = {} }) => {

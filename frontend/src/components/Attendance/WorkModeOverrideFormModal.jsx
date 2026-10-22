@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '../ui/button';
 import DepartmentContext from '../../context/DepartmentContext';

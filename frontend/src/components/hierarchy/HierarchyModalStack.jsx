@@ -1,4 +1,4 @@
-import React, { Suspense } from "react";
+import { Suspense } from "react";
 import { AnimatePresence } from "framer-motion";
 import CardDetailModal from "../CardDetailModal";
 import SubtaskDetailModal from "../SubtaskDetailModal";

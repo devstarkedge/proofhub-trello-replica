@@ -1,19 +1,6 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  X, 
-  History, 
-  RotateCcw, 
-  Clock, 
-  User, 
-  ChevronRight,
-  ChevronDown,
-  Eye,
-  GitCompare,
-  Loader,
-  AlertCircle,
-  CheckCircle
-} from 'lucide-react';
+import { X, History, RotateCcw, Clock, User, ChevronRight, Eye, Loader, CheckCircle } from 'lucide-react';
 import versionService from '../services/versionService';
 import sanitizeHtml from '../utils/sanitizeHtml';
 import { toast } from 'react-toastify';
@@ -90,28 +77,6 @@ const VersionHistoryModal = ({
     }
   };
 
-  const handleCompare = async () => {
-    if (!compareVersions.v1 || !compareVersions.v2) {
-      toast.error('Select two versions to compare');
-      return;
-    }
-
-    try {
-      setIsComparing(true);
-      const result = await versionService.compareVersions(
-        entityType, 
-        entityId, 
-        compareVersions.v1, 
-        compareVersions.v2
-      );
-      // Show comparison modal or inline comparison
-      console.log('Comparison result:', result);
-    } catch (error) {
-      toast.error('Comparison failed');
-    } finally {
-      setIsComparing(false);
-    }
-  };
 
   const formatDate = useCallback((date) => {
     return new Date(date).toLocaleString('en-US', {

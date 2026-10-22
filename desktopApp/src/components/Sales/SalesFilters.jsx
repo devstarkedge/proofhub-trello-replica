@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Calendar, X, Search, Filter, ChevronDown, ChevronUp, 
@@ -135,7 +135,6 @@ const SalesFilters = () => {
        if (!datePreset) setDatePreset('custom');
     }
   }, [filters.dateFrom, filters.dateTo]);
-
 
   const activeFilterCount = Object.values(filters).filter(v => v !== '' && v !== null && v !== undefined).length;
 

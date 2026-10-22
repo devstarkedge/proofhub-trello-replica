@@ -1,4 +1,4 @@
-import React, { memo, useState, useMemo } from 'react';
+import { memo, useState, useMemo } from 'react';
 import { Search } from 'lucide-react';
 
 const LabelFilter = memo(({ labels, selected, onChange, counts = {} }) => {

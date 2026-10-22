@@ -1,5 +1,5 @@
 import FinancePage from '../models/FinancePage.js';
-import User from '../models/User.js';
+import '../models/User.js';
 import { 
   emitFinancePagePending, 
   emitFinancePagePublished, 

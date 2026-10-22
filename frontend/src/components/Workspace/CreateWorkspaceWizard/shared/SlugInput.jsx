@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Check, X, Loader } from 'lucide-react';
 import { useDebounce } from '../../../../hooks/useDebounce';
 import { slugify, isValidSlugFormat, isReservedSlug } from '../../../../utils/workspaceSlug';

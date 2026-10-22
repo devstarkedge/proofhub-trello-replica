@@ -5,7 +5,7 @@ import Card from '../../models/Card.js';
 import Subtask from '../../models/Subtask.js';
 import SubtaskNano from '../../models/SubtaskNano.js';
 import User from '../../models/User.js';
-import UserPermission, { FINANCE_PAGE_KEY } from '../../models/UserPermission.js';
+import '../../models/UserPermission.js';
 import Milestone from '../../models/Milestone.js';
 import MilestoneApproval from '../../models/MilestoneApproval.js';
 import logger from '../../utils/logger.js';

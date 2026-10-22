@@ -1,10 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Building2,
-  ChevronDown,
-  Check,
-  X
-} from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Building2, ChevronDown, Check } from 'lucide-react';
 import api from '../../services/api';
 
 /**

@@ -18,12 +18,6 @@ const NONE_RESULT = Object.freeze({
   leaveTypeName: null, leaveTypeCategory: null, shortLeaveWindow: null
 });
 
-const DAY_TYPE_TO_LEAVE_STATE = {
-  FULL_DAY: 'FULL_LEAVE',
-  HALF_DAY_FIRST_HALF: 'HALF_LEAVE_FIRST',
-  HALF_DAY_SECOND_HALF: 'HALF_LEAVE_SECOND',
-  SHORT_LEAVE: 'SHORT_LEAVE'
-};
 
 /** The approved leave (if any) in effect for this user on this exact business date. `dayInstant` must already be a workspace-tz-midnight instant (dateOnlyToInstant), not a bare `new Date()`. */
 export async function resolveLeaveContextForDate({ workspaceId, userId, dayInstant, dbSession = null }) {

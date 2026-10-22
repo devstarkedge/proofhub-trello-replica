@@ -1,8 +1,8 @@
 import Reminder from '../models/Reminder.js';
 import Board from '../models/Board.js';
-import User from '../models/User.js';
+import '../models/User.js';
 import asyncHandler from '../middleware/asyncHandler.js';
-import { emitNotification } from '../realtime/index.js';
+import '../realtime/index.js';
 import { sendReminderNotificationInBackground, checkAndTagAwaitingResponse } from '../utils/reminderScheduler.js';
 import { scheduleReminderJobs, cancelReminderJobs } from '../schedulers/reminderScheduler.js';
 
@@ -446,7 +446,6 @@ export const getAllReminders = asyncHandler(async (req, res) => {
     }
   });
 });
-
 
 // @desc    Send reminder now (manual trigger)
 // @route   POST /api/reminders/:id/send

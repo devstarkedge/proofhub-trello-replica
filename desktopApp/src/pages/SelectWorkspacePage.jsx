@@ -1,7 +1,7 @@
-import React, { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Building2, ChevronRight, Plus, LogIn, Loader, LogOut, Sparkles } from "lucide-react";
+import { ChevronRight, Plus, LogIn, Loader, LogOut, Sparkles } from "lucide-react";
 import AuthContext from "../context/AuthContext";
 import WorkspaceContext from "../context/WorkspaceContext";
 

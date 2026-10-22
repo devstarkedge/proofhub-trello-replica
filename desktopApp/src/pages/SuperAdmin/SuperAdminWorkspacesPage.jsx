@@ -1,4 +1,4 @@
-import React from 'react';
+
 import WorkspacesTable from '../../components/SuperAdmin/WorkspacesTable';
 
 const SuperAdminWorkspacesPage = () => {

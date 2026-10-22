@@ -1,25 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import {
-  Search as SearchIcon,
-  FolderKanban,
-  Building2,
-  Clock,
-  DollarSign,
-  Calendar,
-  Users,
-  ExternalLink,
-  ChevronDown,
-  ChevronRight,
-  AlertCircle,
-  RefreshCw,
-  ArrowUpDown,
-  Phone,
-  Mail,
-  Activity,
-  Info,
-  Briefcase
-} from 'lucide-react';
+import { FolderKanban, Building2, Clock, DollarSign, Calendar, Users, ChevronDown, ChevronRight, AlertCircle, RefreshCw, ArrowUpDown, Phone, Mail, Activity, Info, Briefcase } from 'lucide-react';
 import api from '../../services/api';
 import SummaryCards from '../../components/Finance/SummaryCards';
 import DateFilters from '../../components/Finance/DateFilters';
@@ -30,7 +11,7 @@ import GlobalSearch from '../../components/Finance/GlobalSearch';
 import ExportButton from '../../components/Finance/ExportButton';
 import DataIntegrityWarnings from '../../components/Finance/DataIntegrityWarnings';
 import ColumnTooltip, { COLUMN_EXPLANATIONS } from '../../components/Finance/ColumnTooltip';
-import { PaymentBreakdownCell } from '../../components/Finance/PaymentBreakdown';
+
 import EmptyState from '../../components/Finance/EmptyState';
 import ProjectWorkflowLink from '../../components/Finance/ProjectWorkflowLink';
 import { WeekWiseHeaders, WeekWiseCells } from '../../components/Finance/WeekWiseColumns';

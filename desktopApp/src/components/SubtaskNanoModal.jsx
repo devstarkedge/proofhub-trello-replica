@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useContext, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, AlignLeft, FileText, Tag } from "lucide-react";
 import { toast } from "react-toastify";
@@ -533,38 +533,7 @@ const SubtaskNanoModal = ({
        * CRITICAL: Include _id for existing entries to preserve ownership
        * Exclude _id for new entries so backend assigns current user
        */
-      const prepareTimeEntry = (entry, type) => {
-        const userId = entry.user
-          ? (typeof entry.user === 'object' ? entry.user._id : entry.user)
-          : null;
-        
-        const prepared = {
-          hours: entry.hours,
-          minutes: entry.minutes,
-          date: entry.date,
-        };
-        
-        // Include _id only for existing entries (valid MongoDB ObjectId)
-        // This tells backend to preserve original ownership
-        if (entry._id && /^[a-fA-F0-9]{24}$/.test(entry._id.toString())) {
-          prepared._id = entry._id;
-        }
-        
-        // Include user reference
-        if (userId) {
-          prepared.user = userId;
-        }
-        
-        // Include type-specific fields
-        if (type === 'estimation') {
-          prepared.reason = entry.reason;
-        } else {
-          prepared.description = entry.description;
-        }
-        
-        return prepared;
-      };
-      
+
       const payload = {
         title,
         description,

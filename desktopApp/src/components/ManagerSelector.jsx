@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { ChevronDown, X, User, CheckCircle } from 'lucide-react';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { ChevronDown, X, CheckCircle } from 'lucide-react';
 import Avatar from './Avatar';
 
 const ManagerSelector = ({ managers, selectedManagers, onChange, disabled = false, currentDepartment, departments = [] }) => {
@@ -75,9 +75,6 @@ const ManagerSelector = ({ managers, selectedManagers, onChange, disabled = fals
     onChange(selectedManagers.filter(id => normalizeId(id) !== normalizedId));
   };
 
-  const getSelectedManagerObjects = () => {
-    return managers.filter(manager => selectedManagerIds.includes(normalizeId(manager._id)));
-  };
 
   const handleKeyDown = (e) => {
     if (e.key === 'Escape') {

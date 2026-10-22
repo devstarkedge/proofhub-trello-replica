@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, memo, useRef } from 'react';
+import { useState, useCallback, memo, useRef } from 'react';
 import { Plus, X, Sparkles, LayoutList } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { toast } from 'react-toastify';

@@ -1,4 +1,4 @@
-import React from 'react';
+
 
 const StarSVG = ({ size = 16, fill = '#F59E0B' }) => (
   <svg

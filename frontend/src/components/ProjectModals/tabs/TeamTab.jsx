@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { Shield, AlertCircle, CheckCircle2, X } from 'lucide-react';
 import { Badge } from '../../ui/badge';
 

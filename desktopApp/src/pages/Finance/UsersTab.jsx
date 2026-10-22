@@ -1,21 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { 
-  Search as SearchIcon,
-  Users,
-  Building2,
-  Clock,
-  DollarSign,
-  ChevronDown,
-  ChevronRight,
-  AlertCircle,
-  RefreshCw,
-  ArrowUpDown,
-  Download,
-  Filter,
-  FolderKanban,
-  Calendar
-} from 'lucide-react';
+import { Users, Building2, Clock, DollarSign, ChevronDown, ChevronRight, AlertCircle, RefreshCw, ArrowUpDown, FolderKanban, Calendar } from 'lucide-react';
 import api from '../../services/api';
 import SummaryCards from '../../components/Finance/SummaryCards';
 import DateFilters from '../../components/Finance/DateFilters';
@@ -64,7 +49,6 @@ const UsersTab = () => {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [weeklyData, setWeeklyData] = useState(null);
   const [weeklyDataLoading, setWeeklyDataLoading] = useState(false);
-
 
   // Initialize filters from URL params
   useEffect(() => {
@@ -534,7 +518,6 @@ const UsersTab = () => {
         </div>
       </div>
 
-
       {/* Error State */}
       {error && (
         <div 
@@ -555,7 +538,6 @@ const UsersTab = () => {
           </button>
         </div>
       )}
-
 
       {/* Week-Wise Mode Header */}
       {weekWiseMode && (

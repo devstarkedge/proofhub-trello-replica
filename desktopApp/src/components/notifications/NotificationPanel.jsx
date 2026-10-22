@@ -1,11 +1,6 @@
-import React, { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Bell, CheckCircle, Trash2, Archive, X, Filter,
-  FolderPlus, ArrowRight, UserPlus, AlertCircle, Folder,
-  MessageSquare, Clock, AlertTriangle, Megaphone, ArchiveRestore, RotateCcw,
-  CheckCircle2, XCircle, Settings, User
-} from 'lucide-react';
+import { Bell, CheckCircle, Trash2, Archive, FolderPlus, ArrowRight, UserPlus, AlertCircle, Folder, MessageSquare, Clock, AlertTriangle, Megaphone, RotateCcw, CheckCircle2, XCircle, Settings, User } from 'lucide-react';
 import NotificationCard from './NotificationCard';
 import NotificationSkeleton from './NotificationSkeleton';
 

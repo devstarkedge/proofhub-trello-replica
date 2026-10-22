@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useEffect, useMemo, useContext } from 'react';
+import { useState, useCallback, useEffect, useMemo, useContext } from 'react';
 import { X, Upload, AlertCircle, Plus, Check } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import * as XLSX from 'xlsx';

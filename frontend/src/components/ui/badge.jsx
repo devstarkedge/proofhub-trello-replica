@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { cva } from 'class-variance-authority';
 
 const badgeVariants = cva(

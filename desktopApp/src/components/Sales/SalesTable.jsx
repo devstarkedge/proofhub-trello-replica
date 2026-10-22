@@ -1,17 +1,13 @@
-import React, { useRef, useState, useCallback, useContext, memo, useEffect, useMemo } from 'react';
+import { useRef, useState, useCallback, useContext, memo, useEffect, useMemo } from 'react';
 import { formatSalesDate } from '../../utils/dateUtils';
 import { motion } from 'framer-motion';
-import {
-  ExternalLink, History, Edit2, Trash2, Lock, Copy,
-  ChevronLeft, ChevronRight, DollarSign, ArrowUp, ArrowDown, ArrowUpDown,
-  User
-} from 'lucide-react';
+import { ExternalLink, History, Edit2, Trash2, Lock, Copy, ChevronLeft, ChevronRight, DollarSign, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import StarRating from '../ui/StarRating';
 import { toast } from 'react-toastify';
 import useSalesStore from '../../store/salesStore';
 import AuthContext from '../../context/AuthContext';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { SALES_FIELD_LABELS, detectPlatform } from '../../config/salesFieldConfig';
+import { detectPlatform } from '../../config/salesFieldConfig';
 import Avatar from '../Avatar';
 
 /* ═══════════════════════════════════════════════════════════
@@ -67,22 +63,8 @@ const HEADER_HEIGHT = 44;
 /* ═══════════════════════════════════════════════════════════
    NAME AVATAR — deterministic color based on name string
    ═══════════════════════════════════════════════════════════ */
-const NAME_COLORS = [
-  'bg-blue-500', 'bg-emerald-500', 'bg-violet-500', 'bg-amber-500',
-  'bg-rose-500', 'bg-cyan-500', 'bg-indigo-500', 'bg-teal-500',
-  'bg-pink-500', 'bg-orange-500', 'bg-lime-600', 'bg-fuchsia-500'
-];
-const getNameColor = (name) => {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  return NAME_COLORS[Math.abs(hash) % NAME_COLORS.length];
-};
-const getInitials = (name) => {
-  if (!name) return '?';
-  const parts = name.trim().split(/\s+/);
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return parts[0][0].toUpperCase();
-};
+
+
 
 /* ═══════════════════════════════════════════════════════════
    CELL TOOLTIP — shown on hover when text is truncated

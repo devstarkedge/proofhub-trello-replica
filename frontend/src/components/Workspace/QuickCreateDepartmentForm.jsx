@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Loader, Plus } from 'lucide-react';
 import useDepartmentStore from '../../store/departmentStore';
 

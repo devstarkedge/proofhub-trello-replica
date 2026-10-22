@@ -1,11 +1,10 @@
-import React from 'react';
+
 import { Calendar, X } from 'lucide-react';
 import LeaveStatusBadge from './LeaveStatusBadge';
 import LeaveEmptyState from './LeaveEmptyState';
 import { formatHours } from '../../utils/duration';
 
 const CANCELLABLE_STATUSES = ['PENDING_APPROVAL', 'PARTIALLY_APPROVED'];
-
 
 const LeaveRequestList = ({
   requests = [],

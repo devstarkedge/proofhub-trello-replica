@@ -1,4 +1,4 @@
-import React, { memo, useState, useEffect, useCallback, useRef, useId } from 'react';
+import { memo, useState, useEffect, useCallback, useRef, useId } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import RolePermissionChecklist from '../../AccessControl/RolePermissionChecklist';
 import useModalFocus from '../../../hooks/useModalFocus';
@@ -316,7 +316,6 @@ const EditRoleModal = memo(({
                 </div>
 
                 {/* Permissions Section */}
-
 
                 {/* Role Power Presets */}
                 {!isSystemRole && (

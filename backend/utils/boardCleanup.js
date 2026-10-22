@@ -10,7 +10,7 @@ import Activity from '../models/Activity.js';
 import RecurringTask from '../models/RecurringTask.js';
 import Reminder from '../models/Reminder.js';
 import Department from '../models/Department.js';
-import Notification from '../models/Notification.js';
+import '../models/Notification.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 
 // Default: permanently delete boards soft-deleted more than 30 seconds ago

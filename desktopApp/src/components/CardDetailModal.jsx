@@ -1001,7 +1001,6 @@ const CardDetailModal = React.memo(({
   }, [newBilledHours, newBilledMinutes, newBilledDescription, newBilledDate, billedValidationError, card]);
 
 
-
   const startEditingEstimation = useCallback((entry) => {
     // Ownership check - only allow editing own entries
     if (!userOwnsTimeEntry(entry)) {
@@ -1339,38 +1338,7 @@ const CardDetailModal = React.memo(({
        * CRITICAL: Include _id for existing entries to preserve ownership
        * Exclude _id for new entries so backend assigns current user
        */
-      const prepareTimeEntry = (entry, type) => {
-        const userId = entry.user
-          ? (typeof entry.user === 'object' ? entry.user._id : entry.user)
-          : null;
-        
-        const prepared = {
-          hours: entry.hours,
-          minutes: entry.minutes,
-          date: entry.date,
-        };
-        
-        // Include _id only for existing entries (valid MongoDB ObjectId)
-        // This tells backend to preserve original ownership
-        if (entry._id && /^[a-fA-F0-9]{24}$/.test(entry._id.toString())) {
-          prepared._id = entry._id;
-        }
-        
-        // Include user reference
-        if (userId) {
-          prepared.user = userId;
-        }
-        
-        // Include type-specific fields
-        if (type === 'estimation') {
-          prepared.reason = entry.reason;
-        } else {
-          prepared.description = entry.description;
-        }
-        
-        return prepared;
-      };
-      
+
       // Create updates for backend (with IDs)
       const backendUpdates = {
         title,

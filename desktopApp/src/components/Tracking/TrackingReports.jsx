@@ -1,17 +1,8 @@
 import {getWorkspaceDateRange,trackingReportOptions} from '../../../../shared/trackingReportQuery.mjs';
 import {prefetchScreenshotDetails} from '../../services/trackingReadPrefetch';
-import React, { memo, useContext, useEffect, useMemo, useState, lazy, Suspense } from 'react';
+import { memo, useContext, useEffect, useMemo, useState, lazy, Suspense } from 'react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
-import { 
-  Calendar, 
-  Camera, 
-  CameraOff, 
-  ChevronRight, 
-  Clock, 
-  ImageOff, 
-  Loader2, 
-  RefreshCw 
-} from 'lucide-react';
+import { CameraOff, ChevronRight, ImageOff, Loader2, RefreshCw } from 'lucide-react';
 import WorkspaceContext from '../../context/WorkspaceContext';
 import { 
   getReports,

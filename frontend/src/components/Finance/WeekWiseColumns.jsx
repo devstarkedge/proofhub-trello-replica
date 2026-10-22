@@ -1,5 +1,4 @@
-import React from 'react';
-import { DollarSign } from 'lucide-react';
+
 
 /**
  * WeekWiseColumns - Utility components for rendering week-wise payment columns

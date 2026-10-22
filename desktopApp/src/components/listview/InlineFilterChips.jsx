@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { X, Tag, FolderKanban, Users, Zap, Target } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useSmartSearchStore from '../../store/smartSearchStore';

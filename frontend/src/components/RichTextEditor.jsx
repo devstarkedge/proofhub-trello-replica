@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useEditor, EditorContent, ReactRenderer } from '@tiptap/react';
 import EmojiPicker from 'emoji-picker-react';
 import StarterKit from '@tiptap/starter-kit';
@@ -7,30 +7,11 @@ import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import Underline from '@tiptap/extension-underline';
 import tippy from 'tippy.js';
-import {
-  Bold,
-  Italic,
-  Underline as UnderlineIcon,
-  List,
-  Link as LinkIcon,
-  ListOrdered,
-  Quote,
-  Image as ImageIcon,
-  Paperclip,
-  Type,
-  Undo,
-  Redo,
-  Loader,
-  AlertCircle,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Smile
-} from 'lucide-react';
+import { Bold, Italic, Underline as UnderlineIcon, List, Link as LinkIcon, ListOrdered, Quote, Image as ImageIcon, Paperclip, Undo, Redo, Loader, AlertCircle, Check, ChevronDown, ChevronRight, Smile } from 'lucide-react';
 import MentionList from './MentionList';
 import useEditorAttachment from '../hooks/useEditorAttachment';
 import useEditorAttachmentSync from '../hooks/useEditorAttachmentSync';
-import EditorAttachmentPreview from './EditorAttachmentPreview';
+
 import InlineAttachmentManager from './InlineAttachmentManager';
 import 'tippy.js/dist/tippy.css';
 
@@ -935,7 +916,6 @@ const RichTextEditor = ({
             {placeholder}
           </div>
         )}
-
 
 
         {/* Inline Attachment Manager - Shows uploaded attachments with delete capability */}

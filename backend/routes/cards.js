@@ -4,7 +4,7 @@ import { getCards, getCardsByBoard, getCardsByDepartment, getCard, createCard, u
 import { protect } from '../middleware/authMiddleware.js';
 import { managerOrAdmin } from '../middleware/rbacMiddleware.js';
 import { validate } from '../middleware/validation.js';
-import upload from '../middleware/upload.js';
+import '../middleware/upload.js';
 
 const router = express.Router();
 

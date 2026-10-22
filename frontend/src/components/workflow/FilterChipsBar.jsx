@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { X, Filter } from 'lucide-react';
 import useWorkflowFilterStore from '../../store/workflowFilterStore';
 

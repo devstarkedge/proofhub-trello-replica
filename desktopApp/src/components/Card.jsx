@@ -1,36 +1,10 @@
-import React, { memo, useRef, useMemo, useCallback } from "react";
+import React, { memo, useMemo, useCallback } from "react";
 import { motion } from "framer-motion";
-import {
-  Trash2,
-  Calendar,
-  MessageSquare,
-  Paperclip,
-  CheckSquare,
-  Clock,
-  RefreshCw,
-  MoreHorizontal,
-  RotateCcw,
-  Flag,
-  Hash,
-  UserCircle,
-  BarChart3
-} from "lucide-react";
+import { Trash2, Calendar, MessageSquare, Paperclip, CheckSquare, Clock, RefreshCw, RotateCcw, Flag, Hash, UserCircle, BarChart3 } from "lucide-react";
 
 import DeletePopup from "./ui/DeletePopup";
 import Avatar from "./Avatar";
 import useFieldVisibilityStore from "../store/fieldVisibilityStore";
-
-// Helper to get text color based on background
-const getTextColor = (bgColor) => {
-  if (!bgColor || typeof bgColor !== 'string') return '#FFFFFF';
-  const hex = bgColor.replace('#', '');
-  if (hex.length !== 6 && hex.length !== 3) return '#FFFFFF';
-  const r = parseInt(hex.length === 3 ? hex[0] + hex[0] : hex.substr(0, 2), 16);
-  const g = parseInt(hex.length === 3 ? hex[1] + hex[1] : hex.substr(2, 2), 16);
-  const b = parseInt(hex.length === 3 ? hex[2] + hex[2] : hex.substr(4, 2), 16);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.5 ? '#000000' : '#FFFFFF';
-};
 
 const Card = memo(({ card, onClick, onDelete, onRestore, isDragging, isArchivedView = false }) => {
   const [isHovered, setIsHovered] = React.useState(false);

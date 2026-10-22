@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { Check, X } from 'lucide-react';
 
 const PasswordStrengthMeter = ({ password = '' }) => {

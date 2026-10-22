@@ -1,11 +1,11 @@
-import React, { useEffect, useState, useContext } from 'react';
+import { useEffect, useState, useContext } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import AuthContext from '../context/AuthContext';
 import NotificationContext from '../context/NotificationContext';
 import socketService from '../services/socket';
 import useSalesStore from '../store/salesStore';
-import { getUserPermissions } from '../services/salesApi';
+
 import SalesTable from '../components/Sales/SalesTable';
 import SalesToolbar from '../components/Sales/SalesToolbar';
 import SalesFilters from '../components/Sales/SalesFilters';
@@ -13,7 +13,7 @@ import SalesNameTabs from '../components/Sales/SalesNameTabs';
 import AddSalesRowModal from '../components/Sales/AddSalesRowModal';
 import ImportDataModal from '../components/Sales/ImportDataModal';
 import ActivityLogModal from '../components/Sales/ActivityLogModal';
-import DropdownManagerModal from '../components/Sales/DropdownManagerModal';
+
 import CustomColumnModal from '../components/Sales/CustomColumnModal';
 import BulkActionsToolbar from '../components/Sales/BulkActionsToolbar';
 import CustomTabBar from '../components/Sales/CustomTabBar';
@@ -21,7 +21,6 @@ import AddTabButton from '../components/Sales/AddTabButton';
 import SaveTabModal from '../components/Sales/SaveTabModal';
 import TabApprovalToast from '../components/Sales/TabApprovalToast';
 import WatchAlertToast from '../components/Sales/WatchAlertToast';
-
 
 const SalesPage = () => {
   const navigate = useNavigate();

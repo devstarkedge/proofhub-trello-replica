@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import * as leaveApi from '../../services/leaveApi';
 import LeaveRequestList from './LeaveRequestList';

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, memo, useCallback, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {

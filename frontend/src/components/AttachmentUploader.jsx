@@ -1,21 +1,6 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Upload, 
-  X, 
-  File, 
-  FileText, 
-  FileImage, 
-  FileSpreadsheet,
-  Film,
-  Loader,
-  CheckCircle,
-  AlertCircle,
-  Plus,
-  Clipboard,
-  HardDrive,
-  ChevronDown
-} from 'lucide-react';
+import { Upload, Loader, Plus, Clipboard, HardDrive, ChevronDown } from 'lucide-react';
 import useAttachmentStore from '../store/attachmentStore';
 import useGoogleDrivePicker from '../hooks/useGoogleDrivePicker';
 import { toast } from 'react-toastify';
@@ -55,7 +40,6 @@ const GoogleDriveIcon = ({ size = 16, className = '' }) => (
     />
   </svg>
 );
-
 
 // Build a comprehensive accept string that includes both MIME types and explicit extensions
 // This ensures .jpeg files are accepted on all browsers/OS (image/* alone can miss .jpeg on some systems)

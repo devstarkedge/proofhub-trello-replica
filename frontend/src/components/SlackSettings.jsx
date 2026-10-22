@@ -3,16 +3,10 @@
  * Full-featured Slack integration settings panel
  */
 
-import React, { useState, useEffect, useContext, useCallback } from 'react';
+import { useState, useEffect, useContext, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
-import {
-  MessageSquare, Link2, Unlink, Settings, Bell, BellOff,
-  Clock, Moon, Sun, Zap, BarChart2, Users, Send,
-  CheckCircle, XCircle, AlertTriangle, Loader2, RefreshCw,
-  ChevronRight, ChevronDown, ExternalLink, Shield, Hash,
-  Volume2, VolumeX, Calendar, Layers, Activity
-} from 'lucide-react';
+import { Unlink, Settings, Bell, Moon, Zap, BarChart2, Send, CheckCircle, Loader2, RefreshCw, ChevronRight, ExternalLink, Calendar } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import WorkspaceContext from '../context/WorkspaceContext';
 import slackService from '../services/slackService';

@@ -1,5 +1,5 @@
 import { formatActivityQuantity, formatFriendlyDateRange } from '../../utils/leavePresentation';
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { X } from 'lucide-react';
 import * as leaveApi from '../../services/leaveApi';

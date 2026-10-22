@@ -36,27 +36,6 @@ const calculatePayment = (billedMinutes, billingType, hourlyRate, fixedPrice) =>
   return hours * (hourlyRate || 0);
 };
 
-// Helper function to aggregate time logs
-const aggregateTimeLogs = (items, dateField = 'date') => {
-  let totalLogged = 0;
-  let totalBilled = 0;
-  
-  items.forEach(item => {
-    if (item.loggedTime && Array.isArray(item.loggedTime)) {
-      item.loggedTime.forEach(log => {
-        totalLogged += (log.hours || 0) * 60 + (log.minutes || 0);
-      });
-    }
-    if (item.billedTime && Array.isArray(item.billedTime)) {
-      item.billedTime.forEach(log => {
-        totalBilled += (log.hours || 0) * 60 + (log.minutes || 0);
-      });
-    }
-  });
-  
-  return { totalLogged, totalBilled };
-};
-
 // Helper to format minutes to hours and minutes
 const formatTime = (totalMinutes) => {
   const hours = Math.floor(totalMinutes / 60);

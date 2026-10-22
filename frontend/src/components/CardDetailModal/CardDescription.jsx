@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, lazy, Suspense, memo } from "react";
+import { useState, useEffect, useRef, useCallback, lazy, Suspense, memo } from "react";
 import { AlignLeft, ChevronRight, History, Loader2 } from "lucide-react";
 import RichTextEditor from "../RichTextEditor";
 import { motion, AnimatePresence } from "framer-motion";

@@ -1,18 +1,14 @@
-import React, { useState, useEffect, useContext, useRef, useMemo, useCallback, memo, useLayoutEffect } from 'react';
+import { useState, useEffect, useContext, useRef, useMemo, useCallback, memo, useLayoutEffect } from 'react';
 import { useNavigationType, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Plus, Eye, EyeOff, Building2, FolderKanban,
-  TrendingUp, Users, AlertCircle, Search, Filter,
-  Grid, List as ListIcon, ChevronDown, Sparkles, User, Shield
-} from 'lucide-react';
+import { Plus, Eye, EyeOff, Building2, FolderKanban, Users, AlertCircle, Filter, Grid, List as ListIcon, ChevronDown, Shield } from 'lucide-react';
 import { toast } from 'react-toastify';
 import AuthContext from '../context/AuthContext';
 import Database from '../services/database';
 import ProjectCard from '../components/ProjectCard';
 import ProjectListTable from '../components/ProjectListTable';
 import HomePageSkeleton from '../components/LoadingSkeleton';
-import NeonSparkText from '../components/NeonSparkText';
+
 import { DndContext, PointerSensor, KeyboardSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import SortableDepartment, { DepartmentDragHandle } from '../components/SortableDepartment';
@@ -24,7 +20,7 @@ import { PROJECT_SORT_OPTIONS, orderDepartments, promoteDepartments, sortProject
 import useProjectStore from '../store/projectStore';
 import useProjectSelection from '../hooks/useProjectSelection';
 import Avatar from '../components/Avatar';
-import { lazy, Suspense } from 'react';
+import { Suspense } from 'react';
 import AddProjectModal from '../components/AddProjectModal';
 import EditProjectModal from '../components/EditProjectModal';
 import ViewProjectModal from '../components/ViewProjectModal';

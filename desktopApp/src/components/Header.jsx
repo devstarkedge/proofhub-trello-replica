@@ -1,10 +1,5 @@
-import React, { useContext, useState, useRef, useEffect, lazy, Suspense } from 'react';
-import {
-  Bell, Menu, Settings, LogOut, User,
-  ChevronDown, Kanban, List, Calendar, BarChart3,
-  Users, Building2, ArrowLeft, Briefcase, Plus,
-  CreditCard, HelpCircle, Palette, Sparkles, LayoutGrid
-} from 'lucide-react';
+import { useContext, useState, useRef, useEffect, lazy, Suspense } from 'react';
+import { Bell, Menu, Settings, LogOut, User, ChevronDown, Kanban, List, Calendar, BarChart3, Users, Building2, CreditCard, HelpCircle, Palette, LayoutGrid } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import AuthContext from '../context/AuthContext';
@@ -195,7 +190,6 @@ const Header = ({ boardName }) => {
             >
               <Menu size={20} />
             </motion.button>
-
 
 
             {/* View Navigation - Enhanced with colored icons */}

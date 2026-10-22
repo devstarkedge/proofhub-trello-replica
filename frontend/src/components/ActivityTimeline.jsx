@@ -1,9 +1,6 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Clock, User, FileUp, Edit3, Users, AlertCircle, CheckCircle2, 
-  Tag, Calendar, TrendingUp, MessageSquare, Paperclip, History
-} from 'lucide-react';
+import { Clock, FileUp, Edit3, Users, AlertCircle, CheckCircle2, Tag, Calendar, TrendingUp, MessageSquare, Paperclip, History } from 'lucide-react';
 
 // Format relative time
 const formatRelativeTime = (date) => {

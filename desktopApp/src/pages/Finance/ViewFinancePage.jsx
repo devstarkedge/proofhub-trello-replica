@@ -1,20 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import {
-  ArrowLeft,
-  Users,
-  FolderKanban,
-  Building2,
-  Clock,
-  DollarSign,
-  ChevronDown,
-  ChevronRight,
-  RefreshCw,
-  AlertCircle,
-  Edit3,
-  Search as SearchIcon,
-  Calendar
-} from 'lucide-react';
+import { ArrowLeft, Users, FolderKanban, Building2, ChevronDown, ChevronRight, RefreshCw, AlertCircle, Edit3, Search as SearchIcon, Calendar } from 'lucide-react';
 import api from '../../services/api';
 import { toast } from 'react-toastify';
 import DateFilters from '../../components/Finance/DateFilters';
@@ -52,7 +38,6 @@ const ViewFinancePage = () => {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [weeklyData, setWeeklyData] = useState(null);
   const [weeklyDataLoading, setWeeklyDataLoading] = useState(false);
-
 
   // Fetch page configuration
   const fetchPage = async () => {

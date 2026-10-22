@@ -5,7 +5,7 @@
  * Handles system preference changes and provides theme utilities.
  */
 
-import React, { createContext, useContext, useEffect, useCallback } from 'react';
+import { createContext, useEffect, useCallback } from 'react';
 import useThemeStore from '../store/themeStore';
 
 // Create context

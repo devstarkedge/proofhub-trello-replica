@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import Database from '../services/database';
 import Card from '../components/Card';
 

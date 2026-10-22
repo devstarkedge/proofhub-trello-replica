@@ -1,7 +1,6 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
-import helmet from 'helmet';
 import http from 'http';
 import compression from 'compression';
 import path from 'path';
@@ -113,7 +112,6 @@ app.options('*', corsHandler);
 app.use(corsHandler);
 
 
-
 // ─── Request Logger ──────────────────────────────────────────────────────────
 app.use((req, res, next) => {
   const start = Date.now();
@@ -162,7 +160,6 @@ app.use(
 
 // ─── Compression ─────────────────────────────────────────────────────────────
 app.use(compression());
-
 
 // ─── Health Check ────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {

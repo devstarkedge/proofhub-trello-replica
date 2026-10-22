@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, memo } from 'react';
+import { useState, useRef, useEffect, memo } from 'react';
 import ReactDOM from 'react-dom';
 import Avatar from './Avatar';
 

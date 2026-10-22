@@ -1,4 +1,4 @@
-import React, { memo, useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import {
   Tooltip,
@@ -6,7 +6,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '../ui/tooltip';
-import { Clock, Calendar, TrendingUp, Award, AlertTriangle } from 'lucide-react';
+import { Calendar, TrendingUp, Award, AlertTriangle } from 'lucide-react';
 
 // Helper to get color intensity based on hours logged
 const getHeatColor = (minutes, maxMinutes) => {

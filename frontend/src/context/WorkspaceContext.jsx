@@ -1,4 +1,4 @@
-import React, { createContext, useState, useCallback, useContext, useEffect, useRef } from "react";
+import { createContext, useState, useCallback, useContext, useEffect, useRef } from "react";
 import api from "../services/api";
 import socketService from "../services/socket";
 import AuthContext from "./AuthContext";

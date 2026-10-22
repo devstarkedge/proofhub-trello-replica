@@ -44,8 +44,8 @@ export default ({ mode }) => {
             // Vendor chunks
             vendor: ['react', 'react-dom', 'react-router-dom'],
             ui: ['lucide-react', 'framer-motion', 'react-toastify'],
-            charts: ['chart.js', 'react-chartjs-2', 'recharts'],
-            calendar: ['@fullcalendar/react', '@fullcalendar/daygrid', '@fullcalendar/interaction', 'fullcalendar'],
+            charts: ['recharts'],
+            calendar: ['@fullcalendar/react', '@fullcalendar/daygrid', '@fullcalendar/interaction', '@fullcalendar/timegrid'],
             query: ['@tanstack/react-query'],
             utils: ['axios', 'socket.io-client', 'idb'],
           },

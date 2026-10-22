@@ -1,19 +1,18 @@
 import useSessionAction from '../../hooks/useSessionAction';
 import {finalizeDesktopCapture} from '../../services/desktopTracking';
 import { formatHours } from '../../utils/duration';
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import { MapPin, LogIn, LogOut, CheckCircle2, Loader2, BriefcaseBusiness, ChevronDown } from 'lucide-react';
 import * as attendanceApi from '../../services/attendanceApi';
 import WorkSelectionModal from '../Tracking/WorkSelectionModal';
 import {trackingStore} from '../../services/trackingState';
 import useAttendanceSession from '../../hooks/useAttendanceSession';
-import useSessionClock from '../../hooks/useSessionClock';
+
 import TrackingPanel from '../Tracking/TrackingPanel';
 import CheckOutConfirmationModal from './CheckOutConfirmationModal';
 
 const GEO_OPTIONS = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
-
 
 
 function getCurrentPosition() {

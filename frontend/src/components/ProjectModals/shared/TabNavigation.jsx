@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 
 export const TabNavigation = memo(({ tabs, activeTab, onTabChange, variant = 'default' }) => (
   <div className={variant === 'view' ? "flex gap-1 p-1 bg-white/10 rounded-xl backdrop-blur-sm" : "flex gap-2 px-6"}>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tag, Search, X, Plus, Check, Trash2 } from 'lucide-react';
 import useLabelStore from '../store/labelStore';

@@ -10,11 +10,7 @@ import { Worker } from 'bullmq';
 import { getWorkerConnection } from '../queues/connection.js';
 import notificationService from '../utils/notificationService.js';
 import { sendPushNotification } from '../utils/pushNotification.js';
-import {
-  sendReminderNotification,
-  markOverdueReminders,
-  scheduleNextReminder,
-} from '../utils/reminderScheduler.js';
+import { sendReminderNotification } from '../utils/reminderScheduler.js';
 import Reminder from '../models/Reminder.js';
 import Card from '../models/Card.js';
 import config from '../config/index.js';

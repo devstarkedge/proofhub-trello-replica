@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ArrowRight, Check, Loader, ArrowUpCircle, ArrowDownCircle } from 'lucide-react';

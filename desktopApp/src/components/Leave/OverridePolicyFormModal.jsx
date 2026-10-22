@@ -1,6 +1,6 @@
 import WorkspaceContext from '../../context/WorkspaceContext';
 import { MONTHS, workspaceDateKey } from '../../utils/workspaceDateRange';
-import React, { useContext, useEffect, useMemo, useState } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import { Button } from '../ui/button';
 import LeaveTypeAllocationCards from './LeaveTypeAllocationCards';
 import { ruleFromVersion, buildLeaveTypeRulesPayload } from '../../utils/leavePolicyRules';

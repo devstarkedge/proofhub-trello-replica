@@ -1,10 +1,7 @@
-import React, { useState, useEffect, useContext, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useContext, useRef, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
-import {
-  User, Mail, Briefcase, Save, Loader2, Camera,
-  CheckCircle, XCircle, Edit3, Eye, EyeOff, Trash2, ImagePlus
-} from 'lucide-react';
+import { User, Mail, Briefcase, Save, Loader2, Camera, CheckCircle, XCircle, Trash2, ImagePlus } from 'lucide-react';
 import api from '../services/api';
 import AuthContext from '../context/AuthContext';
 import Loading from '../components/Loading';
@@ -15,7 +12,6 @@ import { validateField, validateForm as validateFormUtil, debouncedEmailCheck, v
 
 // Lazy load the upload modal
 const AvatarUploadModal = lazy(() => import('../components/AvatarUploadModal'));
-
 
 const Profile = () => {
   const { user, setUser } = useContext(AuthContext);

@@ -1,22 +1,6 @@
-import React, { useState, useContext, useMemo, useCallback } from "react";
+import { useState, useContext, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  Timer,
-  Target,
-  PlayCircle,
-  AlertCircle,
-  Pencil,
-  Trash2,
-  User,
-  Clock,
-  X,
-  DollarSign,
-  Calendar,
-  Lock,
-  Info,
-  CheckCircle2,
-  Plus,
-} from "lucide-react";
+import { Timer, Target, PlayCircle, AlertCircle, Pencil, Trash2, User, Clock, X, DollarSign, Calendar, Lock, Info, Plus } from "lucide-react";
 import AuthContext from "../../context/AuthContext";
 import MilestoneApprovalPanel from "./MilestoneApprovalPanel";
 

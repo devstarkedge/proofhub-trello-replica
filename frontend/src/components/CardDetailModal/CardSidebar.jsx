@@ -1,16 +1,6 @@
-import React, { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  Save,
-  Users,
-  AlertCircle,
-  TrendingUp,
-  Calendar,
-  Tag,
-  X,
-  Plus,
-  ChevronDown,
-} from "lucide-react";
+import { Save, Users, AlertCircle, TrendingUp, Calendar, X, Plus, ChevronDown } from "lucide-react";
 import LabelDropdown from "../LabelDropdown";
 import DatePickerModal from "../DatePickerModal";
 import Avatar from "../Avatar";

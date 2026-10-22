@@ -1,4 +1,4 @@
-import React, { memo, useMemo, useCallback } from 'react';
+import { memo, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import CalendarChip from './CalendarChip';
 import ReminderTooltip from './ReminderTooltip';

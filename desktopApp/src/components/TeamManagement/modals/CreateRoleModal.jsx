@@ -1,8 +1,8 @@
-import React, { memo, useState, useCallback, useRef, useId } from 'react';
+import { memo, useState, useCallback, useRef, useId } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
 import RolePermissionChecklist from '../../AccessControl/RolePermissionChecklist';
 import useModalFocus from '../../../hooks/useModalFocus';
-import { Shield, X, Check, AlertCircle, Loader2, Zap } from 'lucide-react';
+import { Shield, X, AlertCircle, Loader2, Zap } from 'lucide-react';
 import { PERMISSION_CATEGORIES, DEFAULT_PERMISSIONS, SYSTEM_ROLE_PERMISSIONS } from '../../../store/roleStore';
 
 /**

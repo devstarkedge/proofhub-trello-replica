@@ -1,4 +1,4 @@
-import React, { useContext, lazy, Suspense } from 'react';
+import { useContext, Suspense } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   ClipboardList,

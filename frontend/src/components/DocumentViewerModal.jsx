@@ -1,21 +1,6 @@
-import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
-import { 
-  X, 
-  Download, 
-  ZoomIn, 
-  ZoomOut, 
-  RotateCw, 
-  Maximize2,
-  ChevronLeft,
-  ChevronRight,
-  FileText,
-  FileSpreadsheet,
-  File,
-  ExternalLink,
-  Loader,
-  Share2
-} from 'lucide-react';
+import { X, Download, ZoomIn, ZoomOut, RotateCw, Maximize2, ChevronLeft, ChevronRight, FileText, File, Loader, Share2 } from 'lucide-react';
 import {createPortal} from 'react-dom';
 import { toast } from 'react-toastify';
 
@@ -52,7 +37,6 @@ const DocumentViewerModal = ({
   const canNavigate = attachments.length > 1;
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < attachments.length - 1;
-
 
   const handlePrev = useCallback(() => {
     if (hasPrev) {
@@ -581,10 +565,5 @@ const DocumentViewerModal = ({
   );
 };
 
-const PreviewLoader = () => (
-  <div className="flex items-center justify-center h-full">
-    <Loader size={32} className="text-white animate-spin" />
-  </div>
-);
 
 export default DocumentViewerModal;

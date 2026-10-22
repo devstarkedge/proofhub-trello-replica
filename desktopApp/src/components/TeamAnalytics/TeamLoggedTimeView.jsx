@@ -1,13 +1,6 @@
-import React, { useState, useEffect, useContext, useMemo, useCallback, memo, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Users, Clock, Calendar, TrendingUp, TrendingDown, AlertTriangle,
-  ChevronLeft, ChevronRight, Download, RefreshCw, Filter, Search,
-  BarChart3, PieChart, Activity, Target, Award, AlertCircle,
-  Zap, Brain, Lightbulb,
-  FileSpreadsheet, FileText, Share2, Settings, Info, CheckCircle2,
-  XCircle, MinusCircle, Building2, UserCheck, UserX, Timer, Flame, X
-} from 'lucide-react';
+import { useState, useEffect, useContext, useMemo, useCallback, memo, useRef } from 'react';
+import { motion } from 'framer-motion';
+import { Users, Clock, Calendar, TrendingUp, TrendingDown, AlertTriangle, Download, RefreshCw, Filter, Search, BarChart3, PieChart, Activity, Target, Award, AlertCircle, Brain, FileSpreadsheet, FileText, XCircle, MinusCircle, Building2, Flame, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 import Database from '../../services/database';
 import * as leaveApi from '../../services/leaveApi';
@@ -1046,7 +1039,6 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-
 
 
             {onClose && (

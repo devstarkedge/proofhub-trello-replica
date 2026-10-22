@@ -1,11 +1,7 @@
-import React, { useState, useCallback, useContext } from 'react';
+import { useState, useCallback, useContext } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Upload, Image, X, Loader2, CloudOff, 
-  HardDrive, Check, AlertCircle, History,
-  Trash2, RefreshCw
-} from 'lucide-react';
+import { Image, X, Loader2, CloudOff, HardDrive, Check, AlertCircle, History, Trash2, RefreshCw } from 'lucide-react';
 import useGoogleDrivePicker from '../hooks/useGoogleDrivePicker';
 import useCoverImage from '../hooks/useCoverImage';
 import AuthContext from '../context/AuthContext';

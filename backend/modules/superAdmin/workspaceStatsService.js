@@ -4,7 +4,7 @@ import User from '../../models/User.js';
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import WorkspaceInvitation from '../../models/WorkspaceInvitation.js';
 import WorkspaceSubscription from '../../models/WorkspaceSubscription.js';
-import Plan from '../../models/Plan.js';
+import '../../models/Plan.js';
 import Board from '../../models/Board.js';
 import Attachment from '../../models/Attachment.js';
 import Activity from '../../models/Activity.js';

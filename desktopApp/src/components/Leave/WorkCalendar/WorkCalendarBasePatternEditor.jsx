@@ -1,5 +1,4 @@
 import DurationHoursInput from '../../ui/DurationHoursInput';
-import React from 'react';
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const STATES = [

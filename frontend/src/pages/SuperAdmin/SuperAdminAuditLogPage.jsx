@@ -1,5 +1,5 @@
-import React from 'react';
-import { ShieldCheck, History } from 'lucide-react';
+
+import { ShieldCheck } from 'lucide-react';
 import SuperAdminAuditLogViewer from '../../components/SuperAdmin/SuperAdminAuditLogViewer';
 
 const SuperAdminAuditLogPage = () => {

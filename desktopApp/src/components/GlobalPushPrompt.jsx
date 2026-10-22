@@ -1,4 +1,4 @@
-import React, { useContext } from 'react';
+import { useContext } from 'react';
 import NotificationContext from '../context/NotificationContext';
 import PushNotificationPrompt from './PushNotificationPrompt';
 

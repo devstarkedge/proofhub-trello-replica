@@ -1,4 +1,4 @@
-import React from 'react';
+
 import WeeklyReport from '../../components/Finance/WeeklyReport';
 import SummaryCards from '../../components/Finance/SummaryCards';
 

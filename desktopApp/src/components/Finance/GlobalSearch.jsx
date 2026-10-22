@@ -1,14 +1,5 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { 
-  Search, 
-  X, 
-  Clock, 
-  User, 
-  Briefcase, 
-  Building2,
-  Hash,
-  Loader2
-} from 'lucide-react';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { Search, X, Clock, User, Briefcase, Building2, Hash } from 'lucide-react';
 
 /**
  * GlobalSearch - Finance module global search with autocomplete

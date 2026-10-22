@@ -7,7 +7,7 @@
  * - Live preview with Apply/Cancel
  */
 
-import React, { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Sun, Moon, Monitor, Check, RotateCcw, Sparkles, Palette } from 'lucide-react';
 import useThemeStore, { THEME_COLORS, APPEARANCE_MODES } from '../store/themeStore';

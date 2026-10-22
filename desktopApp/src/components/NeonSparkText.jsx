@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 const NeonSparkText = ({ text, className = '' }) => {
   const containerRef = useRef(null);

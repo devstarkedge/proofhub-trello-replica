@@ -3,21 +3,16 @@ import mongoose from 'mongoose';
 import SalesRow from '../models/SalesRow.js';
 import SalesColumn from '../models/SalesColumn.js';
 import SalesDropdownOption from '../models/SalesDropdownOption.js';
-import SalesPermission from '../models/SalesPermission.js';
+import '../models/SalesPermission.js';
 import SalesActivityLog from '../models/SalesActivityLog.js';
-import { getIO, emitToUser } from '../realtime/index.js';
+import { getIO } from '../realtime/index.js';
 import slackNotificationService from '../services/slack/SlackNotificationService.js';
 import notificationService from '../utils/notificationService.js';
 import { shouldNotifyOnModuleGrant } from '../utils/permissionNotificationGuards.js';
 import ExcelJS from 'exceljs';
 import SalesUserPreference from '../models/SalesUserPreference.js';
 import { enqueueSalesAlertNewRow, enqueueSalesAlertRowUpdate } from '../queues/index.js';
-import {
-  SALES_FIELD_LABELS,
-  SALES_REQUIRED_LABELS,
-  SALES_STANDARD_FIELD_KEYS,
-  validateSalesRequired,
-} from '../config/salesFieldConfig.js';
+import { SALES_FIELD_LABELS, SALES_REQUIRED_LABELS, SALES_STANDARD_FIELD_KEYS } from '../config/salesFieldConfig.js';
 import { resolveResourceAccess } from '../modules/permissions/permissionEngine.js';
 import { setResourceOverride } from '../modules/permissions/accessControlService.js';
 import { toLegacyShape, fromLegacyShape } from '../config/permissionRegistry.js';
@@ -167,7 +162,6 @@ const trackChanges = (oldRow, newData) => {
   
   return changes;
 };
-
 
 // Helper to identify standard schema fields — derived from config
 const REQUIRED_FIELDS = SALES_REQUIRED_LABELS;

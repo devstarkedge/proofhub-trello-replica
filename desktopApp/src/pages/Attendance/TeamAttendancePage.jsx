@@ -1,7 +1,7 @@
 import { periodDateRange, isValidDateRange } from '../../utils/workspaceDateRange';
 import { formatHours } from '../../utils/duration';
 import { attendanceCsv } from '../../utils/attendanceExport';
-import React, { useContext, useCallback, useEffect, useRef, useState } from 'react';
+import { useContext, useCallback, useEffect, useRef, useState } from 'react';
 import { Users } from 'lucide-react';
 import PresenceStatusBadge from '../../components/Attendance/PresenceStatusBadge';
 import LeaveEmptyState from '../../components/Leave/LeaveEmptyState';

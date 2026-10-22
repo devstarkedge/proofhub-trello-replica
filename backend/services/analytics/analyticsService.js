@@ -5,14 +5,7 @@ import User from '../../models/User.js';
 import Activity from '../../models/Activity.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import { analyticsRangeMeta } from './analyticsFilters.js';
-import {
-  ANALYTICS_ROLES,
-  assertScopeFilter,
-  canonicalBillingType,
-  filterScopedBoards,
-  resolveAnalyticsScope,
-  scopeBoardsToEmployeeProjects,
-} from './analyticsScope.js';
+import { assertScopeFilter, canonicalBillingType, filterScopedBoards, resolveAnalyticsScope, scopeBoardsToEmployeeProjects } from './analyticsScope.js';
 
 const id = (value) => value?._id?.toString() || value?.toString();
 const oid = (value) => new mongoose.Types.ObjectId(value);

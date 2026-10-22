@@ -1,8 +1,8 @@
-import mongoose from 'mongoose';
+
 import { finalizeAttendanceWork } from '../tracking/tracking.service.js';
 import { DateTime } from 'luxon';
 import AttendanceSession from './attendanceSession.model.js';
-import AttendanceDay from './attendanceDay.model.js';
+import './attendanceDay.model.js';
 import AttendancePolicyVersion from './attendancePolicyVersion.model.js';
 import AttendanceShift from './attendanceShift.model.js';
 import Workspace from '../../models/Workspace.js';

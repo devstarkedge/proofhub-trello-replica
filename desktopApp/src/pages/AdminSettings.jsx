@@ -1,6 +1,6 @@
-import React, { useState, useContext } from "react";
+import { useState, useContext } from "react";
 import { Link } from "react-router-dom";
-import { Mail, Lock, Key, Save, Eye, EyeOff, CheckCircle, AlertCircle, Shield, MessageSquare, ShieldCheck } from "lucide-react";
+import { Mail, Lock, Key, Save, Eye, EyeOff, CheckCircle, AlertCircle, Shield, ShieldCheck } from "lucide-react";
 import AuthContext from "../context/AuthContext";
 import api from "../services/api";
 import Avatar from "../components/Avatar";

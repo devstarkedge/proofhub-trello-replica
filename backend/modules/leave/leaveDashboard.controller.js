@@ -5,7 +5,7 @@ import { ErrorResponse } from '../../middleware/errorHandler.js';
 import Workspace from '../../models/Workspace.js';
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import LeaveRequest from './leaveRequest.model.js';
-import LeaveApproval from './leaveApproval.model.js';
+import './leaveApproval.model.js';
 import LeavePolicy from './leavePolicy.model.js';
 import { getFullBalanceBreakdown } from './leaveBalance.service.js';
 import { getLeaveDashboardScope } from './leaveAuthorization.service.js';

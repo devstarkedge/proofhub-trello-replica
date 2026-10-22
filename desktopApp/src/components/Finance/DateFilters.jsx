@@ -1,16 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { 
-  Calendar,
-  ChevronDown,
-  X,
-  CalendarDays,
-  CalendarRange,
-  Bookmark,
-  Plus,
-  Trash2,
-  CheckCircle2,
-  Circle
-} from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { ChevronDown, X, CalendarRange, Bookmark, CheckCircle2, Circle } from 'lucide-react';
 
 /**
  * DateFilters - Smart date filter component for Finance module
@@ -40,7 +29,6 @@ const DateFilters = ({
   const [presetName, setPresetName] = useState('');
   const dropdownRef = useRef(null);
   const saveModalRef = useRef(null);
-
 
   // Load saved presets from localStorage
   useEffect(() => {
@@ -395,7 +383,6 @@ const DateFilters = ({
         </>
       )}
 
-
       {/* More Presets Dropdown - Hidden when week-wise mode is enabled */}
       {!weekWiseMode && morePresets.length > 0 && (
         <div className="relative group">
@@ -447,7 +434,6 @@ const DateFilters = ({
           </div>
         </div>
       )}
-
 
       {/* Custom Range Button - Hidden when week-wise mode is enabled */}
       {!weekWiseMode && (
@@ -557,7 +543,6 @@ const DateFilters = ({
           )}
         </div>
       )}
-
 
       {/* Clear Filter Button - Hidden when week-wise mode is enabled */}
       {!weekWiseMode && hasActiveFilter && (

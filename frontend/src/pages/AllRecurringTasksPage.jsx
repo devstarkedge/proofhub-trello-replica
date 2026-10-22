@@ -1,22 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  RefreshCw, Calendar, Clock, User, Edit2, Trash2, ChevronLeft,
-  Play, Pause, AlertCircle, Check, X, MoreVertical, Search, Filter
-} from 'lucide-react';
+import { RefreshCw, Calendar, Clock, User, Edit2, Trash2, ChevronLeft, Play, Pause, AlertCircle, Check, MoreVertical, Search } from 'lucide-react';
 import { toast } from 'react-toastify';
 import Database from '../services/database';
 import RecurringSettingsModal from '../components/RecurringSettingsModal';
 import { useDebounce } from '../hooks/useDebounce';
 
-const SCHEDULE_TYPE_LABELS = {
-  daily: 'Daily',
-  weekly: 'Weekly',
-  monthly: 'Monthly',
-  yearly: 'Yearly',
-  daysAfter: 'Days After',
-  custom: 'Custom'
-};
 
 const BEHAVIOR_LABELS = {
   whenComplete: 'When Complete',
@@ -97,18 +86,6 @@ const AllRecurringTasksPage = ({ boardId, boardName, onBack, onOpenCard }) => {
     }
   };
 
-  const handleDelete = async (recurrenceId) => {
-    if (!window.confirm('Are you sure you want to stop this recurring task?')) return;
-    
-    try {
-      await Database.deleteRecurrence(recurrenceId);
-      setRecurrences(recurrences.filter(r => r._id !== recurrenceId));
-      toast.success('Recurring task stopped');
-    } catch (error) {
-      console.error('Error deleting recurrence:', error);
-      toast.error('Failed to delete recurrence');
-    }
-  };
 
   const handleEdit = (recurrence) => {
     setSelectedRecurrence(recurrence);

@@ -1,6 +1,6 @@
-import React, { memo, useState, useMemo, useRef, useEffect } from 'react';
+import { memo, useState, useMemo, useRef, useEffect } from 'react';
 import { Mail, User, Phone, ChevronDown } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import ReactCountryFlag from 'react-country-flag';
 import FormField from './FormField';
 

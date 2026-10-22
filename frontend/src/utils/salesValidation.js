@@ -1,9 +1,5 @@
 import { z } from 'zod';
-import {
-  SALES_FIELDS,
-  SALES_FIELD_LABELS as _LABELS,
-  SALES_REQUIRED_FIELDS as _REQUIRED,
-} from '../config/salesFieldConfig';
+import { SALES_FIELD_LABELS as _LABELS, SALES_REQUIRED_FIELDS as _REQUIRED } from '../config/salesFieldConfig';
 
 /**
  * Human-readable labels — re-exported from single-source-of-truth config

@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from 'react';
+import { lazy, Suspense } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import LeaveRequestCenter from './LeaveRequestCenter';
 import LeaveBalanceActivity from './LeaveBalanceActivity';

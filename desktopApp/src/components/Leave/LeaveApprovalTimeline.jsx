@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { CheckCircle2, XCircle, Clock, MinusCircle } from 'lucide-react';
 
 const LEVEL_LABELS = {

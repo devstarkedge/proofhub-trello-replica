@@ -8,15 +8,7 @@ import Board from '../models/Board.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { emitToBoard } from '../realtime/index.js';
 import { chatHooks } from '../utils/chatHooks.js';
-import {
-  uploadToCloudinary,
-  deleteFromCloudinary,
-  deleteMultipleFromCloudinary,
-  getFileTypeCategory,
-  getCloudinaryResourceType,
-  getThumbnailUrl,
-  getOptimizedUrl
-} from '../utils/cloudinary.js';
+import { uploadToCloudinary, getFileTypeCategory, getCloudinaryResourceType, getThumbnailUrl, getOptimizedUrl } from '../utils/cloudinary.js';
 import multer from 'multer';
 
 // Configure multer for memory storage (we'll upload to Cloudinary)
@@ -926,7 +918,6 @@ export const setAsCover = asyncHandler(async (req, res) => {
     entityId
   });
 });
-
 
 // @desc    Upload image from clipboard/paste
 // @route   POST /api/attachments/paste

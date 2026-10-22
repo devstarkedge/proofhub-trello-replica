@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { CalendarDays, X } from 'lucide-react';
 import Database from '../services/database';
 import { formatAnalyticsDateTime } from '../utils/analyticsFormat';

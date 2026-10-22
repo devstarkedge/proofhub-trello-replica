@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, Plus, Edit2, Trash2, Lock, Unlock, Clock, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, Plus, Edit2, Trash2, Lock, Unlock, Clock, AlertCircle } from 'lucide-react';
 import { getActivityLog } from '../../services/salesApi';
 import Avatar from '../Avatar';
 import { format } from 'date-fns';

@@ -1,4 +1,4 @@
-import React from "react";
+
 import { Navigate, Routes, Route } from "react-router-dom";
 import { ToastContainer } from 'react-toastify';
 import { AuthProvider } from "./context/AuthContext";

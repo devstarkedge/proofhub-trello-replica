@@ -1,21 +1,5 @@
-import React, { useState } from 'react';
-import {
-  FileText,
-  Image,
-  Music,
-  File,
-  RotateCcw,
-  Trash2,
-  Calendar,
-  User,
-  ClipboardList,
-  CheckCircle2,
-  MessageSquare,
-  AlertCircle,
-  AlertTriangle,
-  Eye,
-  Loader2
-} from 'lucide-react';
+import { useState } from 'react';
+import { FileText, Image, Music, File, RotateCcw, Trash2, ClipboardList, CheckCircle2, MessageSquare, AlertTriangle, Eye, Loader2 } from 'lucide-react';
 
 /**
  * Compact Trash Item Card Component

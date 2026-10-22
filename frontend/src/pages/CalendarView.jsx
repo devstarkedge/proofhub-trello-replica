@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useCallback, useMemo } from 'react';
+import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import FullCalendar from '@fullcalendar/react';
@@ -32,7 +32,7 @@ import '../components/calendar/CalendarTask.css';
 import DepartmentContext from '../context/DepartmentContext';
 import AuthContext from '../context/AuthContext';
 import Database from '../services/database';
-import ReminderCalendar from '../components/ReminderCalendar';
+
 import { ModernCalendarGrid, CalendarTaskModal } from '../components/calendar';
 import ReminderModal from '../components/ReminderModal';
 import HtmlContent from '../components/ui/HtmlContent';

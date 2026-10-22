@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { resolveDisplayStatus } from '../../utils/attendanceStatus';
 
 // AttendanceDay.presenceState + a couple of derived display-only labels

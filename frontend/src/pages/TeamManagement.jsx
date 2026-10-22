@@ -1,6 +1,6 @@
-import React, { useContext, useEffect, useReducer, useMemo, useCallback, Suspense, lazy, useState, useRef } from 'react';
+import { useContext, useEffect, useReducer, useMemo, useCallback, Suspense, lazy, useState, useRef } from 'react';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
-import { Building2, Shield, Users } from 'lucide-react';
+import { Building2, Shield } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import WorkspaceContext from '../context/WorkspaceContext';
 import useAccessControl from '../hooks/useAccessControl';
@@ -32,7 +32,6 @@ const CreateDepartmentModal = lazy(() => import('../components/TeamManagement/mo
 const CreateRoleModal = lazy(() => import('../components/TeamManagement/modals/CreateRoleModal'));
 const ReassignModal = lazy(() => import('../components/TeamManagement/modals/ReassignModal'));
 const DeleteConfirmationModal = lazy(() => import('../components/TeamManagement/modals/DeleteConfirmationModal'));
-
 
 /**
  * Main TeamManagement Page Component
@@ -532,7 +531,6 @@ const TeamManagement = () => {
       dispatch({ type: ACTION_TYPES.SET_IS_LOADING, payload: false });
     }
   }, [state.departmentToDelete, deleteDepartment, showToast]);
-
 
   if (departmentsLoading || state.isLoading || permissionsLoading) {
     return <TeamManagementSkeleton />;

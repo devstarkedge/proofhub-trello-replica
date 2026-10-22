@@ -1,4 +1,4 @@
-import React, { useState, memo, useRef, useEffect } from 'react';
+import { useState, memo, useRef, useEffect } from 'react';
 import { X, Plus, Sparkles } from 'lucide-react';
 
 const AddCardForm = memo(({ listId, onAdd, onCancel }) => {

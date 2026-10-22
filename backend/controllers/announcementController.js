@@ -2,23 +2,16 @@ import { ROOM } from '../realtime/events.js';
 import { announcementAudience } from '../services/workspaceAudience.js';
 import { emitAnnouncementEvent } from '../services/announcementEvents.js';
 import Announcement from "../models/Announcement.js";
-import User from "../models/User.js";
-import Notification from "../models/Notification.js";
-import Department from "../models/Department.js";
+import "../models/User.js";
+import "../models/Notification.js";
+import "../models/Department.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
 import notificationService from "../utils/notificationService.js";
-import { emitNotification, getIO } from "../realtime/index.js";
+import { getIO } from "../realtime/index.js";
 import { slackHooks } from "../utils/slackHooks.js";
 import { chatHooks } from "../utils/chatHooks.js";
-import {
-  uploadAnnouncementAttachment,
-  uploadMultipleAnnouncementAttachments,
-  deleteAnnouncementAttachment,
-  deleteMultipleAnnouncementAttachments,
-  validateAnnouncementFile,
-  generateFileHash
-} from "../utils/cloudinary.js";
+import { uploadMultipleAnnouncementAttachments, deleteAnnouncementAttachment, deleteMultipleAnnouncementAttachments, generateFileHash } from "../utils/cloudinary.js";
 import {
   scheduleAnnouncementBroadcast,
   scheduleAnnouncementArchive,
@@ -334,7 +327,6 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
   }
 
   await announcement.populate('createdBy', 'name email avatar role');
-
 
   // If not scheduled, broadcast immediately
   if (!announcementData.isScheduled) {

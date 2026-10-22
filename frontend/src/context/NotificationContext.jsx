@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, useContext, useCallback, useRef } from 'react';
+import { createContext, useState, useEffect, useContext, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import WorkspaceContext from './WorkspaceContext';
@@ -209,7 +209,6 @@ export const NotificationProvider = ({ children }) => {
   }, [scope, user?.settings?.notifications?.push]);
 
   const addNotification = notification => handleNewNotification({ detail: notification });
-
 
   useEffect(() => {
     if (!user) return;

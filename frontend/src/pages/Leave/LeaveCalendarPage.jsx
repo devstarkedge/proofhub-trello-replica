@@ -1,9 +1,8 @@
-import React, { useContext } from 'react';
+import { useContext } from 'react';
 import { CalendarRange } from 'lucide-react';
 import AuthContext from '../../context/AuthContext';
 import WorkspaceContext from '../../context/WorkspaceContext';
 import LeaveCalendarGrid from '../../components/Leave/LeaveCalendarGrid';
-import LeavePageHeader from '../../components/Leave/LeavePageHeader';
 
 const LeaveCalendarPage = () => {
   const { user } = useContext(AuthContext);

@@ -8,7 +8,7 @@ import { signedUpload, verifyPrivateUpload, screenshotKey, privateStorage, stora
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import { departmentsOf } from './tracking.visibility.js';
 import { emitToUser } from '../../realtime/emitters.js';
-import {migrateLegacyScreenshot} from './tracking.legacyStorage.js';
+import './tracking.legacyStorage.js';
 import {MONITORING_NOTICE_VERSION,hasMonitoringNotice,workspaceCapturePreferences} from './tracking.monitoring.js';
 const captureSnapshot=p=>({enabled:p.enabled,monitoringEnabled:p.monitoringEnabled,revision:p.revision,retentionDays:p.retentionDays,blur:p.blur,intervalSeconds:p.intervalSeconds,monitors:p.monitors,excludedDisplayIds:p.excludedDisplayIds||[],excludeWindowTitles:p.excludeWindowTitles||[]});
 async function persistAnchor(device,anchor,dbSession=null){

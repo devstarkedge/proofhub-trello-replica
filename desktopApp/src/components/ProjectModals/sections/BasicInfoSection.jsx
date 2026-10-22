@@ -1,4 +1,4 @@
-import React, { useState, memo } from 'react';
+import { useState, memo } from 'react';
 import { Info, FileText, Calendar } from 'lucide-react';
 import RichTextEditor from '../../RichTextEditor';
 import DatePickerModal from '../../DatePickerModal';

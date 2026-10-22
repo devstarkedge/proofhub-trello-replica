@@ -3,15 +3,10 @@
  * Admin-level Slack workspace management
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
-import {
-  Settings, Users, BarChart2, Activity, AlertTriangle,
-  CheckCircle, XCircle, RefreshCw, Loader2, Hash,
-  Building, Users2, Bell, Clock, Zap, Shield,
-  TrendingUp, TrendingDown, ChevronDown, ExternalLink
-} from 'lucide-react';
+import { Settings, Users, BarChart2, Activity, CheckCircle, XCircle, RefreshCw, Loader2, Clock, Zap, Shield, TrendingUp } from 'lucide-react';
 import slackService from '../services/slackService';
 
 // Slack Logo SVG Component
@@ -101,7 +96,6 @@ const SlackAdminPanel = () => {
      // settings are already loaded in initial fetchData, but we can reload if needed manually
      // currently just placeholder if needed for specific tab refresh behavior
   }, [activeTab]);
-
 
   useEffect(() => {
     fetchData();

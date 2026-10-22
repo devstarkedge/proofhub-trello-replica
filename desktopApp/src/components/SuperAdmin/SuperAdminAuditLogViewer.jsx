@@ -1,30 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Search,
-  Loader2,
-  AlertCircle,
-  ScrollText,
-  ChevronDown,
-  ChevronUp,
-  X,
-  Shield,
-  ShieldCheck,
-  ShieldAlert,
-  Ban,
-  CheckCircle2,
-  Archive,
-  RotateCcw,
-  CreditCard,
-  Building2,
-  User,
-  Clock,
-  ArrowRight,
-  ArrowDownUp,
-  MessageSquare,
-  Sparkles,
-  Layers,
-  Globe
-} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Search, Loader2, AlertCircle, ScrollText, ChevronDown, ChevronUp, X, Shield, ShieldCheck, ShieldAlert, Ban, CheckCircle2, Archive, RotateCcw, CreditCard, Building2, ArrowRight, ArrowDownUp, MessageSquare } from 'lucide-react';
 import { useSuperAdminAuditLog } from '../../hooks/useSuperAdminQueries';
 import { getSuperAdminAuditLogEntry } from '../../services/superAdminApi';
 import { useQueryClient } from '@tanstack/react-query';

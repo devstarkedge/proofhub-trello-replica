@@ -1,12 +1,12 @@
-import mongoose from 'mongoose';
+
 import Card from '../models/Card.js';
 import Subtask from '../models/Subtask.js';
 import SubtaskNano from '../models/SubtaskNano.js';
 import Activity from '../models/Activity.js';
 import Board from '../models/Board.js';
-import Department from '../models/Department.js';
+import '../models/Department.js';
 import Announcement from '../models/Announcement.js';
-import { ErrorResponse } from '../middleware/errorHandler.js';
+import '../middleware/errorHandler.js';
 
 // Async handler wrapper to avoid try/catch in every controller
 const asyncHandler = (fn) => (req, res, next) =>

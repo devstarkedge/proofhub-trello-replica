@@ -1,29 +1,8 @@
 "use client";
 
-import React, { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  FileText,
-  Image as ImageIcon,
-  Video,
-  Music,
-  FileSpreadsheet,
-  File,
-  FileArchive,
-  FileType2,
-  X,
-  Download,
-  Eye,
-  Trash2,
-  RotateCcw,
-  Clock,
-  User,
-  CheckCircle2,
-  AlertCircle,
-  Loader,
-  ExternalLink,
-  MoreVertical
-} from 'lucide-react';
+import { FileText, Image as ImageIcon, Video, Music, FileSpreadsheet, File, FileArchive, FileType2, X, Download, Eye, Trash2, RotateCcw, Clock, User, CheckCircle2, AlertCircle, Loader, ExternalLink } from 'lucide-react';
 
 // File type configuration with icons and colors
 const FILE_TYPE_CONFIG = {

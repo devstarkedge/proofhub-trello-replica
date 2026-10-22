@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, BriefcaseBusiness, CalendarDays, CheckCircle2, ChevronDown, CircleDollarSign, Clock3, Download, FileSpreadsheet, Filter, Gauge, ListTodo, RefreshCw, SearchX, Target, Timer, TrendingUp, UsersRound, X, Zap } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowDownRight, ArrowUpRight, BriefcaseBusiness, CalendarDays, CheckCircle2, ChevronDown, Clock3, Download, FileSpreadsheet, Gauge, ListTodo, RefreshCw, SearchX, Timer, UsersRound, X, Zap } from 'lucide-react';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import AuthContext from '../context/AuthContext';
 import DepartmentContext from '../context/DepartmentContext';

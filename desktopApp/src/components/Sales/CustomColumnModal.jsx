@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { X, Plus, Trash2, ArrowUp, ArrowDown, Edit2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { X, Trash2, Edit2 } from 'lucide-react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { toDateKey } from '../../../utils/leaveDateKey';
 import * as leaveApi from '../../../services/leaveApi';

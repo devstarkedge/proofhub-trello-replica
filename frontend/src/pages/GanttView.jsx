@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import DepartmentContext from '../context/DepartmentContext';
 import Database from '../services/database';
-
 
 const GanttView = () => {
   const { currentTeam } = useContext(DepartmentContext);

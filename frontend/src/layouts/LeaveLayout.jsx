@@ -1,4 +1,4 @@
-import React, { useContext, useEffect } from 'react';
+import { useContext, useEffect } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { CalendarDays } from 'lucide-react';
 import AuthContext from '../context/AuthContext';

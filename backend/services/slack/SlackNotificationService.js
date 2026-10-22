@@ -6,8 +6,8 @@
 
 import SlackWorkspace from '../../models/SlackWorkspace.js';
 import SlackUser from '../../models/SlackUser.js';
-import SlackNotification from '../../models/SlackNotification.js';
-import SlackApiClient from './SlackApiClient.js';
+import '../../models/SlackNotification.js';
+import './SlackApiClient.js';
 import SlackBlockKitBuilder from './SlackBlockKitBuilder.js';
 import {
   queueNotification,

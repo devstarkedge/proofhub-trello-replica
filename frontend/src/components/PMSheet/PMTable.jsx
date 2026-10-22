@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { ChevronUp, ChevronDown, ArrowUpDown, Search, Download, Loader2 } from 'lucide-react';
 
 /**

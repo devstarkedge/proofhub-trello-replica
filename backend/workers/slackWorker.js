@@ -19,7 +19,7 @@ import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 import SlackUser from '../models/SlackUser.js';
 import { processBatch, processDigest } from '../services/slack/index.js';
 import { scheduleDigestJob } from '../schedulers/slackDigestScheduler.js';
-import { scheduleQuietHoursFlush, scheduleBatchFlush } from '../schedulers/slackBatchScheduler.js';
+import { scheduleQuietHoursFlush } from '../schedulers/slackBatchScheduler.js';
 
 const JOB_HANDLERS = {
   /**

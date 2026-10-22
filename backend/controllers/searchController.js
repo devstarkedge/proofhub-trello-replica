@@ -3,7 +3,7 @@ import { literalSearch } from '../utils/literalSearch.js';
 import Card from "../models/Card.js";
 import Board from "../models/Board.js";
 import User from "../models/User.js";
-import Department from "../models/Department.js";
+import "../models/Department.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 
 // @desc    Global search

@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 
 const DATE_OPTIONS = [
   { value: 'any', label: 'Any' },

@@ -1,6 +1,6 @@
-import React, { Suspense, lazy, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
-import { Ban, Blocks, Clock, Loader2, Search, Shield, ShieldCheck, UserCog, Users, X } from 'lucide-react';
+import { Ban, Blocks, Clock, Loader2, Search, Shield, ShieldCheck, UserCog, Users } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import WorkspaceContext from '../context/WorkspaceContext';
 import api from '../services/api';

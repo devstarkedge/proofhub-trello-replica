@@ -1,12 +1,7 @@
-import React, { memo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Brain, TrendingUp, TrendingDown, AlertTriangle, Award, Target,
-  Lightbulb, AlertCircle, CheckCircle2, XCircle, Clock, Users,
-  Zap, Activity, BarChart3, Info, ChevronRight, X, Flame,
-  Heart, Coffee, Sparkles
-} from 'lucide-react';
-import { Badge } from '../ui/badge';
+import { memo } from 'react';
+import { motion } from 'framer-motion';
+import { Brain, TrendingUp, TrendingDown, AlertTriangle, Award, Lightbulb, AlertCircle, CheckCircle2, Clock, Users, Zap, Activity, Info, ChevronRight, X, Flame, Heart, Coffee, Sparkles } from 'lucide-react';
+
 import { Button } from '../ui/button';
 
 // AI Analysis Card

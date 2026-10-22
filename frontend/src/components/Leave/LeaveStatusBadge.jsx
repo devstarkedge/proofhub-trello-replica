@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 
 // Backed by the semantic theme tokens (--color-success/warning/error/info),
 // not hardcoded hex — the CSS variable itself is redefined per light/dark

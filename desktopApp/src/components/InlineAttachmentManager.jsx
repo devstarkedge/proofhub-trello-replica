@@ -1,5 +1,5 @@
-import React, { useMemo, useCallback, useState, memo, lazy, Suspense } from 'react';
-import { X, Loader2, File, FileText, FileImage, FileSpreadsheet, Film, RefreshCw, AlertCircle } from 'lucide-react';
+import { useMemo, useCallback, useState, memo, lazy, Suspense } from 'react';
+import { X, Loader2, File, FileText, FileImage, FileSpreadsheet, Film, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useAttachmentStore, { getEntityKey } from '../store/attachmentStore';
 import DeletePopup from './ui/DeletePopup';

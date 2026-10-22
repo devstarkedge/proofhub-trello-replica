@@ -6,7 +6,7 @@ import User from '../models/User.js';
 import Workspace from '../models/Workspace.js';
 import Department from '../models/Department.js';
 import Team from '../models/Team.js';
-import Notification from '../models/Notification.js';
+import '../models/Notification.js';
 import Role from '../models/Role.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
@@ -14,11 +14,7 @@ import { sendEmail, sendPasswordResetEmail } from '../utils/email.js';
 import notificationService from '../utils/notificationService.js';
 import { chatHooks } from '../utils/chatHooks.js';
 import config from '../config/index.js';
-import {
-  runBackground,
-  sendEmailInBackground,
-  createNotificationInBackground
-} from '../utils/backgroundTasks.js';
+import { runBackground } from '../utils/backgroundTasks.js';
 import { ensureDefaultWorkspace } from '../modules/permissions/workspaceService.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 import { syncMembershipFromUser } from '../modules/workspaces/membershipSyncService.js';

@@ -1,9 +1,6 @@
-import React, { memo, useState, useCallback, useRef, useEffect } from 'react';
+import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Search, X, Calendar, User, FileText,
-  ChevronDown, Filter, SlidersHorizontal
-} from 'lucide-react';
+import { Search, X, Calendar, User, ChevronDown, Filter, SlidersHorizontal } from 'lucide-react';
 
 /**
  * CalendarSearch - Global search for reminders with filters

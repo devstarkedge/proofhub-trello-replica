@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { toast } from 'react-toastify';
 import { Clock, Mail, RotateCw, Ban, Loader, AlertTriangle, Building2 } from 'lucide-react';
 import { resendInvitation, revokeInvitation } from '../../../services/invitationManagementApi';

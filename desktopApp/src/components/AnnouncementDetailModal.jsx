@@ -1,25 +1,5 @@
 import React, { useState, useContext, useMemo } from "react";
-import {
-  X,
-  MessageCircle,
-  Send,
-  Trash2,
-  Clock,
-  Calendar,
-  Share2,
-  Download,
-  ExternalLink,
-  FileText,
-  Image,
-  File,
-  Copy,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  ZoomIn,
-  ZoomOut,
-  Maximize2,
-} from "lucide-react";
+import { X, MessageCircle, Send, Trash2, Clock, Calendar, Download, ExternalLink, FileText, Image, File, Copy, Check, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { formatDistanceToNow, format as formatDate } from "date-fns";
 import { toast } from "react-toastify";
 import AuthContext from "../context/AuthContext";

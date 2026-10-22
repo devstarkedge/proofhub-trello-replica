@@ -1,10 +1,7 @@
 import React, { useEffect, useCallback, memo, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  CheckSquare, Clock, Activity, FolderKanban, Megaphone,
-  ChevronRight, RefreshCw, AlertCircle, TrendingUp
-} from 'lucide-react';
+import { CheckSquare, Clock, Activity, RefreshCw, TrendingUp } from 'lucide-react';
 import useMyShortcutsStore from '../store/myShortcutsStore';
 import socketService from '../services/socket';
 import { useAnnouncementActions } from '../hooks/useAnnouncementActions';

@@ -1,9 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  X, RefreshCw, Calendar, Clock, Check, ChevronDown, ChevronUp,
-  Sun, Moon, Repeat, Trash2, Save, AlertCircle
-} from 'lucide-react';
+import { X, RefreshCw, Calendar, Clock, Check, ChevronDown, ChevronUp, Sun, Repeat, Trash2, Save, AlertCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 const DAYS_OF_WEEK = [

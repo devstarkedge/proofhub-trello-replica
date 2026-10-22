@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, Calendar, Plus, Trash2 } from 'lucide-react';
 import { createEmptyMilestone, moneyToCents } from '../utils/milestones';
 import DatePickerModal from './DatePickerModal';

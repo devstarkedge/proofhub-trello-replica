@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { toast } from 'react-toastify';
 import { ArrowLeft, Loader, Send } from 'lucide-react';
 import { inviteMemberSelfRegister } from '../../../services/memberInvitationApi';

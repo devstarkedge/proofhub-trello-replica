@@ -1,11 +1,8 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactCrop, { centerCrop, makeAspectCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
-import { 
-  X, Upload, Loader2, ZoomIn, ZoomOut, RotateCcw, 
-  Check, HardDrive, AlertCircle
-} from 'lucide-react';
+import { X, Loader2, ZoomIn, ZoomOut, RotateCcw, Check, HardDrive, AlertCircle } from 'lucide-react';
 import useAvatar from '../hooks/useAvatar';
 import useGoogleDrivePicker from '../hooks/useGoogleDrivePicker';
 import Avatar from './Avatar';

@@ -2,7 +2,7 @@ import { useContext } from 'react';
 import WorkspaceContext from '../../context/WorkspaceContext';
 import { workspaceDateKey } from '../../utils/workspaceDateRange';
 import { formatHours } from '../../utils/duration';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import DayStatusIndicator from './DayStatusIndicator';
 import LeaveCalendarEventPopover from './LeaveCalendarEventPopover';

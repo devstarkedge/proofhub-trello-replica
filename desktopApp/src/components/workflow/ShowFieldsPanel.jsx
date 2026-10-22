@@ -1,4 +1,4 @@
-import React, { memo, useRef, useEffect } from 'react';
+import { memo, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, RotateCcw, Eye } from 'lucide-react';
 import useFieldVisibilityStore, { FIELD_DEFINITIONS } from '../../store/fieldVisibilityStore';

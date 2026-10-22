@@ -1,12 +1,7 @@
-import React, { useState, useEffect, useContext, useCallback, useMemo, memo } from 'react';
+import { useState, useEffect, useContext, useCallback, useMemo, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Bell, Calendar, Clock, CheckCircle2, AlertCircle, AlertTriangle,
-  Send, Trash2, Eye, RefreshCw, Filter, ChevronDown, Search,
-  BarChart3, TrendingUp, Users, Loader, X, Mail, Phone, User,
-  CalendarDays, List
-} from 'lucide-react';
-import ReminderCalendar from '../components/ReminderCalendar';
+import { Bell, Calendar, Clock, CheckCircle2, AlertCircle, AlertTriangle, Send, Trash2, Eye, RefreshCw, Filter, ChevronDown, Search, BarChart3, TrendingUp, X, Mail, Phone, User, CalendarDays, List } from 'lucide-react';
+
 import { ModernCalendarGrid } from '../components/calendar';
 import { ClientRemindersSkeleton } from '../components/LoadingSkeleton';
 import ReminderModal from '../components/ReminderModal';

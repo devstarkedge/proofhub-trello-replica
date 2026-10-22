@@ -20,7 +20,7 @@ import {
 } from './leaveTimezone.util.js';
 import { getEffectiveEmploymentProfile } from './leaveEmployeeProfile.service.js';
 import { computeAccrualForPeriod } from './leaveAccrual.service.js';
-import { creditBucket } from './leaveBalance.service.js';
+import './leaveBalance.service.js';
 
 const SPECIFICITY_RANK = { employee: 3, role: 2, department: 1, workspace: 0 };
 

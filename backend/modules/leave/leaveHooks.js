@@ -17,7 +17,7 @@ import { getActiveWorkspaceId } from '../workspaces/workspaceContext.js';
 import { evaluateAndDeliver, evaluateAndDeliverBulk } from '../../services/notifications/NotificationDecisionEngine.js';
 import { emitToUser, emitToUsers } from '../../realtime/emitters.js';
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
-import { resolveActiveMembersByRole } from './leaveApprovalAudience.service.js';
+import './leaveApprovalAudience.service.js';
 import { canViewLeaveRequest } from './leaveAuthorization.service.js';
 
 const entityFor = (request) => ({ type: 'LeaveRequest', id: request._id || request.id });

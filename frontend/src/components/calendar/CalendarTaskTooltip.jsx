@@ -1,14 +1,6 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { motion } from 'framer-motion';
-import {
-  Calendar,
-  User,
-  FolderOpen,
-  Clock,
-  AlertCircle,
-  CheckCircle2,
-  ArrowRight
-} from 'lucide-react';
+import { Calendar, User, FolderOpen, Clock, AlertCircle, ArrowRight } from 'lucide-react';
 
 const CalendarTaskTooltip = memo(({ task, position = { x: 0, y: 0 } }) => {
   if (!task) return null;

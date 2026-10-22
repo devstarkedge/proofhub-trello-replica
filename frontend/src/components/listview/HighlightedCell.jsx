@@ -1,4 +1,4 @@
-import React, { memo, useMemo } from 'react';
+import { memo, useMemo } from 'react';
 
 /**
  * Wraps text content and highlights matching search terms with a <mark> tag.

@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 
 const PRIORITIES = [
   { value: 'critical', label: 'Critical', color: 'bg-red-600' },

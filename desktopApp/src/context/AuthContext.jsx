@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, useCallback, useRef } from "react";
+import { createContext, useState, useEffect, useCallback, useRef } from "react";
 import api from "../services/api";
 import socketService from "../services/socket";
 import { BACKEND_UNAVAILABLE_MESSAGE, getSafeAuthDiagnostic, isAuthenticationRejection, isTransientBackendError } from "../services/authErrors";

@@ -1,6 +1,6 @@
 import WorkspaceContext from '../../context/WorkspaceContext';
 import { MONTHS, workspaceDateKey } from '../../utils/workspaceDateRange';
-import React, { useContext, useEffect, useMemo, useState } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import { Button } from '../ui/button';
 import LeaveTypeAllocationCards from './LeaveTypeAllocationCards';
 import { ruleFromVersion, buildLeaveTypeRulesPayload } from '../../utils/leavePolicyRules';
@@ -8,7 +8,6 @@ import * as leaveApi from '../../services/leaveApi';
 
 const inputClass = 'w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-border-focus)]';
 const inputStyle = { backgroundColor: 'var(--color-bg-base)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' };
-
 
 /**
  * Full policy configuration form — name/description, a policy start

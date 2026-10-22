@@ -1,10 +1,7 @@
-import React, { memo, useState, useCallback } from 'react';
+import { memo, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  CheckSquare, ChevronRight, ChevronDown, RefreshCw, 
-  AlertCircle, Calendar, FolderKanban, Clock 
-} from 'lucide-react';
+import { CheckSquare, ChevronRight, ChevronDown, RefreshCw, AlertCircle, FolderKanban, Clock } from 'lucide-react';
 import useMyShortcutsStore from '../../store/myShortcutsStore';
 
 const MyTasksSection = () => {

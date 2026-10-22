@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { FolderKanban, ChevronRight, RefreshCw, AlertCircle } from 'lucide-react';

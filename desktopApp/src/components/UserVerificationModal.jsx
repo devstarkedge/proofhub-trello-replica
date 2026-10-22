@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import Database from '../services/database';
 import useRoleStore from '../store/roleStore';
 import AuthContext from '../context/AuthContext';
@@ -463,7 +463,6 @@ const UserVerificationModal = ({ notification, request, onClose, onAction }) => 
             </div>
           </div>
 
-          
           {/* Restricted Access Tooltip */}
           {restrictedAction.show && (
             <div 

@@ -1,9 +1,6 @@
 import React, { memo, useState, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
-import {
-  Download, FileSpreadsheet, FileText, Printer,
-  Loader, Check, X, ChevronDown
-} from 'lucide-react';
+import { Download, FileSpreadsheet, FileText, Printer, Loader, ChevronDown } from 'lucide-react';
 import { toast } from 'react-toastify';
 import * as XLSX from 'xlsx';
 

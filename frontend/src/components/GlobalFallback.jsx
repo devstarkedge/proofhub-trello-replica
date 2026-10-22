@@ -1,6 +1,6 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { Construction, AlertTriangle, FileQuestion, ArrowLeft, Home, Sparkles, Bell, Send } from "lucide-react";
+import { Construction, AlertTriangle, ArrowLeft, Home, Sparkles, Bell, Send } from "lucide-react";
 import { motion } from "framer-motion";
 
 /**

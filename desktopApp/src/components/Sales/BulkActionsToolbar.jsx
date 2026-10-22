@@ -1,5 +1,5 @@
-import React from 'react';
-import { Trash2, Edit } from 'lucide-react';
+
+import { Trash2 } from 'lucide-react';
 import useSalesStore from '../../store/salesStore';
 
 const BulkActionsToolbar = ({ permissions }) => {

@@ -1,5 +1,5 @@
-import React, { memo, useRef, useEffect, useCallback, useState } from 'react';
-import { Search, X, Command } from 'lucide-react';
+import { memo, useRef, useEffect, useCallback, useState } from 'react';
+import { Search, X } from 'lucide-react';
 import useSmartSearchStore from '../../store/smartSearchStore';
 import SearchFieldDropdown from './SearchFieldDropdown';
 import SearchSuggestionDropdown from './SearchSuggestionDropdown';

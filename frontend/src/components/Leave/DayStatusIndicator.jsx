@@ -1,4 +1,4 @@
-import React from 'react';
+
 
 /**
  * Shared by LeaveCalendarGrid and the Teams/TeamLoggedTimeView overlay —

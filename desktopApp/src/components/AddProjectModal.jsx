@@ -3,25 +3,18 @@
 import { useState, useEffect, useCallback, useMemo, memo, useRef, useContext } from "react";
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  X, Plus, AlertCircle, Loader, Calendar, Users, DollarSign,
-  Link2, FileText, Briefcase, Clock, Globe, Mail, Phone, Tag,
-  CheckCircle2, ChevronDown, ChevronLeft, Shield, User, Crown, Search, Image,
-  Maximize2, Minimize2, Info, Paperclip, ArrowRight, Trash2, Building2
-} from "lucide-react";
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "./ui/select";
-import { Badge } from "./ui/badge";
+import { X, Loader, Users, FileText, Briefcase, Globe, CheckCircle2, ChevronDown, ChevronLeft, Shield, Image, Maximize2, Minimize2, Paperclip, Building2 } from "lucide-react";
+
 import { toast } from "react-toastify";
 import { clientDetailsFromForm, validateProjectClient } from '../../../shared/projectClient.mjs';
 import Database from "../services/database";
-import ReactCountryFlag from "react-country-flag";
+
 import CoverImageUploader from "./CoverImageUploader";
-import EnterpriseFileUploader from "./EnterpriseFileUploader";
+
 import AuthContext from '../context/AuthContext';
-import ProjectOptionsDropdown from './ProjectOptionsDropdown';
+
 import DatePickerModal from "./DatePickerModal";
-import RichTextEditor from './RichTextEditor';
-import MilestoneScheduleEditor from './MilestoneScheduleEditor';
+
 import { createEmptyMilestone, validateMilestoneSchedule } from '../utils/milestones';
 import BasicInfoSection from './ProjectModals/sections/BasicInfoSection';
 import ProjectDetailsSection from './ProjectModals/sections/ProjectDetailsSection';
@@ -109,7 +102,6 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
   const categoryDropdownRef = useRef(null);
   const visibilityDropdownRef = useRef(null);
   const projectTypeDropdownRef = useRef(null);
-
 
   // Filter countries
   const filteredCountries = useMemo(() => {

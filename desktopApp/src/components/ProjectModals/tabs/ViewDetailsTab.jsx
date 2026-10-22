@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { FileText, Calendar, Clock, Globe, DollarSign, Mail, Image as ImageIcon } from 'lucide-react';
 import HtmlContent from '../../ui/HtmlContent';
 

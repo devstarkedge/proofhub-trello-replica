@@ -1,5 +1,5 @@
-import React, { memo, useEffect, useRef } from 'react';
-import { Tag, FolderKanban, Users, Zap, Target, Search, History, Loader2, SearchX, Trash2 } from 'lucide-react';
+import { memo, useEffect, useRef } from 'react';
+import { Tag, FolderKanban, Users, Zap, Target, Search, History, SearchX, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useSmartSearchStore from '../../store/smartSearchStore';
 

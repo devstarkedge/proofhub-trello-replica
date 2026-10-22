@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { motion } from 'framer-motion';
 import { Megaphone, Pin, ChevronRight, RefreshCw, AlertCircle, Calendar } from 'lucide-react';
 import useMyShortcutsStore from '../../store/myShortcutsStore';
@@ -121,7 +121,6 @@ const AnnouncementsSection = ({ onAnnouncementClick }) => {
                     <p>
                       <span className="font-medium">Category:</span> {announcement.category}
                     </p>
-
 
                     <p className="text-xs text-gray-400">
                       {new Date(announcement.createdAt).toLocaleTimeString([], {

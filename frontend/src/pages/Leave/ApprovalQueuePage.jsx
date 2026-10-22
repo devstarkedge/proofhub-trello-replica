@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { Navigate, useLocation, useParams } from 'react-router-dom';
 import { leaveApprovalRedirect } from '../../utils/leaveNavigation';
 

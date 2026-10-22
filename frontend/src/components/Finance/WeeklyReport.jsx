@@ -1,16 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import {
-  Calendar,
-  Clock,
-  DollarSign,
-  ChevronDown,
-  ChevronRight,
-  Users,
-  FolderKanban,
-  AlertCircle,
-  RefreshCw,
-  Building2
-} from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Calendar, ChevronDown, ChevronRight, Users, FolderKanban, AlertCircle, RefreshCw } from 'lucide-react';
 import api from '../../services/api';
 import ProjectWorkflowLink from './ProjectWorkflowLink';
 import BillingTypeFilter from './BillingTypeFilter';

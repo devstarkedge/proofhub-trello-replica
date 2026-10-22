@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import { useRef } from 'react';
 import { AlertTriangle, ArrowRight, Ban, Check, ShieldCheck, ShieldOff, ShieldQuestion, X } from 'lucide-react';
 import useConfirmModalStore from '../../store/confirmModalStore';
 import useModalFocus from '../../hooks/useModalFocus';

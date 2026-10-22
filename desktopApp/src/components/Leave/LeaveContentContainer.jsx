@@ -1,4 +1,4 @@
-import React from 'react';
+
 
 const LeaveContentContainer = ({ children, className = '' }) => {
   const hasCustomPy = className.includes('!py-') || className.includes('py-');

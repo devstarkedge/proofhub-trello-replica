@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useRef, useCallback } from 'react';
+import { useState, useEffect, useContext, useRef, useCallback } from 'react';
 import { useSearchParams, useLocation } from 'react-router-dom';
 import { Bell, Plus, Search, Filter, Archive, Sparkles, TrendingUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -8,7 +8,7 @@ import announcementService from '../services/announcementService.js';
 import AnnouncementCard from '../components/AnnouncementCard';
 import CreateAnnouncementModal from '../components/CreateAnnouncementModal';
 import AnnouncementDetailModal from '../components/AnnouncementDetailModal';
-import Loading from '../components/Loading';
+
 import { AnnouncementsListSkeleton } from '../components/LoadingSkeleton';
 import { useAnnouncementActions } from '../hooks/useAnnouncementActions';
 import socketService from '../services/socket';
@@ -32,7 +32,6 @@ const Announcements = () => {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [sortBy, setSortBy] = useState('latest');
   const [showArchived, setShowArchived] = useState(false);
-
 
   const seenAnnouncementsRef = useRef(new Set()); // Track which announcements have been marked as seen
 
@@ -378,8 +377,6 @@ const Announcements = () => {
       deleteAttachment, // We can use the hook's deleteAttachment or the local one. The hook is better.
       loadingAction
   } = useAnnouncementActions(handleAnnouncementActionSuccess);
-
-
 
 
 

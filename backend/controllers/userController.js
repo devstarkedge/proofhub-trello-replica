@@ -6,34 +6,25 @@ import { strictUpdate } from '../utils/strictUpdate.js';
 import User from '../models/User.js';
 import WorkspaceMembership from '../models/WorkspaceMembership.js';
 import Role from '../models/Role.js';
-import UserPermission, {
-  FINANCE_PAGE_KEY,
-  FULL_FINANCE_PERMISSIONS,
-  normalizePermissionRole
-} from '../models/UserPermission.js';
-import AccessOverride from '../models/AccessOverride.js';
+import { FINANCE_PAGE_KEY, FULL_FINANCE_PERMISSIONS, normalizePermissionRole } from '../models/UserPermission.js';
+import '../models/AccessOverride.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
-import { sendVerificationEmail } from '../utils/email.js';
-import notificationService from '../utils/notificationService.js';
-import { chatHooks } from '../utils/chatHooks.js';
-import { invalidateAuthCache } from '../middleware/authMiddleware.js';
+import '../utils/email.js';
+import '../utils/notificationService.js';
+import '../utils/chatHooks.js';
+import '../middleware/authMiddleware.js';
 import { emitToUser } from '../realtime/index.js';
 import { resolveResourceAccess } from '../modules/permissions/permissionEngine.js';
 import { setResourceOverride } from '../modules/permissions/accessControlService.js';
 import { toLegacyShape, fromLegacyShape } from '../config/permissionRegistry.js';
-import { recordAuditLog } from '../modules/permissions/auditLogService.js';
-import { syncMembershipFromUser, isActiveWorkspaceMember } from '../modules/workspaces/membershipSyncService.js';
-import { assertCustomRoleAssignable } from '../modules/workspaces/roleTypeGuard.js';
+import '../modules/permissions/auditLogService.js';
+import { isActiveWorkspaceMember } from '../modules/workspaces/membershipSyncService.js';
+import '../modules/workspaces/roleTypeGuard.js';
 import { publishUserProfileUpdate } from '../services/chat/userProfileSync.js';
 
 const ROLE_OPTIONS_FOR_FINANCE_ACCESS = ['admin', 'manager', 'employee', 'hr'];
 
-const ACCESS_SCOPE_LABELS = {
-  full_department: 'Full Dept',
-  selected_projects: 'Selected',
-  assigned_tasks: 'My Tasks'
-};
 
 const normalizePageKey = (pageKey) => String(pageKey || FINANCE_PAGE_KEY).toLowerCase().trim();
 
