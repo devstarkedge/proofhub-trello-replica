@@ -8,7 +8,7 @@ import { processAllAttendanceEvents } from '../modules/attendance/attendanceEven
  *   - cleanup-boards          : permanently delete soft-deleted boards
  *   - cleanup-queues          : purge old completed/failed BullMQ jobs from Redis
  */
-import { Worker } from 'bullmq';
+import { Worker } from '../queues/runtime.js';
 import { getWorkerConnection } from '../queues/connection.js';
 import { cleanupTrashedAttachments } from '../utils/trashCleanup.js';
 import { cleanupExpiredArchivedCards } from '../utils/archiveCleanup.js';
@@ -65,6 +65,7 @@ const JOB_HANDLERS = {
 let cleanupWorker = null;
 
 export function startCleanupWorker() {
+  if (cleanupWorker && !cleanupWorker.closing) return cleanupWorker;
   cleanupWorker = new Worker(
     'flowtask.cleanup',
     async (job) => {

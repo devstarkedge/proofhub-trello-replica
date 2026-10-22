@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Fingerprint } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import LeaveContentContainer from '../components/Leave/LeaveContentContainer';
+import useRegularizationApprovalLive from '../hooks/useRegularizationApprovalLive';
 
 const MAIN_ATTENDANCE_ROUTES = ['/attendance', '/attendance/my', '/attendance/team', '/attendance/approvals'];
 
@@ -11,6 +12,7 @@ const AttendanceLayout = () => {
   const location = useLocation();
   const role = (user?.role || '').toLowerCase();
   const isSettings = location.pathname.startsWith('/attendance/settings');
+  const { pendingCount: regularizationPendingCount } = useRegularizationApprovalLive();
 
   useEffect(() => {
     if (MAIN_ATTENDANCE_ROUTES.includes(location.pathname)) {
@@ -27,7 +29,14 @@ const AttendanceLayout = () => {
     // (attendanceAuthorization.service.js) remains the sole real gate
     // either way, since TeamAttendancePage resolves its own access itself.
     { label: 'Team Attendance', to: '/attendance/team', visible: ['manager', 'hr', 'admin'].includes(role) },
-    { label: 'Approvals', to: '/attendance/approvals', visible: ['manager', 'hr', 'admin'].includes(role) },
+    {
+      label: 'Approvals',
+      to: '/attendance/approvals',
+      visible: ['manager', 'hr', 'admin'].includes(role),
+      badge: (['admin', 'manager', 'hr'].includes(role) && regularizationPendingCount > 0)
+        ? regularizationPendingCount
+        : null
+    },
     { label: 'Settings', to: '/attendance/settings', visible: ['hr', 'admin'].includes(role), settings: true }
   ].filter((tab) => tab.visible);
 
@@ -59,12 +68,20 @@ const AttendanceLayout = () => {
                     key={tab.to}
                     to={tab.to}
                     state={tab.settings ? { fromAttendance: location.pathname } : undefined}
-                    className="flex-none whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors"
+                    className="flex-none whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors inline-flex items-center gap-1.5"
                     style={({ isActive }) => isActive
                       ? { backgroundColor: 'var(--color-primary-subtle)', color: 'var(--color-primary-600)' }
                       : { color: 'var(--color-text-secondary)' }}
                   >
-                    {tab.label}
+                    <span>{tab.label}</span>
+                    {Boolean(tab.badge) && (
+                      <span
+                        className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[11px] font-bold text-white rounded-full leading-none shadow-sm"
+                        style={{ background: 'linear-gradient(135deg, #ef4444, #ec4899)' }}
+                      >
+                        {tab.badge > 99 ? '99+' : tab.badge}
+                      </span>
+                    )}
                   </NavLink>
                 ))}
               </nav>

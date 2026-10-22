@@ -9,7 +9,7 @@
  *   - reconcile-watch-baseline — seed/refresh SalesTabWatchState so a tab whose watch just
  *                                turned on (or whose filters just changed) doesn't flood
  */
-import { Worker } from 'bullmq';
+import { Worker } from '../queues/runtime.js';
 import { getWorkerConnection } from '../queues/connection.js';
 import {
   evaluateNewRow,
@@ -35,7 +35,7 @@ async function deliverIfDue(events) {
 let _worker = null;
 
 export function startSalesAlertWorker() {
-  if (_worker) return _worker;
+  if (_worker && !_worker.closing) return _worker;
 
   _worker = new Worker(
     'flowtask.sales-alert',

@@ -1,4 +1,4 @@
-import { UnrecoverableError, Worker } from 'bullmq';
+import { UnrecoverableError, Worker } from '../queues/runtime.js';
 import { getWorkerConnection } from '../queues/connection.js';
 import axios from 'axios';
 import crypto from 'crypto';
@@ -32,7 +32,7 @@ function describeError(err) {
 let _worker = null;
 
 export function startChatWebhookWorker(options = { concurrency: 5 }) {
-  if (_worker) return _worker;
+  if (_worker && !_worker.closing) return _worker;
 
   _worker = new Worker('chat-webhooks', async (job) => {
     const { eventName, payload, deliveryId = job.id.toString(), webhookUrl: jobWebhookUrl } = job.data;

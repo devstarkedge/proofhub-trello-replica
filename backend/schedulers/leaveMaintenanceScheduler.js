@@ -8,11 +8,9 @@
  * re-registering on every boot and firing an immediate run alongside the
  * repeat schedule is always safe, never a double-credit/double-expire.
  *
- * BullMQ-based jobs do not run at all while Redis is unavailable (no
- * setImmediate fallback, unlike email/notifications) — registerLeaveMaintenanceJobs
- * is only called from queueManager.initQueues() when Redis is confirmed up.
- * runLeaveAccrualCatchUp() is the independent, non-blocking safety net for
- * the "Redis was down" gap; see server.js.
+ * The queue runtime runs these schedules locally outside production and uses
+ * durable Redis jobs in production. runLeaveAccrualCatchUp() is an independent
+ * non-blocking boot-time safety net; see server.js.
  */
 import { leaveQueue } from '../queues/index.js';
 import { runMonthlyAccrualForAllWorkspaces } from '../modules/leave/leaveAccrual.service.js';

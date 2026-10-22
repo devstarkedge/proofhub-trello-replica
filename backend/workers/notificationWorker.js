@@ -6,7 +6,7 @@
  *            notify-project-created, notify-user-registered,
  *            notify-user-created, send-push
  */
-import { Worker } from 'bullmq';
+import { Worker } from '../queues/runtime.js';
 import { getWorkerConnection } from '../queues/connection.js';
 import notificationService from '../utils/notificationService.js';
 import { sendPushNotification } from '../utils/pushNotification.js';
@@ -237,6 +237,7 @@ const JOB_HANDLERS = {
 let notificationWorker = null;
 
 export function startNotificationWorker() {
+  if (notificationWorker && !notificationWorker.closing) return notificationWorker;
   notificationWorker = new Worker(
     'flowtask.notification',
     async (job) => {

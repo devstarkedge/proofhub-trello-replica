@@ -1,13 +1,13 @@
 /**
- * BullMQ Queue Definitions
+ * Queue Definitions
  * 
- * All application queues in one place. Each queue uses the shared Redis
- * connection (publishing side). Workers create their own connections.
+ * All application queues use the selected runtime: local execution outside
+ * production, or shared Redis commands with dedicated blocking worker sockets.
  * 
- * Queue naming: 'flowtask:<domain>' to namespace cleanly.
+ * Queue naming: 'flowtask.<domain>'.
  */
-import { Queue } from 'bullmq';
-import { getSharedConnection, logQueueErrors } from './connection.js';
+import { Queue } from './runtime.js';
+import chatWebhookQueue from './chatWebhookQueue.js';
 import config from '../config/index.js';
 
 const defaultJobOptions = {
@@ -20,10 +20,9 @@ const defaultJobOptions = {
 // ─── Queue Factory ────────────────────────────────────────────────────────────
 
 function createQueue(name, opts = {}) {
-  return logQueueErrors(new Queue(name, {
-    connection: getSharedConnection(),
+  return new Queue(name, {
     defaultJobOptions: { ...defaultJobOptions, ...opts },
-  }));
+  });
 }
 
 // ─── Queue Instances ──────────────────────────────────────────────────────────
@@ -157,6 +156,7 @@ export function enqueueSalesTabReconcile(tabId, opts = {}) {
 // ─── Export all queues for health checks / shutdown ───────────────────────────
 
 export const allQueues = [
+  chatWebhookQueue,
   emailQueue,
   notificationQueue,
   activityQueue,

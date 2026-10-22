@@ -12,7 +12,7 @@
  *
  * Job types: flush-quiet-hours-batch, flush-scheduled-batch, send-slack-digest
  */
-import { Worker } from 'bullmq';
+import { Worker } from '../queues/runtime.js';
 import { getWorkerConnection } from '../queues/connection.js';
 import config from '../config/index.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
@@ -109,6 +109,7 @@ const JOB_HANDLERS = {
 let slackWorker = null;
 
 export function startSlackWorker() {
+  if (slackWorker && !slackWorker.closing) return slackWorker;
   slackWorker = new Worker(
     'flowtask.slack',
     async (job) => {

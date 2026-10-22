@@ -8,6 +8,7 @@
  */
 
 import dotenv from 'dotenv';
+import { redisConfig } from './redis.js';
 dotenv.config();
 
 const env = process.env.NODE_ENV || 'development';
@@ -76,13 +77,7 @@ const config = {
   },
 
   // Redis (for BullMQ, rate limiting, Socket.IO adapter)
-  redis: {
-    url: process.env.REDIS_URL || null, // takes precedence over host/port/password when set
-    host: process.env.REDIS_HOST || 'localhost',
-    port: parseInt(process.env.REDIS_PORT, 10) || 6379,
-    password: process.env.REDIS_PASSWORD || undefined,
-    maxRetriesPerRequest: null, // Required by BullMQ
-  },
+  redis: redisConfig(process.env),
 
   // Authentication
   jwt: {
@@ -92,6 +87,7 @@ const config = {
 
   // Auth cache (in-memory LRU)
   authCache: {
+    enabled: isProd,
     maxSize: parseInt(process.env.AUTH_CACHE_MAX_SIZE, 10) || 1000,
     ttlMs: parseInt(process.env.AUTH_CACHE_TTL_MS, 10) || 60000, // 60 seconds
   },

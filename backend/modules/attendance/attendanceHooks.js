@@ -119,9 +119,14 @@ export async function onRegularizationApprovalRequired(request, approvalLevels, 
 }
 
 export async function onRegularizationDecided(result, decidingActor) {
-  const { entity: request, approval } = result;
+  const { entity: request, approval, allLevels = [] } = result;
   const decidedByUserId = decidingActor._id || decidingActor.id;
   emitToUser(request.requester, EVENTS.REGULARIZATION_DECIDED, { request, finalOutcome: result.finalOutcome });
+
+  const approverIds = Array.from(new Set(allLevels.flatMap((level) => (level.eligibleApproverUserIds || []).map(String))));
+  if (approverIds.length) {
+    emitToUsers(approverIds, EVENTS.REGULARIZATION_DECIDED, { request, approvalId: approval?._id, finalOutcome: result.finalOutcome });
+  }
 
   if (!result.finalOutcome) return;
   const approved = result.finalOutcome === 'APPROVED';

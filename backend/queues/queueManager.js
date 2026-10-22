@@ -1,7 +1,7 @@
 /**
  * Queue Manager
  *
- * Initializes all BullMQ workers, registers maintenance repeat jobs,
+ * Initializes production or local workers, registers maintenance repeat jobs,
  * and runs recovery scans for event-driven schedulers.
  * Provides graceful shutdown for all queues and workers.
  *
@@ -11,7 +11,8 @@
  *   await shutdownQueues();      // call on SIGTERM/SIGINT
  */
 import { allQueues, announcementQueue } from './index.js';
-import { closeSharedConnection, createRedisConnection, stopSharedConnectionRetries } from './connection.js';
+import { closeSharedConnection, connectRedis, withTimeout } from './connection.js';
+import config from '../config/index.js';
 import { startEmailWorker, getEmailWorker } from '../workers/emailWorker.js';
 import { startNotificationWorker, getNotificationWorker } from '../workers/notificationWorker.js';
 import { startActivityWorker, getActivityWorker } from '../workers/activityWorker.js';
@@ -24,7 +25,7 @@ import { startSlackWorker, getSlackWorker } from '../workers/slackWorker.js';
 import { startLeaveWorker, getLeaveWorker } from '../workers/leaveWorker.js';
 import { registerMaintenanceJobs } from '../schedulers/maintenanceScheduler.js';
 import { registerLeaveMaintenanceJobs } from '../schedulers/leaveMaintenanceScheduler.js';
-import { registerAttendanceMaintenanceJobs, startInProcessAttendanceSweeper, stopInProcessAttendanceSweeper } from '../schedulers/attendanceMaintenanceScheduler.js';
+import { registerAttendanceMaintenanceJobs } from '../schedulers/attendanceMaintenanceScheduler.js';
 import { recoverAnnouncementSchedules } from '../schedulers/announcementScheduler.js';
 import { recoverRecurringSchedules } from '../schedulers/recurringTaskScheduler.js';
 import { recoverReminderSchedules } from '../schedulers/reminderScheduler.js';
@@ -35,32 +36,8 @@ import { recoverLeaveApprovalReminderSchedules } from '../schedulers/leaveRemind
 import logger from '../utils/logger.js';
 
 let _initialized = false;
-let _redisAvailable = false;
-
-/**
- * Probe Redis availability without crashing if Redis is down.
- */
-async function probeRedis() {
-  let probe = null;
-  try {
-    probe = createRedisConnection({ lazyConnect: true, enableOfflineQueue: false });
-    probe.on('error', () => {});
-    await probe.connect();
-    await Promise.race([
-      probe.ping(),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Redis probe timeout')), 3000)
-      ),
-    ]);
-    return true;
-  } catch {
-    return false;
-  } finally {
-    if (probe) {
-      try { await probe.quit(); } catch { probe.disconnect(); }
-    }
-  }
-}
+let _accepting = false;
+let _initializing = null;
 
 /**
  * Remove repeatable jobs that no longer have handlers (left over from the
@@ -103,120 +80,60 @@ async function removeStaleRepeatableJobs() {
 }
 
 /**
- * Initialize all BullMQ workers, register maintenance jobs, and run recovery scans.
+ * Initialize all workers, register maintenance jobs, and run recovery scans.
  */
 export async function initQueues() {
-  if (_initialized) return _redisAvailable;
-
-  _redisAvailable = await probeRedis();
-
-  if (!_redisAvailable) {
-    logger.warn('QueueManager: Redis not available — falling back to in-process background tasks');
-    // Queues opened the shared connection on import; stop its retry loop.
-    stopSharedConnectionRetries();
-    startInProcessAttendanceSweeper();
-    _initialized = true;
-    return false;
-  }
-
-  logger.info('QueueManager: Redis available — starting BullMQ workers');
-
-  // ─── Remove stale repeatable jobs from old polling architecture ───────────
-  await removeStaleRepeatableJobs();
-
-  // ─── Start all workers ────────────────────────────────────────────────────
-  startEmailWorker();
-  startNotificationWorker();
-  startActivityWorker();
-  startAnnouncementWorker();
-  startCleanupWorker();
-  startRecurringTaskWorker();
-  startSlackWorker();
-  startLeaveWorker();
-  // Chat webhook worker handles delivery of events to ChatApp
-  try {
-    startChatWebhookWorker();
-    logger.info('QueueManager: chatWebhookWorker started');
-  } catch (err) {
-    logger.warn('QueueManager: chatWebhookWorker could not start', { error: err.message });
-  }
-
-  // SalesAlert worker uses concurrency 1 to minimise Redis connections.
-  // Start it with a small delay so core workers connect first.
-  setTimeout(() => {
+  if (_initialized) return config.redis.enabled;
+  if (_initializing) return _initializing;
+  _initializing = (async () => {
     try {
-      startSalesAlertWorker();
-      logger.info('QueueManager: salesAlertWorker started (deferred)');
-    } catch (err) {
-      logger.warn('QueueManager: salesAlertWorker could not start — alerts will be processed on next restart', { error: err.message });
-    }
-  }, 3000);
-
-  // ─── Register maintenance repeat jobs ─────────────────────────────────────
-  await registerMaintenanceJobs();
-  await registerLeaveMaintenanceJobs();
-  await registerAttendanceMaintenanceJobs();
-
-  // ─── Recovery scans (catch jobs missed during downtime) ───────────────────
-  try {
-    await Promise.allSettled([
-      recoverAnnouncementSchedules(),
-      recoverRecurringSchedules(),
-      recoverReminderSchedules(),
-      recoverSlackBatchSchedules(),
-      recoverSlackDigestSchedules(),
-      recoverCardDueDateSchedules(),
-      recoverLeaveApprovalReminderSchedules(),
-    ]);
-    logger.info('QueueManager: recovery scans complete');
-  } catch (err) {
-    logger.error('QueueManager: recovery scan error (non-fatal)', { error: err.message });
-  }
-
-  _initialized = true;
-  logger.info('QueueManager: all workers started, maintenance jobs registered');
-  return true;
+      await connectRedis();
+      _accepting = true;
+      // Both backends run the same processors, concurrency limits and schedules.
+      const workers = [
+        startEmailWorker(), startNotificationWorker(), startActivityWorker(),
+        startAnnouncementWorker(), startCleanupWorker(), startRecurringTaskWorker(),
+        startSlackWorker(), startLeaveWorker(), startChatWebhookWorker(), startSalesAlertWorker(),
+      ];
+      await Promise.all(workers.map(worker => withTimeout(worker.waitUntilReady(), config.redis.connectTimeoutMs, 'Job')));
+      await removeStaleRepeatableJobs();
+      await registerMaintenanceJobs();
+      await registerLeaveMaintenanceJobs();
+      await registerAttendanceMaintenanceJobs();
+      const recovery = await Promise.allSettled([
+        recoverAnnouncementSchedules(), recoverRecurringSchedules(), recoverReminderSchedules(),
+        recoverSlackBatchSchedules(), recoverSlackDigestSchedules(), recoverCardDueDateSchedules(),
+        recoverLeaveApprovalReminderSchedules(),
+      ]);
+      if (recovery.some(result => result.status === 'rejected')) throw new Error('Job schedule recovery failed');
+      _initialized = true;
+      logger.info('Job service initialized', { mode: config.redis.enabled ? 'production' : 'local', workers: workers.length });
+      return config.redis.enabled;
+    } catch (error) {
+      await shutdownQueues();
+      throw error;
+    } finally { _initializing = null; }
+  })();
+  return _initializing;
 }
 
-/**
- * Check if BullMQ queues are active (Redis was available at startup).
- */
+// Production never switches to best-effort inline delivery after an outage.
 export function isQueueActive() {
-  return _redisAvailable;
+  return config.redis.enabled || _accepting;
 }
 
-/**
- * Gracefully shut down all workers and close connections.
- */
 export async function shutdownQueues() {
-  stopInProcessAttendanceSweeper();
-  if (!_initialized || !_redisAvailable) return;
-
-  logger.info('QueueManager: shutting down workers...');
-
+  _accepting = false;
   const workers = [
-    getEmailWorker(),
-    getNotificationWorker(),
-    getActivityWorker(),
-    getAnnouncementWorker(),
-    getCleanupWorker(),
-    getRecurringTaskWorker(),
-    getSalesAlertWorker(),
-    getChatWebhookWorker(),
-    getSlackWorker(),
-    getLeaveWorker(),
+    getEmailWorker(), getNotificationWorker(), getActivityWorker(), getAnnouncementWorker(),
+    getCleanupWorker(), getRecurringTaskWorker(), getSalesAlertWorker(),
+    getChatWebhookWorker(), getSlackWorker(), getLeaveWorker(),
   ].filter(Boolean);
-
-  // Close workers (stop processing new jobs, wait for current)
-  await Promise.allSettled(workers.map((w) => w.close()));
-
-  // Close queues
-  await Promise.allSettled(allQueues.map((q) => q.close()));
-
-  // Close shared Redis connection
+  await Promise.allSettled(workers.map(async worker => {
+    try { await withTimeout(worker.close(), config.redis.shutdownTimeoutMs, 'Job'); }
+    catch { await withTimeout(worker.close(true), config.redis.shutdownTimeoutMs, 'Job').catch(() => {}); }
+  }));
+  await Promise.allSettled(allQueues.map(queue => queue.close()));
   await closeSharedConnection();
-
   _initialized = false;
-  _redisAvailable = false;
-  logger.info('QueueManager: shutdown complete');
 }

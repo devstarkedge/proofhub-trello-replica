@@ -4,6 +4,7 @@ import { Check, X } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import LeaveEmptyState from '../../components/Leave/LeaveEmptyState';
 import * as attendanceApi from '../../services/attendanceApi';
+import useRegularizationApprovalLive from '../../hooks/useRegularizationApprovalLive';
 
 const Panel = ({ title, description, children }) => (
   <section className="rounded-2xl border p-4 shadow-sm sm:p-6" style={{ backgroundColor: 'var(--color-card-bg)', borderColor: 'var(--color-border-default)' }}>
@@ -37,19 +38,16 @@ const DecisionRow = ({ entryLabel, meta, onDecide }) => {
 
 const AttendanceApprovalsPage = () => {
   const [wfhQueue, setWfhQueue] = useState([]);
-  const [regularizationQueue, setRegularizationQueue] = useState([]);
+  const { queue: regularizationQueue, refresh: refreshRegularization, removeApproval } = useRegularizationApprovalLive();
 
-  const load = () => {
+  const loadWfh = () => {
     attendanceApi.getWfhApprovalQueue().then(({ data }) => setWfhQueue(data)).catch(() => {});
-    attendanceApi.getRegularizationApprovalQueue().then(({ data }) => setRegularizationQueue(data)).catch(() => {});
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { loadWfh(); }, []);
   useEffect(() => {
-    window.addEventListener('socket-attendance-wfh-requested', load);
-    window.addEventListener('socket-attendance-regularization-requested', load);
+    window.addEventListener('socket-attendance-wfh-requested', loadWfh);
     return () => {
-      window.removeEventListener('socket-attendance-wfh-requested', load);
-      window.removeEventListener('socket-attendance-regularization-requested', load);
+      window.removeEventListener('socket-attendance-wfh-requested', loadWfh);
     };
   }, []);
 
@@ -57,14 +55,15 @@ const AttendanceApprovalsPage = () => {
     try {
       await attendanceApi.decideWfhApproval(approval._id, decision);
       toast.success(`Request ${decision === 'APPROVED' ? 'approved' : 'rejected'}`);
-      load();
+      loadWfh();
     } catch { /* interceptor */ }
   };
   const decideRegularization = async (approval, decision) => {
     try {
       await attendanceApi.decideRegularizationApproval(approval._id, decision);
       toast.success(`Request ${decision === 'APPROVED' ? 'approved' : 'rejected'}`);
-      load();
+      removeApproval(approval._id);
+      window.dispatchEvent(new CustomEvent('attendance-regularization-refresh'));
     } catch { /* interceptor */ }
   };
 

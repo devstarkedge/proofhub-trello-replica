@@ -4,7 +4,7 @@
  * Processes jobs from the 'flowtask:activity' queue.
  * Job types: log-activity
  */
-import { Worker } from 'bullmq';
+import { Worker } from '../queues/runtime.js';
 import { getWorkerConnection } from '../queues/connection.js';
 import config from '../config/index.js';
 
@@ -26,6 +26,7 @@ const JOB_HANDLERS = {
 let activityWorker = null;
 
 export function startActivityWorker() {
+  if (activityWorker && !activityWorker.closing) return activityWorker;
   activityWorker = new Worker(
     'flowtask.activity',
     async (job) => {

@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import AttendanceRegularization from './attendanceRegularization.model.js';
 import AttendanceDay from './attendanceDay.model.js';
 import AttendanceSession from './attendanceSession.model.js';
+import AttendanceApproval from './attendanceApproval.model.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import { resolveAttendanceEligibility } from './attendanceEligibility.service.js';
 import { resolveApplicablePolicyVersion } from './attendancePolicy.service.js';
@@ -86,6 +87,10 @@ export async function cancelRegularization({ workspaceId, requestId, userId }) {
   if (request.status !== 'PENDING_APPROVAL') throw new ErrorResponse('Only a pending request can be cancelled', 400);
   request.status = 'CANCELLED';
   await request.save();
+  await AttendanceApproval.updateMany(
+    { workspaceId, entityType: 'REGULARIZATION_REQUEST', entityId: request._id, status: 'PENDING' },
+    { $set: { status: 'VOIDED' } }
+  );
   return request;
 }
 

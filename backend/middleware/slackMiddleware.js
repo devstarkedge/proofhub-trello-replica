@@ -4,6 +4,7 @@
  */
 
 import crypto from 'crypto';
+import { rateLimiter } from './rateLimiter.js';
 
 /**
  * Validate Slack request signature
@@ -78,31 +79,10 @@ export const captureRawBody = (req, res, buf, encoding) => {
  * Slack has its own retry logic, so we need to be careful
  */
 export const slackRateLimiter = (maxRequests = 1000, windowMs = 60000) => {
-  const requests = new Map();
-
-  return (req, res, next) => {
-    const teamId = req.body?.team_id || req.body?.team?.id || 'unknown';
-    const key = `slack:${teamId}`;
-    const now = Date.now();
-
-    // Clean old entries
-    const entry = requests.get(key);
-    if (entry && now - entry.windowStart > windowMs) {
-      requests.delete(key);
-    }
-
-    const current = requests.get(key) || { count: 0, windowStart: now };
-
-    if (current.count >= maxRequests) {
-      console.warn(`Slack rate limit exceeded for team: ${teamId}`);
-      return res.status(429).json({ error: 'Rate limit exceeded' });
-    }
-
-    current.count++;
-    requests.set(key, current);
-
-    next();
-  };
+  return rateLimiter({ maxRequests, windowMs, message: 'Rate limit exceeded',
+    workspaceFn: req => `slack-team:${req.body?.team_id || req.body?.team?.id || 'unknown'}`,
+    keyFn: () => 'ingress',
+  });
 };
 
 /**

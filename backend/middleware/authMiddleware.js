@@ -20,22 +20,29 @@ const authCache = new LRUCache({
 });
 
 // ─── Membership Cache ───────────────────────────────────────────────────────
-// Split from authCache above rather than a composite `${userId}:${workspaceId}`
-// key: keyed by userId ALONE, holding a small { [workspaceId]: membership }
-// map as its value. This means invalidateAuthCache(userId) — which already
-// has ~15 existing call sites that only ever pass a bare userId — busts
-// every workspace's cached membership for that user in one call, with zero
-// changes needed at any of those call sites.
+// Membership and identity entries use explicit workspace/user keys. Existing
+// user-only invalidators evict that user's entries across all workspaces.
 const membershipCache = new LRUCache({
   max: config.authCache.maxSize,
   ttl: config.authCache.ttlMs,
 });
 
+// Caching is optional and production-only. Local requests always read MongoDB.
+// Keep the existing bounded TTL cache; it is not a Redis session store.
+const cacheKey = (workspaceId, kind, userId) => workspaceId ? `ws:${workspaceId}:${kind}:user:${userId}` : null;
+function readCache(cache, key) {
+  if (!config.authCache.enabled || !key) return undefined;
+  try { return cache.get(key); } catch { return undefined; }
+}
+function writeCache(cache, key, value) {
+  if (!config.authCache.enabled || !key) return;
+  try { cache.set(key, value); } catch { /* Cache failures leave MongoDB authoritative. */ }
+}
+
 async function getMembership(userId, workspaceId) {
-  const userKey = userId.toString();
-  const wsKey = workspaceId.toString();
-  let perUser = membershipCache.get(userKey);
-  if (!perUser?.[wsKey]) {
+  const key = cacheKey(workspaceId, 'membership', userId);
+  let membership = readCache(membershipCache, key);
+  if (!membership) {
     const doc = await WorkspaceMembership.findOne({
       user: userId,
       workspace: workspaceId,
@@ -47,10 +54,10 @@ async function getMembership(userId, workspaceId) {
     // lastActiveWorkspace can't keep using an owner-deactivated workspace.
     const workspaceDoc = await Workspace.findById(workspaceId).select('isActive').lean();
     if (!workspaceDoc || !workspaceDoc.isActive) return null;
-    perUser = { ...perUser, [wsKey]: doc };
-    membershipCache.set(userKey, perUser);
+    membership = doc;
+    writeCache(membershipCache, key, doc);
   }
-  return perUser[wsKey];
+  return membership;
 }
 
 /**
@@ -59,8 +66,10 @@ async function getMembership(userId, workspaceId) {
  */
 export const invalidateAuthCache = (userId) => {
   if (userId) {
-    authCache.delete(userId.toString());
-    membershipCache.delete(userId.toString());
+    const suffix = `:user:${userId}`;
+    for (const cache of [authCache, membershipCache]) {
+      for (const key of cache.keys()) if (key.endsWith(suffix)) cache.delete(key);
+    }
   }
 };
 
@@ -96,9 +105,10 @@ export const protect = async (req, res, next) => {
       const decoded = jwt.verify(token, config.jwt.secret);
       req.authExpiresAt = Number.isFinite(decoded.exp) ? decoded.exp * 1000 : undefined;
       const userId = decoded.id;
+      const userCacheKey = cacheKey(req.headers['x-workspace-id'], 'identity', userId);
 
       // Check LRU cache first
-      let userObj = authCache.get(userId);
+      let userObj = readCache(authCache, userCacheKey);
 
       if (!userObj) {
         // Cache miss — query DB with lean() + select() for minimal overhead.
@@ -123,7 +133,7 @@ export const protect = async (req, res, next) => {
 
         userObj = user;
         // Store in cache
-        authCache.set(userId, userObj);
+        writeCache(authCache, userCacheKey, userObj);
       }
 
       // Normalize user shape for controller compatibility.
@@ -133,12 +143,12 @@ export const protect = async (req, res, next) => {
           ...userObj,
           id: userObj._id.toString(),
         };
-        authCache.set(userId, userObj);
+        writeCache(authCache, userCacheKey, userObj);
       }
 
       if (!userObj.isActive) {
         // Evict deactivated users from cache
-        authCache.delete(userId);
+        if (userCacheKey) authCache.delete(userCacheKey);
         return res.status(401).json({
           success: false,
           message: 'User account is deactivated'

@@ -114,7 +114,8 @@ export async function cleanAllQueues() {
   for (const queue of allQueues) {
     try {
       const completed = await queue.clean(MAX_AGE_MS, BATCH_SIZE, 'completed');
-      const failed    = await queue.clean(MAX_AGE_MS, BATCH_SIZE, 'failed');
+      // Failed chat deliveries are retained for operator recovery.
+      const failed = queue.name === 'chat-webhooks' ? [] : await queue.clean(MAX_AGE_MS, BATCH_SIZE, 'failed');
 
       if (completed.length || failed.length) {
         console.log(

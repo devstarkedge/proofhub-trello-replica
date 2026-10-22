@@ -1,133 +1,130 @@
-/**
- * Shared Redis connection for BullMQ queues and workers.
- *
- * BullMQ requires `maxRetriesPerRequest: null` on the IORedis connection.
- * Queues share one connection (publishing side).
- * Workers share another connection — BullMQ internally duplicates it
- * for blocking operations, keeping total connections low.
- *
- * Connection hygiene:
- *  - lazyConnect: true         → connection opens on first command, not on import
- *  - enableOfflineQueue: false → commands fail fast when disconnected
- *  - retryStrategy capped      → stops after MAX_RETRIES to avoid orphan flood
- *  - connectTimeout: 10 s      → fast failure detection
- */
 import IORedis from 'ioredis';
 import config from '../config/index.js';
+import logger from '../utils/logger.js';
 
-let _sharedConnection = null;
-let _workerConnection = null;
+let shared = null;
+let connecting = null;
+let closing = false;
+const clients = new Set();
+const errors = new Map();
 
-const MAX_RETRIES = 10;
+export function serviceUnavailable(service = 'Redis') {
+  const error = new Error(`${service} service is unavailable; retry later`);
+  error.code = 'SERVICE_UNAVAILABLE';
+  error.statusCode = 503;
+  return error;
+}
 
-/**
- * Create a new IORedis connection with BullMQ-compatible defaults.
- * @param {object} overrides - Extra IORedis options
- * @returns {IORedis}
- */
-export function createRedisConnection(overrides = {}) {
-  const options = {
-    maxRetriesPerRequest: null,   // Required by BullMQ
-    enableReadyCheck: false,
-    lazyConnect: true,            // Don't connect until first command
-    enableOfflineQueue: true,    // Fail fast when disconnected
-    connectTimeout: 10000,        // 10 s connect timeout
-    disconnectTimeout: 5000,      // 5 s disconnect timeout
-    retryStrategy(times) {
-      if (times > MAX_RETRIES) {
-        console.error(`[Redis] Max retries (${MAX_RETRIES}) reached — giving up reconnection`);
-        return null;              // Stop reconnecting
-      }
-      const delay = Math.min(times * 500, 5000);
-      return delay;
-    },
+// Driver messages/stacks may contain credentials. Log only fixed labels and safe codes.
+export function reportRedisError(role, error) {
+  if (!config.redis.enabled) return;
+  const code = /^[A-Z0-9_]{1,40}$/.test(error?.code || '') ? error.code : 'REDIS_UNAVAILABLE';
+  if (errors.has(role) && Date.now() - errors.get(role) < config.redis.errorLogIntervalMs) return;
+  errors.set(role, Date.now());
+  logger.error('Production Redis service unavailable', { role, code });
+}
+
+export async function withTimeout(operation, timeoutMs, service = 'Redis') {
+  let timer;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise((_, reject) => { timer = setTimeout(() => reject(serviceUnavailable(service)), timeoutMs); }),
+    ]);
+  } finally { clearTimeout(timer); }
+}
+
+class ManagedRedis extends IORedis {
+  duplicate(overrides = {}) {
+    // BullMQ needs a blocking socket per worker without a command timeout.
+    return track(super.duplicate({ ...overrides, commandTimeout: undefined,
+      enableOfflineQueue: true, maxRetriesPerRequest: null }), 'blocking-worker');
+  }
+}
+
+function track(client, role) {
+  clients.add(client);
+  client.on('error', error => reportRedisError(role, error));
+  client.once('end', () => clients.delete(client));
+  return client;
+}
+
+function createClient(role, overrides = {}) {
+  if (!config.redis.enabled) return null;
+  if (closing) throw serviceUnavailable();
+  return track(new ManagedRedis(config.redis.url, {
+    lazyConnect: true, enableReadyCheck: true,
+    // BullMQ requires null. Normal operations fail fast via readiness checks,
+    // disabled offline queuing, and a command timeout instead.
+    maxRetriesPerRequest: null, enableOfflineQueue: false,
+    connectTimeout: config.redis.connectTimeoutMs,
+    commandTimeout: config.redis.commandTimeoutMs,
+    retryStrategy: attempt => closing ? null : Math.min(100 * 2 ** Math.min(attempt, 6), 5000) + Math.floor(Math.random() * 100),
     ...overrides,
-  };
-
-  // REDIS_URL (e.g. a hosted Redis) wins over REDIS_HOST / REDIS_PORT / REDIS_PASSWORD
-  if (config.redis.url) {
-    return new IORedis(config.redis.url, options);
-  }
-  return new IORedis({
-    host: config.redis.host,
-    port: config.redis.port,
-    password: config.redis.password,
-    ...options,
-  });
+  }), role);
 }
 
-/**
- * Attach an error listener to a BullMQ Queue. Without one, BullMQ
- * console.error()s the full stack once per queue for every failed connect
- * attempt. Connection errors are already logged by the shared connection,
- * so only other errors are reported here.
- */
-export function logQueueErrors(queue) {
-  queue.on('error', (err) => {
-    if (err?.code || err?.message === 'Connection is closed.') return;
-    console.error(`[Queue ${queue.name}] error:`, err?.message);
-  });
-  return queue;
-}
-
-/**
- * Get a shared IORedis connection (for Queue instances that only publish).
- * Workers should use getWorkerConnection() instead.
- */
 export function getSharedConnection() {
-  if (!_sharedConnection) {
-    _sharedConnection = createRedisConnection();
-    _sharedConnection.on('error', (err) => {
-      // AggregateError (IPv4 + IPv6 both refused) has an empty message
-      console.error('[Redis] Shared connection error:', err.message || err.code);
-    });
-    _sharedConnection.on('connect', () => {
-      console.log('[Redis] Shared connection established');
-    });
-  }
-  return _sharedConnection;
+  if (!config.redis.enabled) return null;
+  if (!shared) shared = createClient('commands');
+  return shared;
 }
 
-/**
- * Get a shared IORedis connection for Workers.
- * BullMQ will internally call .duplicate() for each worker's blocking
- * client, but this keeps the base connection count to 1 instead of N.
- */
-export function getWorkerConnection() {
-  if (!_workerConnection) {
-    _workerConnection = createRedisConnection();
-    _workerConnection.on('error', (err) => {
-      console.error('[Redis] Worker connection error:', err.message || err.code);
-    });
-  }
-  return _workerConnection;
+// Worker commands share the normal socket; BullMQ duplicates it for blocking reads.
+export const getWorkerConnection = getSharedConnection;
+
+export function getReadyConnection() {
+  const client = getSharedConnection();
+  if (!client || client.status !== 'ready') throw serviceUnavailable();
+  return client;
 }
 
-/**
- * Stop the shared connection from reconnecting. Queues connect on import,
- * so when the startup probe finds Redis down this ends the ECONNREFUSED
- * retry loop: the next attempt is the last, ioredis emits 'end', and
- * pending/future enqueue calls reject so callers can fall back.
- * (disconnect() can't be used — called between retries it never emits
- * 'end', which leaves BullMQ's readiness wait, and every add(), hanging.)
- */
-export function stopSharedConnectionRetries() {
-  if (_sharedConnection) _sharedConnection.options.retryStrategy = () => null;
+export async function connectRedis() {
+  if (!config.redis.enabled) return null;
+  if (connecting) return connecting;
+  const client = getSharedConnection();
+  if (client.status === 'ready') return client;
+  connecting = (async () => {
+    try {
+      const ready = client.status === 'wait' ? client.connect() : new Promise((resolve, reject) => {
+        const cleanup = () => { client.off('ready', onReady); client.off('end', onEnd); };
+        const onReady = () => { cleanup(); resolve(); };
+        const onEnd = () => { cleanup(); reject(serviceUnavailable()); };
+        client.once('ready', onReady);
+        client.once('end', onEnd);
+      });
+      await withTimeout(ready, config.redis.connectTimeoutMs);
+      await client.ping();
+      return client;
+    } catch (error) {
+      reportRedisError('startup', error);
+      client.disconnect();
+      throw serviceUnavailable('Production Redis');
+    } finally { connecting = null; }
+  })();
+  return connecting;
 }
 
-/**
- * Close the shared connection (call during graceful shutdown).
- */
+export function createSubscriberConnection() {
+  return createClient('socket-subscriber', { commandTimeout: undefined, enableOfflineQueue: true });
+}
+
+export async function closeRedisClient(client) {
+  if (!client) return;
+  try {
+    if (client.status === 'ready') await withTimeout(client.quit(), config.redis.shutdownTimeoutMs);
+  } catch { /* Force disconnect below, including during outages. */ }
+  finally { client.disconnect(); clients.delete(client); }
+}
+
 export async function closeSharedConnection() {
-  const closeTasks = [];
-  if (_sharedConnection) {
-    closeTasks.push(_sharedConnection.quit().catch(() => {}));
-    _sharedConnection = null;
-  }
-  if (_workerConnection) {
-    closeTasks.push(_workerConnection.quit().catch(() => {}));
-    _workerConnection = null;
-  }
-  await Promise.allSettled(closeTasks);
+  closing = true;
+  try { await Promise.allSettled([...clients].map(closeRedisClient)); }
+  finally { shared = null; connecting = null; closing = false; errors.clear(); }
+}
+
+export function workspaceKey(workspaceId, namespace, id) {
+  if (!workspaceId) throw new Error('A workspace is required for a cache/rate-limit key');
+  return `flowtask:ws:${encodeURIComponent(String(workspaceId))}:${namespace}:${encodeURIComponent(String(id))}`;
 }
 

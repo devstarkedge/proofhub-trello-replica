@@ -9,7 +9,7 @@
  *   generate-task-instance — create a subtask and chain the next job
  */
 import mongoose from 'mongoose';
-import { Worker } from 'bullmq';
+import { Worker } from '../queues/runtime.js';
 import { getWorkerConnection } from '../queues/connection.js';
 import RecurringTask from '../models/RecurringTask.js';
 import Subtask from '../models/Subtask.js';
@@ -150,6 +150,7 @@ const JOB_HANDLERS = {
 let recurringTaskWorker = null;
 
 export function startRecurringTaskWorker() {
+  if (recurringTaskWorker && !recurringTaskWorker.closing) return recurringTaskWorker;
   recurringTaskWorker = new Worker(
     'flowtask.recurring-task',
     async (job) => {

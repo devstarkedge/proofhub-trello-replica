@@ -16,6 +16,7 @@ import axios from 'axios';
 import logger from '../../utils/logger.js';
 import chatWebhookQueue from '../../queues/chatWebhookQueue.js';
 import Workspace from '../../models/Workspace.js';
+import config from '../../config/index.js';
 
 // WEBHOOK_SECRET stays a single, deployment-wide value by design (the
 // user's explicit "shared platform secret, no per-workspace rotation"
@@ -132,6 +133,7 @@ async function dispatch(eventName, payload, { throwOnFailure = false } = {}) {
       return;
     }
   } catch (err) {
+    if (config.redis.enabled) throw err; // Never turn a failed durable enqueue into an ambiguous inline send.
     logger.warn('ChatWebhook: enqueue failed, falling back to direct dispatch', { error: err.message });
     // fallthrough to direct dispatch below
   }

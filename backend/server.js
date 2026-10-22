@@ -7,6 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import config from './config/index.js';
 import logger from './utils/logger.js';
+import { connectRedis, getSharedConnection } from './queues/connection.js';
 import { configureRealtimeCluster, closeRealtimeCluster } from './realtime/cluster.js';
 import { stopBoardPublication } from './realtime/boardPublication.js';
 import { startNotificationPublication, stopNotificationPublication } from './realtime/notificationPublication.js';
@@ -163,8 +164,18 @@ app.use(compression());
 
 // ─── Health Check ────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
-  const healthy = mongoose.connection.readyState === 1;
+  const healthy = mongoose.connection.readyState === 1 && (!config.redis.enabled || getSharedConnection()?.status === 'ready');
   res.status(healthy ? 200 : 503).json({ status: healthy ? 'ok' : 'degraded' });
+});
+
+// Do not accept production mutations when durable job delivery is unavailable.
+// Reads can still use MongoDB; public/auth rate limits fail closed independently.
+app.use('/api', (req, res, next) => {
+  if (config.redis.enabled && !['GET', 'HEAD', 'OPTIONS'].includes(req.method) && getSharedConnection()?.status !== 'ready') {
+    res.setHeader('Retry-After', '5');
+    return res.status(503).json({ success: false, message: 'Background delivery is temporarily unavailable; retry later' });
+  }
+  return next();
 });
 
 // Routes
@@ -256,11 +267,11 @@ import { runLeaveAccrualCatchUp } from './schedulers/leaveMaintenanceScheduler.j
 import * as workspaceContext from './modules/workspaces/workspaceContext.js';
 import { hasPendingMigrations } from './scripts/migrationRegistry.js';
 
-mongoose.connect(config.db.uri, {
+connectRedis().then(() => mongoose.connect(config.db.uri, {
   maxPoolSize: config.db.maxPoolSize,
   serverSelectionTimeoutMS: config.db.serverSelectionTimeoutMS,
   socketTimeoutMS: config.db.socketTimeoutMS,
-})
+}))
   .then(async () => {
     logger.info('Connected to MongoDB with connection pooling');
 
@@ -291,18 +302,14 @@ mongoose.connect(config.db.uri, {
       logger.error('Failed to check pending migrations', { error: err.message });
     }
 
-    // Initialize BullMQ queues (probes Redis, starts workers, recovery scans)
+    // Start the selected job backend, including every periodic/recovered job.
     const queuesActive = await initQueues();
-    logger.info(`BullMQ queues: ${queuesActive ? 'ACTIVE' : 'FALLBACK (in-process)'}`);
+    logger.info('Background execution ready', { mode: queuesActive ? 'production' : 'local' });
 
     startAnalyticsReportScheduler();
     startTrackingMaintenance();
 
-    // Independent of BullMQ/Redis — the accrual/expiry repeat jobs above
-    // don't run at all while Redis is down (no in-process fallback for
-    // schedulers), so this is a non-blocking safety net against exactly
-    // that gap, not the primary mechanism. Fire-and-forget: must never
-    // delay the HTTP server from accepting traffic.
+    // Idempotent catch-up complements both local and production schedules.
     runLeaveAccrualCatchUp();
 
     initializeSlackServices().then(() => {
@@ -319,40 +326,42 @@ mongoose.connect(config.db.uri, {
     server.keepAliveTimeout = config.http.keepAliveTimeout;
     server.headersTimeout = config.http.headersTimeout;
   })
-  .catch((error) => {
-    logger.error('MongoDB connection error', { error: error.message });
+  .catch(async (error) => {
+    logger.error('Backend startup failed', { error: error.message });
+    await closeRealtimeCluster();
+    await shutdownQueues();
+    await mongoose.disconnect();
+    process.exit(1);
   });
 
 // ─── Graceful Shutdown ───────────────────────────────────────────────────────
+let shuttingDown = false;
 const gracefulShutdown = async (signal) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
   logger.info(`${signal} received. Shutting down gracefully...`);
+  const forced = setTimeout(() => { logger.error('Forced shutdown after timeout'); process.exit(1); }, 15000);
+  forced.unref();
   try {
+    const httpClosed = new Promise(resolve => server.close(resolve));
+    socketManager.getIO().local.disconnectSockets(true);
     await Promise.allSettled([
-      shutdownSlackServices(),
-      shutdownQueues(),
-      closeRealtimeCluster(),
-        stopBoardPublication(),
-      Promise.resolve(stopNotificationPublication()),
-      Promise.resolve(stopAnalyticsReportScheduler()),
+      shutdownSlackServices(), stopBoardPublication(),
+      Promise.resolve(stopNotificationPublication()), Promise.resolve(stopAnalyticsReportScheduler()),
       Promise.resolve(stopTrackingMaintenance()),
     ]);
-  } catch (err) {
-    logger.error('Error during service shutdown', { error: err.message });
-  }
-  server.close(() => {
-    logger.info('HTTP server closed');
-    mongoose.connection.close(false).then(() => {
-      logger.info('MongoDB connection closed');
-      process.exit(0);
-    });
-  });
-  // Force exit after 10 seconds if graceful shutdown stalls
-  setTimeout(() => {
-    logger.error('Forced shutdown after timeout');
+    await closeRealtimeCluster();
+    await shutdownQueues();
+    server.closeAllConnections?.();
+    await httpClosed;
+    await mongoose.disconnect();
+    clearTimeout(forced);
+    process.exit(0);
+  } catch {
+    logger.error('Service shutdown failed');
     process.exit(1);
-  }, 10000);
+  }
 };
-
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 

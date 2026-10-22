@@ -11,7 +11,7 @@ import { emitAnnouncementEvent } from '../services/announcementEvents.js';
  *   broadcast-announcement  — broadcast a single scheduled announcement
  *   archive-announcement    — archive a single expired announcement
  */
-import { Worker } from 'bullmq';
+import { Worker } from '../queues/runtime.js';
 import { getWorkerConnection } from '../queues/connection.js';
 import Announcement from '../models/Announcement.js';
 import '../models/User.js';
@@ -140,6 +140,7 @@ async function broadcastAnnouncement(announcement, announcementId) {
 let announcementWorker = null;
 
 export function startAnnouncementWorker() {
+  if (announcementWorker && !announcementWorker.closing) return announcementWorker;
   announcementWorker = new Worker(
     'flowtask.announcement',
     async (job) => {

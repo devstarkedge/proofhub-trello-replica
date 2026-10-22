@@ -4,7 +4,7 @@
  * Processes email jobs from the 'flowtask:email' queue.
  * Job types: send-email, send-bulk-email, send-project-emails
  */
-import { Worker } from 'bullmq';
+import { Worker } from '../queues/runtime.js';
 import { getWorkerConnection } from '../queues/connection.js';
 import { sendEmail } from '../utils/email.js';
 import User from '../models/User.js';
@@ -104,6 +104,7 @@ async function reportInvitationEmailOutcome(job, err = null) {
 let emailWorker = null;
 
 export function startEmailWorker() {
+  if (emailWorker && !emailWorker.closing) return emailWorker;
   emailWorker = new Worker(
     'flowtask.email',
     async (job) => {

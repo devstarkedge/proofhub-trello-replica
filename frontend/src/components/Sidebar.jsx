@@ -7,6 +7,7 @@ import WorkspaceSwitcher from './Workspace/WorkspaceSwitcher';
 import useAccessControl from '../hooks/useAccessControl';
 import usePermissions from '../hooks/usePermissions';
 import useJoinRequestsLive from '../hooks/useJoinRequestsLive';
+import useRegularizationApprovalLive from '../hooks/useRegularizationApprovalLive';
 import { getDefaultLeaveRouteForRole } from '../utils/leaveAccess';
 
 const MotionDiv = motion.div;
@@ -53,6 +54,7 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
   // re-gates on canApproveJoinRequests and re-fetches on workspace switch,
   // so this always matches exactly what joinRequestsVisible above governs.
   const { pendingCount: joinRequestsPendingCount } = useJoinRequestsLive();
+  const { pendingCount: regularizationPendingCount } = useRegularizationApprovalLive();
 
   // Check if current path is under PM Sheet
   const isPMSheetActive = location.pathname.startsWith('/pm-sheet');
@@ -98,7 +100,14 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
       { path: '/my-shortcuts', icon: Zap, label: 'My Shortcuts' },
       { path: '/announcements', icon: Bell, label: 'Announcements' },
       { path: leavePath, icon: CalendarDays, label: 'Leave', matchPrefix: '/leave', iconKey: '/leave' },
-      { path: '/attendance', icon: Fingerprint, label: 'Attendance' },
+      {
+        path: '/attendance',
+        icon: Fingerprint,
+        label: 'Attendance',
+        badge: (['admin', 'manager', 'hr'].includes(userRole) && regularizationPendingCount > 0)
+          ? regularizationPendingCount
+          : null,
+      },
       { path: '/time-tracking', icon: Fingerprint, label: 'Time Tracking' },
     ];
 

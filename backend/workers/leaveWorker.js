@@ -14,7 +14,7 @@
  * workspaceContext — this worker runs outside any Express request, so
  * there is no ambient context (see workspaceScopePlugin.js).
  */
-import { Worker } from 'bullmq';
+import { Worker } from '../queues/runtime.js';
 import { getWorkerConnection } from '../queues/connection.js';
 import { QUEUES, CONCURRENCY } from '../queues/registry.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
@@ -89,6 +89,7 @@ const JOB_HANDLERS = {
 let leaveWorker = null;
 
 export function startLeaveWorker() {
+  if (leaveWorker && !leaveWorker.closing) return leaveWorker;
   leaveWorker = new Worker(
     QUEUES.LEAVE,
     async (job) => {
