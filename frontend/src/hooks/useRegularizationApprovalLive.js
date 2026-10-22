@@ -22,6 +22,8 @@ const useRegularizationApprovalLive = () => {
   const loading = useRegularizationApprovalStore((state) => state.loading);
   const load = useRegularizationApprovalStore((state) => state.load);
   const removeApproval = useRegularizationApprovalStore((state) => state.removeApproval);
+  const restoreApproval = useRegularizationApprovalStore((state) => state.restoreApproval);
+  const decideOptimistic = useRegularizationApprovalStore((state) => state.decideOptimistic);
 
   const refresh = useCallback(() => {
     if (enabled && workspaceId) {
@@ -57,7 +59,9 @@ const useRegularizationApprovalLive = () => {
     pendingCount: enabled ? pendingCount : 0,
     loading,
     refresh,
-    removeApproval
+    removeApproval,
+    restoreApproval,
+    decideOptimistic
   };
 };
 

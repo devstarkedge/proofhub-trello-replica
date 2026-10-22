@@ -17,11 +17,6 @@ const Panel = ({ title, description, children }) => (
 );
 
 const DecisionRow = ({ entryLabel, meta, onDecide }) => {
-  const [deciding, setDeciding] = useState(false);
-  const decide = async (decision) => {
-    setDeciding(true);
-    try { await onDecide(decision); } finally { setDeciding(false); }
-  };
   return (
     <div className="flex flex-col gap-2 border-b px-4 py-3 text-sm last:border-b-0 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: 'var(--color-border-subtle)' }}>
       <div>
@@ -29,8 +24,8 @@ const DecisionRow = ({ entryLabel, meta, onDecide }) => {
         {meta && <span className="ml-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>{meta}</span>}
       </div>
       <div className="flex gap-2">
-        <Button size="sm" disabled={deciding} onClick={() => decide('APPROVED')}><Check className="h-3.5 w-3.5" /> Approve</Button>
-        <Button variant="outline" size="sm" disabled={deciding} onClick={() => decide('REJECTED')}><X className="h-3.5 w-3.5" /> Reject</Button>
+        <Button size="sm" onClick={() => onDecide('APPROVED')}><Check className="h-3.5 w-3.5" /> Approve</Button>
+        <Button variant="outline" size="sm" onClick={() => onDecide('REJECTED')}><X className="h-3.5 w-3.5" /> Reject</Button>
       </div>
     </div>
   );
@@ -38,7 +33,7 @@ const DecisionRow = ({ entryLabel, meta, onDecide }) => {
 
 const AttendanceApprovalsPage = () => {
   const [wfhQueue, setWfhQueue] = useState([]);
-  const { queue: regularizationQueue, refresh: refreshRegularization, removeApproval } = useRegularizationApprovalLive();
+  const { queue: regularizationQueue, decideOptimistic } = useRegularizationApprovalLive();
 
   const loadWfh = () => {
     attendanceApi.getWfhApprovalQueue().then(({ data }) => setWfhQueue(data)).catch(() => {});
@@ -51,20 +46,23 @@ const AttendanceApprovalsPage = () => {
     };
   }, []);
 
-  const decideWfh = async (approval, decision) => {
-    try {
-      await attendanceApi.decideWfhApproval(approval._id, decision);
-      toast.success(`Request ${decision === 'APPROVED' ? 'approved' : 'rejected'}`);
-      loadWfh();
-    } catch { /* interceptor */ }
+  const decideWfh = (approval, decision) => {
+    const previousQueue = [...wfhQueue];
+    // Immediate UI removal (optimistic)
+    setWfhQueue((prev) => prev.filter((item) => item._id !== approval._id));
+    toast.success(`Request ${decision === 'APPROVED' ? 'approved' : 'rejected'}`);
+
+    attendanceApi.decideWfhApproval(approval._id, decision).catch((error) => {
+      // Rollback on background error
+      setWfhQueue(previousQueue);
+      toast.error(error?.response?.data?.message || error?.message || 'Failed to update request');
+    });
   };
-  const decideRegularization = async (approval, decision) => {
-    try {
-      await attendanceApi.decideRegularizationApproval(approval._id, decision);
-      toast.success(`Request ${decision === 'APPROVED' ? 'approved' : 'rejected'}`);
-      removeApproval(approval._id);
-      window.dispatchEvent(new CustomEvent('attendance-regularization-refresh'));
-    } catch { /* interceptor */ }
+
+  const decideRegularization = (approval, decision) => {
+    // Immediate UI removal + toast (optimistic)
+    toast.success(`Request ${decision === 'APPROVED' ? 'approved' : 'rejected'}`);
+    decideOptimistic(approval, decision);
   };
 
   return (

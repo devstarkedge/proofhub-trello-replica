@@ -160,11 +160,33 @@ const MyAttendancePage = () => {
     };
   }, [loadRequests]);
 
-  const cancelWfh = async (request) => {
-    try { await attendanceApi.cancelWfhRequest(request._id); toast.success('Request cancelled'); loadRequests(); } catch { /* interceptor */ }
+  const cancelWfh = (request) => {
+    const previous = [...wfhRequests];
+    // Optimistic UI update: instantly mark cancelled without waiting for server response
+    setWfhRequests((prev) =>
+      prev.map((r) => (r._id === request._id ? { ...r, status: 'CANCELLED' } : r))
+    );
+    toast.success('Request cancelled');
+
+    attendanceApi.cancelWfhRequest(request._id).catch((error) => {
+      setWfhRequests(previous);
+      toast.error(error?.response?.data?.message || error?.message || 'Failed to cancel request');
+    });
   };
-  const cancelRegularization = async (request) => {
-    try { await attendanceApi.cancelRegularization(request._id); toast.success('Request cancelled'); loadRequests(); } catch { /* interceptor */ }
+
+  const cancelRegularization = (request) => {
+    const previous = [...regularizations];
+    // Optimistic UI update: instantly mark cancelled without waiting for server response
+    setRegularizations((prev) =>
+      prev.map((r) => (r._id === request._id ? { ...r, status: 'CANCELLED' } : r))
+    );
+    toast.success('Request cancelled');
+    window.dispatchEvent(new CustomEvent('attendance-regularization-refresh'));
+
+    attendanceApi.cancelRegularization(request._id).catch((error) => {
+      setRegularizations(previous);
+      toast.error(error?.response?.data?.message || error?.message || 'Failed to cancel request');
+    });
   };
 
   if (!today) return <p role={sessionError?'alert':'status'}>{sessionError||'Loading attendance…'}{sessionError&&<button onClick={loadToday}>Retry</button>}</p>;
