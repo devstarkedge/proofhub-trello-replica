@@ -812,6 +812,14 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Not authorized to update this board", 403));
   }
 
+  // Manager role user can only update assigned department and assigned projects
+  if (req.user.role === "manager" && ownerId !== req.user.id) {
+    const isAuthorized = await canUserAccessBoard(board, req.user);
+    if (!isAuthorized) {
+      return next(new ErrorResponse("Not authorized to update this project. Managers can only update projects in their assigned department or assigned projects.", 403));
+    }
+  }
+
   const previousBoard = board.toObject();
 
   // When switching to Inhouse, clear client/billing fields

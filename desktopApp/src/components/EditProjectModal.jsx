@@ -8,10 +8,8 @@ import {
   Link2, FileText, Briefcase, Clock, Globe, Mail, Phone, Tag,
   CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Edit3, 
   TrendingUp, Lock, Plus, Bell, Image, Shield, History, Paperclip,
-  Settings, Info, ArrowRight, Eye, EyeOff, Maximize2, Minimize2
+  Settings, Info, ArrowRight, Eye, EyeOff, Maximize2, Minimize2, Activity
 } from 'lucide-react';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../components/ui/select";
-import { Badge } from "../components/ui/badge";
 import { toast } from "react-toastify";
 import { COUNTRY_CODES, clientDetailsFromForm, splitClientPhone, validateProjectClient } from '../../../shared/projectClient.mjs';
 import Database from '../services/database';
@@ -38,6 +36,20 @@ import { drawerVariants, overlayVariants } from './ProjectModals/shared/animatio
 import FormField from './ProjectModals/sections/FormField';
 import { useFileUploadSimulation } from './ProjectModals/shared/useFileUploadSimulation';
 
+const STATUS_OPTIONS = [
+  { value: 'planning', label: 'Planning', dot: 'bg-gray-400', color: 'bg-gray-100 text-gray-700 border-gray-300' },
+  { value: 'in-progress', label: 'In Progress', dot: 'bg-blue-500', color: 'bg-blue-100 text-blue-700 border-blue-300' },
+  { value: 'completed', label: 'Completed', dot: 'bg-green-500', color: 'bg-green-100 text-green-700 border-green-300' },
+  { value: 'on-hold', label: 'On Hold', dot: 'bg-yellow-500', color: 'bg-yellow-100 text-yellow-700 border-yellow-300' }
+];
+
+const PRIORITY_OPTIONS = [
+  { value: 'low', label: 'Low', dot: 'bg-emerald-500', color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+  { value: 'medium', label: 'Medium', dot: 'bg-amber-500', color: 'bg-amber-100 text-amber-700 border-amber-200' },
+  { value: 'high', label: 'High', dot: 'bg-orange-500', color: 'bg-orange-100 text-orange-700 border-orange-200' },
+  { value: 'urgent', label: 'Urgent', dot: 'bg-red-500', color: 'bg-red-100 text-red-700 border-red-200' }
+];
+
 // Main Enterprise Edit Project Modal
 const EnterpriseEditProjectModal = React.memo(({ 
   isOpen, 
@@ -50,6 +62,11 @@ const EnterpriseEditProjectModal = React.memo(({
   const [activeTab, setActiveTab] = useState('details');
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [showReminderModal, setShowReminderModal] = useState(false);
+  const [loadedProject, setLoadedProject] = useState(null);
+  const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
+  const [priorityDropdownOpen, setPriorityDropdownOpen] = useState(false);
+  const statusDropdownRef = useRef(null);
+  const priorityDropdownRef = useRef(null);
   const [reminderKey, setReminderKey] = useState(0);
   
   // Form state
@@ -121,6 +138,70 @@ const EnterpriseEditProjectModal = React.memo(({
   const projectTypeDropdownRef = useRef(null);
 
   const userRole = user?.role || 'employee';
+  // Close status & priority dropdowns on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (statusDropdownOpen && statusDropdownRef.current && !statusDropdownRef.current.contains(e.target)) {
+        setStatusDropdownOpen(false);
+      }
+      if (priorityDropdownOpen && priorityDropdownRef.current && !priorityDropdownRef.current.contains(e.target)) {
+        setPriorityDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [statusDropdownOpen, priorityDropdownOpen]);
+
+  // Check if current user is authorized to edit status & priority (Admin or Assigned Manager)
+  const canEditStatusAndPriority = useMemo(() => {
+    if (!user) return false;
+    const role = (user.role || '').toLowerCase();
+    if (role === 'admin') return true;
+    if (role !== 'manager') return false;
+
+    const currentProject = loadedProject || project;
+    const userId = String(user._id || user.id || '');
+    const projId = String(currentProject?.id || currentProject?._id || '');
+    const deptId = String(
+      currentProject?.departmentId ||
+      currentProject?.department?._id ||
+      currentProject?.department ||
+      ''
+    );
+
+    // 1. Check if manager is in departmentManagers prop
+    if (Array.isArray(departmentManagers) && departmentManagers.some(m => String(m?._id || m?.id || m) === userId)) {
+      return true;
+    }
+
+    // 2. Check manager's assigned departments
+    const userDeptIds = (Array.isArray(user.department) ? user.department : (user.department ? [user.department] : []))
+      .map(d => String(d?._id || d || ''));
+    if (deptId && userDeptIds.includes(deptId)) {
+      return true;
+    }
+
+    // 3. Check if manager is assigned to this project
+    const userAllowedProjects = (Array.isArray(user.allowedProjects) ? user.allowedProjects : [])
+      .map(p => String(p?._id || p || ''));
+    if (projId && userAllowedProjects.includes(projId)) {
+      return true;
+    }
+
+    const projectMembers = (Array.isArray(currentProject?.members) ? currentProject.members : [])
+      .map(m => String(m?._id || m?.id || m || ''));
+    if (projectMembers.includes(userId)) {
+      return true;
+    }
+
+    // 4. Check if manager is project owner
+    const ownerId = String(currentProject?.owner?._id || currentProject?.owner || '');
+    if (ownerId && ownerId === userId) {
+      return true;
+    }
+
+    return false;
+  }, [user, project, loadedProject, departmentManagers]);
   const canManageReminders = userRole === 'admin' || userRole === 'manager';
 
   // Draft key for localStorage
@@ -186,6 +267,7 @@ const EnterpriseEditProjectModal = React.memo(({
         try {
           const response = await Database.getProject(project.id || project._id);
           const fullProject = response.data;
+          setLoadedProject(fullProject);
           
           setFormData({
             title: fullProject.name || '',
@@ -547,8 +629,90 @@ const EnterpriseEditProjectModal = React.memo(({
                       <h2 className="text-xl font-bold text-white truncate max-w-md">
                         {formData.title || 'Edit Project'}
                       </h2>
-                      <StatusBadge status={formData.status} />
-                      <PriorityBadge priority={formData.priority} />
+                      {canEditStatusAndPriority ? (
+                        <div className="flex items-center gap-2">
+                          {/* Status Dropdown */}
+                          <div className="relative" ref={statusDropdownRef}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setStatusDropdownOpen(prev => !prev);
+                                setPriorityDropdownOpen(false);
+                              }}
+                              className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-white/20 hover:bg-white/30 text-white border border-white/20 transition-all active:scale-95 shadow-sm cursor-pointer"
+                              title="Click to change status"
+                            >
+                              <span className={`w-2 h-2 rounded-full ${STATUS_OPTIONS.find(o => o.value === formData.status)?.dot || 'bg-gray-300'}`} />
+                              <span>{STATUS_OPTIONS.find(o => o.value === formData.status)?.label || formData.status}</span>
+                              <ChevronDown size={12} className={`transition-transform duration-200 ${statusDropdownOpen ? 'rotate-180' : ''}`} />
+                            </button>
+                            {statusDropdownOpen && (
+                              <div className="absolute left-0 top-full mt-2 w-44 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-[70] py-1 text-gray-800">
+                                {STATUS_OPTIONS.map(opt => (
+                                  <button
+                                    key={opt.value}
+                                    type="button"
+                                    onClick={() => {
+                                      setFormData(prev => ({ ...prev, status: opt.value }));
+                                      setStatusDropdownOpen(false);
+                                    }}
+                                    className={`w-full flex items-center justify-between px-3 py-2 text-xs font-medium transition-colors hover:bg-gray-50 cursor-pointer ${formData.status === opt.value ? 'bg-blue-50 text-blue-600 font-semibold' : 'text-gray-700'}`}
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <span className={`w-2 h-2 rounded-full ${opt.dot}`} />
+                                      <span>{opt.label}</span>
+                                    </div>
+                                    {formData.status === opt.value && <CheckCircle2 size={13} className="text-blue-600" />}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Priority Dropdown */}
+                          <div className="relative" ref={priorityDropdownRef}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPriorityDropdownOpen(prev => !prev);
+                                setStatusDropdownOpen(false);
+                              }}
+                              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-white/20 hover:bg-white/30 text-white border border-white/20 transition-all active:scale-95 shadow-sm cursor-pointer"
+                              title="Click to change priority"
+                            >
+                              <span className={`w-2 h-2 rounded-full ${PRIORITY_OPTIONS.find(o => o.value === formData.priority)?.dot || 'bg-amber-300'}`} />
+                              <span>{PRIORITY_OPTIONS.find(o => o.value === formData.priority)?.label || formData.priority}</span>
+                              <ChevronDown size={12} className={`transition-transform duration-200 ${priorityDropdownOpen ? 'rotate-180' : ''}`} />
+                            </button>
+                            {priorityDropdownOpen && (
+                              <div className="absolute left-0 top-full mt-2 w-40 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-[70] py-1 text-gray-800">
+                                {PRIORITY_OPTIONS.map(opt => (
+                                  <button
+                                    key={opt.value}
+                                    type="button"
+                                    onClick={() => {
+                                      setFormData(prev => ({ ...prev, priority: opt.value }));
+                                      setPriorityDropdownOpen(false);
+                                    }}
+                                    className={`w-full flex items-center justify-between px-3 py-2 text-xs font-medium transition-colors hover:bg-gray-50 cursor-pointer ${formData.priority === opt.value ? 'bg-indigo-50 text-indigo-600 font-semibold' : 'text-gray-700'}`}
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <span className={`w-2 h-2 rounded-full ${opt.dot}`} />
+                                      <span>{opt.label}</span>
+                                    </div>
+                                    {formData.priority === opt.value && <CheckCircle2 size={13} className="text-indigo-600" />}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <StatusBadge status={formData.status} />
+                          <PriorityBadge priority={formData.priority} />
+                        </div>
+                      )}
                     </div>
                     <p className="text-indigo-200 text-sm mt-1">
                       Last updated: {project.updatedAt ? new Date(project.updatedAt).toLocaleDateString() : 'Never'}
@@ -687,6 +851,95 @@ const EnterpriseEditProjectModal = React.memo(({
                             if (errors.dueDate) setErrors(prev => ({ ...prev, dueDate: '' }));
                           }}
                         />
+
+                        {/* Status & Priority Section */}
+                        <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200">
+                          <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                              <Activity size={16} className="text-indigo-600" />
+                              Status & Priority
+                            </h3>
+                            {!canEditStatusAndPriority && (
+                              <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full flex items-center gap-1 font-medium">
+                                <Lock size={12} /> View only (Admin & Authorized Manager only)
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <FormField label="Status" icon={CheckCircle2} required>
+                              <select
+                                name="status"
+                                value={formData.status}
+                                disabled={!canEditStatusAndPriority}
+                                onChange={handleInputChange}
+                                className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-gray-900 transition-all ${!canEditStatusAndPriority ? "bg-gray-100 text-gray-500 cursor-not-allowed border-gray-200" : "bg-white border-gray-300 hover:border-blue-300 cursor-pointer"}`}
+                              >
+                                {STATUS_OPTIONS.map(opt => (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </FormField>
+
+                            <FormField label="Priority" icon={TrendingUp} required>
+                              <select
+                                name="priority"
+                                value={formData.priority}
+                                disabled={!canEditStatusAndPriority}
+                                onChange={handleInputChange}
+                                className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-gray-900 transition-all ${!canEditStatusAndPriority ? "bg-gray-100 text-gray-500 cursor-not-allowed border-gray-200" : "bg-white border-gray-300 hover:border-blue-300 cursor-pointer"}`}
+                              >
+                                {PRIORITY_OPTIONS.map(opt => (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </FormField>
+                          </div>
+                        </section>
+
+                        {/* Client Reminder Card (for completed projects) */}
+                        {(formData.status === 'completed' || project?.status === 'completed') && canManageReminders && (
+                          <section className="bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 rounded-2xl p-5 border border-indigo-200 shadow-sm">
+                            <div className="flex items-center justify-between flex-wrap gap-4">
+                              <div className="flex items-center gap-3">
+                                <div className="p-2.5 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg">
+                                  <Bell className="h-5 w-5 text-white" />
+                                </div>
+                                <div>
+                                  <h4 className="text-sm font-bold text-gray-900">Client Reminder</h4>
+                                  <p className="text-xs text-gray-500">Set follow-up reminders for completed projects</p>
+                                </div>
+                              </div>
+                              <motion.button
+                                whileHover={{ scale: 1.02 }}
+                                whileTap={{ scale: 0.98 }}
+                                type="button"
+                                onClick={() => setShowReminderModal(true)}
+                                className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-semibold rounded-xl hover:from-indigo-700 hover:to-purple-700 transition-all shadow-md hover:shadow-lg cursor-pointer"
+                              >
+                                <Calendar size={16} />
+                                Manage Reminders
+                              </motion.button>
+                            </div>
+                            <div className="mt-4">
+                              <ReminderPanel
+                                key={reminderKey}
+                                projectId={project?.id || project?._id}
+                                clientInfo={{
+                                  clientName: formData.clientName,
+                                  clientEmail: formData.clientEmail,
+                                  clientWhatsappNumber: clientDetailsFromForm(formData).clientWhatsappNumber
+                                }}
+                                onOpenReminderModal={() => setShowReminderModal(true)}
+                                compact={true}
+                              />
+                            </div>
+                          </section>
+                        )}
 
                         {/* Project Details */}
                         {formData.projectType !== 'Inhouse' && (
