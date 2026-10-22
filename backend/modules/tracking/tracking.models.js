@@ -95,7 +95,7 @@ export const ActivityInterval = model('ActivityInterval', {
   policyRevision: Number,
   capturePolicy:mongoose.Schema.Types.Mixed,
   departmentIdsAtCapture: {type:[mongoose.Schema.Types.ObjectId],default:undefined},
-  coverage: { type: String, enum: ['captured', 'excluded', 'locked', 'sleep', 'unavailable', 'partial'], required: true },
+  coverage: { type: String, enum: ['captured', 'excluded', 'locked', 'sleep', 'unavailable', 'partial', 'inactive', 'activity-only'], required: true },
   inputAvailable: Boolean, screenshotAvailable: Boolean, timeBasis: { type: String, default: 'server-anchor-monotonic' },
   expiresAt: { type: Date, default:null }
 }, [

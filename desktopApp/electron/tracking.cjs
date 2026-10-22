@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { randomUUID } = require('node:crypto');
-const { ActivityCounters, DurableQueue, checksum } = require('./tracking-core.cjs');
+const { ActivityCounters, DurableQueue, checksum, CaptureSchedule, MAX_ACTIVITY_WINDOW_MS } = require('./tracking-core.cjs');
 const {noticeAuthorization}=require('./monitoring-authorization.cjs');
 const {uploadEntry}=require('./screenshot-upload.cjs');
 
@@ -15,7 +15,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   let credentials=null,device=null,work=null,policy=null,queue=null,anchorMono=null;
   let generation=0,timer=null,syncTimer=null,uploadTimer=null,sampler=null,busy=false,uploading=false,capturing=false,hook=null,hookStarted=false;
   let uploadTask=null,manualRetryTask=null,uploadContinueTimer=null,uploadCooldownUntil=0;
-  let locked=false,suspended=false,lastCapture=0,lastState='unavailable',lastError='',lastErrorCode='',lastCaptureAllowed=false;
+  let locked=false,suspended=false,lastBoundary=0,lastState='unavailable',lastError='',lastErrorCode='',lastCaptureAllowed=false;
   let leaseDeadlineMono=0;
   let realtime=null,haltRevision=0,captureEpoch=0;
   const closedSessions=new Map(),closedAttendance=new Map();
@@ -34,11 +34,13 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   let uploadError='',uploadErrorCode='',nextUploadRetryAt=null,uploadLimits={};
   const protectedEntries=new Set();
   const counters = new ActivityCounters();
+  const captureSchedule = new CaptureSchedule({now:()=>performance.now()});
+  let checkpointPending = false;
   const trusted = event => { const window=getWindow();
     return window && event.sender===window.webContents && event.senderFrame===window.webContents.mainFrame && new URL(event.senderFrame.url).origin===getOrigin(); };
   const publish = (state=lastState,error=lastError,code=error===lastError?lastErrorCode:'') => {
     lastState=state;lastError=error;lastErrorCode=code;
-    const value={protocolVersion:2,capabilities:{retryUploads:true,claimMonitoring:true,finalizeSession:true,sessionTransitions:true,screenshotPipeline:3},state,error,errorCode:code,userId:credentials?.userId||null,workspaceId:credentials?.workspaceId||null,deviceId:device?._id||null,syncStatus:queue?.damagedFiles().length?'capture-failed':uploading?'uploading':uploadError?(uploadErrorCode==='SCREENSHOT_STORAGE_UNAVAILABLE'?'storage-unavailable':'retry-pending'):queue?.files().length?'pending-sync':'synced',queueBytes:queue?.usedBytes()||0,queueCapacityBytes:queue?.maxBytes||0,pending:(queue?.files()||[]).filter(name=>!protectedEntries.has(name)).length,protectedCopies:protectedEntries.size+(queue?.damagedFiles().length||0),uploadError,uploadErrorCode,nextUploadRetryAt,monitorIds:screen.getAllDisplays().map(d=>String(d.id)),appVersion:app.getVersion(),noticeRequired,noticeVersion,
+    const value={protocolVersion:2,capabilities:{retryUploads:true,claimMonitoring:true,finalizeSession:true,sessionTransitions:true,screenshotPipeline:3},state,error,errorCode:code,userId:credentials?.userId||null,workspaceId:credentials?.workspaceId||null,deviceId:device?._id||null,syncStatus:queue?.damagedFiles().length?'capture-failed':uploading?'uploading':uploadError?(uploadErrorCode==='SCREENSHOT_STORAGE_UNAVAILABLE'?'storage-unavailable':'retry-pending'):queue?.files().length?'pending-sync':'synced',queueBytes:queue?.usedBytes()||0,queueCapacityBytes:queue?.maxBytes||0,pending:(queue?.files()||[]).filter(name=>!protectedEntries.has(name)).length,protectedCopies:protectedEntries.size+(queue?.damagedFiles().length||0),uploadError,uploadErrorCode,nextUploadRetryAt,screenshotsPausedForInactivity:captureSchedule.inactive(),monitorIds:screen.getAllDisplays().map(d=>String(d.id)),appVersion:app.getVersion(),noticeRequired,noticeVersion,
       policy:policy?{revision:policy.revision,enabled:policy.enabled,monitoringEnabled:policy.monitoringEnabled,intervalSeconds:policy.intervalSeconds,retentionDays:policy.retentionDays,monitors:policy.monitors,blur:policy.blur,format:'webp',personalPauseEnabled:policy.personalPauseEnabled}:null};
     const window=getWindow(); if(window&&!window.isDestroyed())window.webContents.send('desktop-tracking:status',value);
     if(window&&!window.isDestroyed())window.setTitle(state==='monitoring'?'FlowTask · Monitoring active':state==='offline'?'FlowTask · Monitoring offline':'FlowTask');
@@ -59,6 +61,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   }
   const isIdle = ()=>locked||suspended||powerMonitor.getSystemIdleTime()>=(policy?.idleThresholdSeconds||60);
   function stopInput() {
+    captureSchedule.stop();checkpointPending=false;
     if(sampler)clearInterval(sampler);sampler=null;
     if(hookStarted){try{hook.stop();}catch{/* OS hook already stopped */}hookStarted=false;}
   }
@@ -109,8 +112,8 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
         hook=inputModule.uIOhook;
         // Deliberately ignore the entire event payload, including keycodes,
         // modifiers, button IDs and coordinates. Only counters cross this API.
-        hook.on('keydown',()=>{if(capturing&&!locked&&!suspended)counters.keyDown();});
-        hook.on('mousedown',()=>{if(capturing&&!locked&&!suspended)counters.mouseDown();});
+        hook.on('keydown',()=>{if(capturing&&!locked&&!suspended){captureInput();counters.keyDown();}});
+        hook.on('mousedown',()=>{if(capturing&&!locked&&!suspended){captureInput();counters.mouseDown();}});
         hook.on('mousemove',()=>{if(capturing&&!locked&&!suspended)counters.input();});
         hook.on('wheel',()=>{if(capturing&&!locked&&!suspended)counters.input();});
       }catch{return false;}
@@ -119,12 +122,19 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
     if(!sampler)sampler=setInterval(()=>{if(capturing)counters.sample(isIdle());},1000);
     return true;
   }
+  function captureInput() {
+    if(captureSchedule.input()){
+      // Resume on a fresh random interval, without a catch-up image burst.
+      captureEpoch++;checkpointPending=true;publish();
+    }
+  }
   function begin() {
     if(capturing||locked||suspended||performance.now()>=leaseDeadlineMono)return;
     if(!queue?.available()){publish('unavailable','Encrypted offline storage is unavailable');return;}
     if(queue.usedBytes()>=queue.maxBytes){publish('unavailable','Offline screenshot queue is full; reconnect to upload saved captures');return;}
     if(process.platform==='darwin'&&systemPreferences.getMediaAccessStatus('screen')!=='granted'){publish('permission-required','Allow Screen Recording in macOS System Settings, then restart FlowTask');return;}
-    capturing=true;counters.reset();lastCapture=performance.now();
+    capturing=true;counters.reset();lastBoundary=performance.now();
+    captureSchedule.start(policy?.intervalSeconds||device.preferences.intervalSeconds,`${generation}:${work?._id}`);
     const input=startInput();
     if(!sampler)sampler=setInterval(()=>{if(capturing)counters.sample(isIdle());},1000);
     publish('monitoring',input?'':'System input counters unavailable; active/idle time is measured separately');
@@ -132,14 +142,16 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   async function boundary(reason=null) {
     if(!capturing||!work||!device||anchorMono===null)return;
     const activeWork=work,activeDevice=device,activeQueue=queue,activeGeneration=generation,activeEpoch=++captureEpoch;
+    if(!reason&&captureSchedule.inactive())reason='inactive';
+    const allowedImage=()=>activeGeneration===generation&&activeEpoch===captureEpoch&&capturing&&!locked&&!suspended&&performance.now()<leaseDeadlineMono&&!captureSchedule.inactive();
     let coverage=reason||'captured',images=[];
     try {
-      if(!reason&&!locked&&!suspended) {
+      if(!reason&&allowedImage()) {
         const preferences=activeDevice.preferences;
         const exclusions=preferences.excludeWindowTitles||[];
         if(exclusions.length){const windows=await desktopCapturer.getSources({types:['window'],thumbnailSize:{width:0,height:0}});
           if(windows.some(w=>exclusions.some(word=>w.name.toLocaleLowerCase().includes(word.toLocaleLowerCase()))))coverage='excluded';}
-        if(activeEpoch!==captureEpoch||locked||suspended)return;
+        if(!allowedImage())return;
         if(coverage==='captured'){
           const all=screen.getAllDisplays(),primary=screen.getPrimaryDisplay();
           const displays=all.filter(d=>(preferences.monitors==='all'||d.id===primary.id)&&!(preferences.excludedDisplayIds||[]).includes(String(d.id)));
@@ -148,7 +160,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
             const sources=await desktopCapturer.getSources({types:['screen'],fetchWindowIcons:false,thumbnailSize:{
               width:Math.max(...displays.map(d=>Math.round(d.size.width*d.scaleFactor))),height:Math.max(...displays.map(d=>Math.round(d.size.height*d.scaleFactor)))}});
             for(const display of displays){const source=sources.find(s=>s.display_id===String(display.id));
-              if(activeEpoch!==captureEpoch||locked||suspended)return;
+              if(!allowedImage())return;
               if(!source||source.thumbnail.isEmpty()){coverage='unavailable';continue;}
               let image=source.thumbnail;const size=image.getSize();
               if(preferences.blur)image=image.resize({width:Math.max(1,Math.round(size.width/40)),height:Math.max(1,Math.round(size.height/40)),quality:'good'}).resize({...size,quality:'good'});
@@ -161,10 +173,16 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
             }
           }
         }
-      }else if(!reason)coverage=locked?'locked':'sleep';
+      }else if(!reason){
+        if(captureSchedule.inactive())coverage='inactive';
+        else return;
+      }
     }catch(error){coverage='unavailable';publish('unavailable',error.message);}
     if(activeGeneration!==generation||activeQueue!==queue||activeEpoch!==captureEpoch)return;
-    const count=counters.boundary(isIdle());lastCapture=count.endMono;
+    // A slow OS capture cannot outlive its activity authorization or lease.
+    if(images.length&&!allowedImage())return;
+    const count=counters.boundary(isIdle());lastBoundary=count.endMono;
+    if(!reason)captureSchedule.completed(count.endMono);
     const payload={operationId:randomUUID(),sessionId:activeWork._id,anchorId:activeDevice.anchor.id,
       startOffsetMs:count.startMono-anchorMono,endOffsetMs:count.endMono-anchorMono,
       mouseCount:hookStarted?count.mouseCount:null,keyboardCount:hookStarted?count.keyboardCount:null,
@@ -178,7 +196,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
     publish(lastState,lastError);
   }
   async function stopCapture(reason='partial') {
-    if(capturing)await boundary(reason);
+    if(capturing)await boundary(reason==='partial'&&captureSchedule.inactive()?'inactive':reason);
     capturing=false;stopInput();counters.reset();lastCaptureAllowed=false;
   }
   function flush(){
@@ -271,7 +289,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
         }else{lastCaptureAllowed=true;begin();if(capturing)publish('monitoring',hookStarted?'':'System input counters unavailable');}
       }
       else{await stopCapture();const state=!policy.enabled||!policy.monitoringEnabled?'disabled':work?.status==='PAUSED'?'paused':!work||work.status!=='RUNNING'?'ready':'unavailable';publish(noticeRequired?'notice-required':state,next.reason||'Monitoring unavailable');}
-      await flush();
+      flush().catch(()=>{});
     }catch(error){
       if(scope!==generation)return;
       if([401,403,404].includes(error.status)){haltCapture(error.message);}
@@ -294,8 +312,20 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
     clearInterval(timer);timer=null;clearInterval(syncTimer);syncTimer=null;clearInterval(uploadTimer);uploadTimer=null;if(uploadContinueTimer)clearTimeout(uploadContinueTimer);uploadContinueTimer=null;
     if(value){const queueMB=Math.min(4096,Math.max(50,Number(process.env.FLOWTASK_SCREENSHOT_QUEUE_MAX_MB)||500));queue=new DurableQueue(path.join(root,checksum(`${value.workspaceId}:${value.userId}`)),safeStorage,queueMB*1024*1024);
       timer=setInterval(async()=>{
-        if(capturing&&performance.now()>=leaseDeadlineMono){capturing=false;stopInput();counters.reset();publish('unavailable','Capture lease expired. Reconnect to renew monitoring authorization.');return;}
-        if(capturing&&performance.now()-lastCapture>=policy.intervalSeconds*1000&&!busy){busy=true;try{await boundary();await flush();}finally{busy=false;}}
+        if(capturing&&performance.now()>=leaseDeadlineMono){haltCapture('Capture lease expired. Reconnect to renew monitoring authorization.');return;}
+        if(!capturing)return;
+        const now=performance.now();
+        if(captureSchedule.updateInactivity(now)){captureEpoch++;checkpointPending=true;publish();}
+        if(busy)return;
+        const inactive=captureSchedule.inactive(now),elapsed=now-lastBoundary;
+        const checkpoint=checkpointPending||elapsed>=MAX_ACTIVITY_WINDOW_MS||inactive&&elapsed>=Math.min((policy?.intervalSeconds||600)*1000,MAX_ACTIVITY_WINDOW_MS);
+        if(checkpoint||captureSchedule.due(now)){
+          busy=true;
+          try{checkpointPending=false;await boundary(checkpoint?(inactive?'inactive':'activity-only'):null);}
+          finally{busy=false;}
+          // Upload retries must not hold up the next capture or heartbeat.
+          flush().catch(()=>{});
+        }
       },1000);
       // Native session polling is independent of the React route/window focus.
       syncTimer=setInterval(()=>sync(),15000);syncTimer.unref();

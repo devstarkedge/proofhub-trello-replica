@@ -30,7 +30,8 @@ export async function evidenceByUser(workspaceId,sessions,segments,start,end,opt
   const result=new Map();
   for(const row of rows){const key=String(row._id.user),coverage=row._id.coverage,skip=['excluded','locked','sleep'].includes(coverage);
     const value=result.get(key)||{activeInputSeconds:0,eligibleInputSeconds:0,mouseCount:null,keyboardCount:null,knownSeconds:0,excludedSeconds:0,eligibleWindows:0,capturedWindows:0,pendingScreenshots:0,outcomes:{}};
-    value.activeInputSeconds+=row.inputActive;value.eligibleInputSeconds+=row.inputEligible;value.knownSeconds+=row.seconds;value.excludedSeconds+=skip?row.seconds:0;value.eligibleWindows+=skip?0:row.windows;value.capturedWindows+=row.captured;value.pendingScreenshots+=row.pending;value.outcomes[coverage]=row.windows;
+    const noImage=skip||['inactive','activity-only'].includes(coverage);
+    value.activeInputSeconds+=row.inputActive;value.eligibleInputSeconds+=row.inputEligible;value.knownSeconds+=row.seconds;value.excludedSeconds+=skip?row.seconds:0;value.eligibleWindows+=noImage?0:row.windows;value.capturedWindows+=noImage?0:row.captured;value.pendingScreenshots+=row.pending;value.outcomes[coverage]=row.windows;
     if(row.knownMouse)value.mouseCount=(value.mouseCount||0)+row.mouse;if(row.knownKeyboard)value.keyboardCount=(value.keyboardCount||0)+row.keyboard;
     result.set(key,value);
   }

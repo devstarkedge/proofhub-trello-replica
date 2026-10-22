@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { createHash, randomUUID } = require('node:crypto');
+const { CaptureSchedule, MAX_ACTIVITY_WINDOW_MS } = require('./capture-schedule.cjs');
 
 class ActivityCounters {
   constructor(now = () => performance.now()) { this.now = now; this.reset(); }
@@ -72,4 +73,4 @@ class DurableQueue {
   prune(now=Date.now()) { if(!this.available())return;for(const name of this.files()){let value;try{value=this.read(name);}catch{this.quarantine(name);continue;}if(value.expiresAt&&value.expiresAt<=now)this.remove(name);} }
 }
 const checksum = (data, algorithm='sha256') => createHash(algorithm).update(data).digest('hex');
-module.exports = { ActivityCounters, DurableQueue, checksum };
+module.exports = { ActivityCounters, DurableQueue, checksum, CaptureSchedule, MAX_ACTIVITY_WINDOW_MS };

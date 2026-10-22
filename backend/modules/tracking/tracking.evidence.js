@@ -12,8 +12,10 @@ export function summarizeEvidence(intervals, screenshots = []) {
     if(excluded)excludedSeconds+=seconds;
     outcomes[interval.coverage]=(outcomes[interval.coverage]||0)+1;
     if(!excluded){
-      eligibleWindows++;
-      if(ready.has(String(interval._id)))capturedWindows++;
+      if(!['inactive','activity-only'].includes(interval.coverage)){
+        eligibleWindows++;
+        if(ready.has(String(interval._id)))capturedWindows++;
+      }
       if(interval.activityBasis==='distinct-input-seconds-v1'&&Number.isFinite(interval.inputActiveSeconds)&&Number.isFinite(interval.inputEligibleSeconds)){
         activeInputSeconds+=interval.inputActiveSeconds;eligibleInputSeconds+=interval.inputEligibleSeconds;
       }

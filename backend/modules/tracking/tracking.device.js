@@ -170,7 +170,9 @@ async function saveInterval({ workspaceId, userId, deviceId, payload }) {
   // rather than applying the new configuration defaults to historical uploads.
   const capturePolicy=anchor.capturePolicy||await TrackingPolicy.findOne({workspaceId}).lean()||policy;
   if (capturePolicy.retentionDays!==null && Date.now() - +endedAt > capturePolicy.retentionDays * 86400000) fail('Activity interval is outside retention', 410);
-  if (!['captured','excluded','locked','sleep','unavailable','partial'].includes(payload.coverage) || typeof payload.inputAvailable !== 'boolean' || typeof payload.screenshotAvailable !== 'boolean') fail('Invalid coverage');
+  const intentionalNoImage = ['inactive','activity-only'].includes(payload.coverage);
+  if (!['captured','excluded','locked','sleep','unavailable','partial','inactive','activity-only'].includes(payload.coverage) || typeof payload.inputAvailable !== 'boolean' || typeof payload.screenshotAvailable !== 'boolean') fail('Invalid coverage');
+  if(intentionalNoImage && payload.screenshotAvailable) fail('This activity interval cannot contain screenshots');
   const covered = overlapSeconds(startedAt, endedAt, session.segments);
   // A final upload after checkout may straddle the close boundary. Preserve
   // the exact screenshot boundaries, flag partial coverage, and never use
@@ -205,7 +207,7 @@ async function saveInterval({ workspaceId, userId, deviceId, payload }) {
       inputEligibleSeconds: inputEligible ? payload.inputEligibleSeconds : null, activityBasis: distinctInput ? payload.activityBasis : 'legacy-idle-threshold', policyRevision: anchor.policyRevision || policy.revision,
       departmentIdsAtCapture:anchor.departments,
       capturePolicy:{revision:anchor.policyRevision,retentionDays:capturePolicy.retentionDays,blur:capturePolicy.blur,monitoringEnabled:capturePolicy.monitoringEnabled,excludedDisplayIds:capturePolicy.excludedDisplayIds||[]},
-      coverage: partial ? 'partial' : payload.coverage, inputAvailable: payload.inputAvailable,
+      coverage: partial && !intentionalNoImage ? 'partial' : payload.coverage, inputAvailable: payload.inputAvailable,
       screenshotAvailable: payload.screenshotAvailable, expiresAt: capturePolicy.retentionDays===null?null:new Date(+endedAt + capturePolicy.retentionDays * 86400000)
     }], { session: dbSession });
   }); } finally { await dbSession.endSession(); }
@@ -227,7 +229,7 @@ export async function prepareScreenshot({ workspaceId, userId, deviceId, interva
   if(image.exceptionCode==='SIZE_QUALITY_CONFLICT')fail('Update the desktop app to retry the saved full-resolution capture.',409,'AGENT_UPDATE_REQUIRED');
   const recovering=screenshot?.status==='FAILED'&&screenshot.compressionException==='SIZE_QUALITY_CONFLICT';
   if(!interval.screenshotAvailable&&!recovering&&image.recoveredFrom!=='SIZE_QUALITY_CONFLICT')fail('Screenshot interval unavailable',404);
-  if(['excluded','locked','sleep'].includes(interval.coverage))fail('No screenshot was authorized for this interval',403);
+  if(['excluded','locked','sleep','inactive','activity-only'].includes(interval.coverage))fail('No screenshot was authorized for this interval',403);
   if(!/^[a-f\d]{64}$/.test(image.checksum)||!/^[a-f\d]{32}$/.test(image.contentMd5)||!Number.isInteger(image.bytes)||image.bytes<=0)fail('Invalid screenshot metadata');
   if(image.bytes>SCREENSHOT_MAX_BYTES)fail('Screenshot exceeds the configured operational limit. Retain the original for retry.',413,'SCREENSHOT_UPLOAD_LIMIT');
   const modern=image.pipelineVersion>=3;
