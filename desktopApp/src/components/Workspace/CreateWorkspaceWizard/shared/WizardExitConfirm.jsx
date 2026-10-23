@@ -9,7 +9,7 @@ import { AlertTriangle, Trash2, Edit3 } from 'lucide-react';
  * — nothing exists server-side yet at this point in the flow, so there's no
  * "Save Changes" action that applies here.
  */
-const WizardExitConfirm = ({ isOpen, onDiscard, onContinueEditing }) => {
+const WizardExitConfirm = ({ isOpen, onDiscard, onContinueEditing, portalContainer }) => {
   const continueButtonRef = useRef(null);
   const modalRef = useRef(null);
 
@@ -125,7 +125,7 @@ const WizardExitConfirm = ({ isOpen, onDiscard, onContinueEditing }) => {
         </motion.div>
       )}
     </AnimatePresence>,
-    document.body
+    portalContainer || document.body
   );
 };
 

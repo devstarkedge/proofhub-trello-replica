@@ -1,0 +1,116 @@
+.flowtask-sidebar,
+.app-content {
+  transition: width 220ms ease, margin-left 220ms ease;
+}
+
+.sidebar-nav-item,
+.sidebar-child-link,
+.sidebar-control {
+  touch-action: manipulation;
+  transition: background-color 200ms ease, color 200ms ease, padding 220ms ease;
+}
+
+.sidebar-workspace-header,
+#sidebar-navigation {
+  transition: padding 220ms ease;
+}
+
+.sidebar-item-label {
+  white-space: nowrap;
+}
+
+.flowtask-sidebar[data-collapsed="true"] .sidebar-nav-item {
+  gap: 0;
+  /* Keep icons near their final position throughout the width transition. */
+  padding-left: 8.5px;
+  padding-right: 0;
+}
+
+.flowtask-sidebar[data-collapsed="true"] .sidebar-item-label {
+  display: none;
+}
+
+.flowtask-sidebar[data-collapsed="true"] .sidebar-item-badge {
+  position: absolute;
+  top: 1px;
+  right: 0;
+  height: 17px;
+  min-width: 17px;
+  padding: 0 3px;
+  font-size: 9px;
+  line-height: 1;
+}
+
+.sidebar-control {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--color-primary-subtle);
+  color: var(--color-primary);
+}
+
+.sidebar-control:hover {
+  background: var(--color-sidebar-item-hover);
+}
+
+.sidebar-rail-toggle {
+  position: absolute;
+  bottom: -14px;
+  left: calc(50% - 14px);
+  z-index: 1;
+  height: 28px;
+  width: 28px;
+  border: 1px solid var(--color-sidebar-border);
+  background: var(--color-sidebar-bg);
+}
+
+.flowtask-sidebar :is(button, a):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.sidebar-tooltip {
+  z-index: 100;
+  max-width: calc(100vw - 24px);
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: var(--color-text-primary);
+  color: var(--color-bg-base);
+  font-size: 12px;
+  box-shadow: var(--shadow-md);
+}
+
+.sidebar-drawer {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  animation: sidebar-slide-in 220ms ease;
+}
+
+.sidebar-drawer[data-state="closed"] {
+  animation: sidebar-slide-out 220ms ease;
+}
+
+.sidebar-drawer-backdrop {
+  animation: sidebar-fade-in 220ms ease;
+}
+
+.sidebar-drawer-backdrop[data-state="closed"] {
+  animation: sidebar-fade-out 220ms ease;
+}
+
+@keyframes sidebar-slide-in { from { transform: translateX(-100%); } to { transform: none; } }
+@keyframes sidebar-slide-out { from { transform: none; } to { transform: translateX(-100%); } }
+@keyframes sidebar-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sidebar-fade-out { from { opacity: 1; } to { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .flowtask-sidebar,
+  .flowtask-sidebar *,
+  .app-content,
+  .sidebar-drawer-backdrop,
+  .sidebar-tooltip {
+    transition: none !important;
+    animation: none !important;
+  }
+}

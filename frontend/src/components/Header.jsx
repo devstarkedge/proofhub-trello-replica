@@ -2,10 +2,10 @@ import { useContext, useState, useRef, useEffect, lazy, Suspense } from 'react';
 import { Bell, Menu, Settings, LogOut, User, ChevronDown, Kanban, List, Calendar, BarChart3, Users, Building2, CreditCard, HelpCircle, Palette, LayoutGrid } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Dialog } from 'radix-ui';
 import AuthContext from '../context/AuthContext';
 import DepartmentContext from '../context/DepartmentContext';
 import NotificationContext from '../context/NotificationContext';
-import Sidebar from './Sidebar';
 import Avatar from './Avatar';
 
 const UserVerificationModal = lazy(() => import('./UserVerificationModal'));
@@ -63,7 +63,6 @@ const Header = ({ boardName }) => {
     restoreNotification,
     deletePermanently
   } = useContext(NotificationContext);
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   
   const setShowNotifications = value => { if (value === false) closeNotifications(); else if (value !== showNotifications) toggleNotifications(); };
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -112,23 +111,6 @@ const Header = ({ boardName }) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // prevent body scroll when mobile sidebar is open
-  useEffect(() => {
-    if (mobileSidebarOpen) {
-      document.body.classList.add('overflow-hidden');
-    } else {
-      document.body.classList.remove('overflow-hidden');
-    }
-    return () => document.body.classList.remove('overflow-hidden');
-  }, [mobileSidebarOpen]);
-
-  // Close mobile sidebar when the route changes
-  useEffect(() => {
-    if (mobileSidebarOpen) {
-      setMobileSidebarOpen(false);
-    }
-  }, [location.pathname]);
-
   const navItems = [
     { path: '/', icon: Kanban, label: 'Board' },
     { path: '/list-view', icon: List, label: 'Task-List' },
@@ -169,11 +151,12 @@ const Header = ({ boardName }) => {
           {/* Left Section */}
           <div className="flex items-center gap-3 flex-1 min-w-0">
             {/* Mobile menu button */}
+            <Dialog.Trigger asChild>
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => setMobileSidebarOpen(true)}
-              className="lg:hidden p-2.5 rounded-xl transition-all duration-200"
+              type="button"
+              className="md:hidden shrink-0 h-11 w-11 p-3 rounded-xl transition-all duration-200"
               style={{
                 backgroundColor: 'var(--color-bg-muted)',
                 color: 'var(--color-text-secondary)',
@@ -190,6 +173,7 @@ const Header = ({ boardName }) => {
             >
               <Menu size={20} />
             </motion.button>
+            </Dialog.Trigger>
 
 
             {/* View Navigation - Enhanced with colored icons */}
@@ -764,13 +748,6 @@ const Header = ({ boardName }) => {
         </div>
       </div>
 
-      {/* Mobile Sidebar */}
-      <AnimatePresence>
-        {mobileSidebarOpen && (
-          <Sidebar isMobile={true} onClose={() => setMobileSidebarOpen(false)} />
-        )}
-      </AnimatePresence>
-      
     </header>
     
     {/* User Verification Modal - Outside header for proper z-index stacking */}

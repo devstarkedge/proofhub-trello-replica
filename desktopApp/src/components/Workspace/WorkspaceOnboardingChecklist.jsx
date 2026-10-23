@@ -16,7 +16,7 @@ import EmailInviteInput from './EmailInviteInput';
  * persisted onboarding-state blob to drift out of sync), so re-opening this
  * always reflects real, current workspace state.
  */
-const WorkspaceOnboardingChecklist = ({ isOpen, onClose, onUpdate }) => {
+const WorkspaceOnboardingChecklist = ({ isOpen, onClose, onUpdate, portalContainer }) => {
   const navigate = useNavigate();
   const { currentWorkspace } = useContext(WorkspaceContext);
   const [status, setStatus] = useState(null);
@@ -195,7 +195,7 @@ const WorkspaceOnboardingChecklist = ({ isOpen, onClose, onUpdate }) => {
         </motion.div>
       </motion.div>
     </AnimatePresence>,
-    document.body
+    portalContainer || document.body
   );
 };
 

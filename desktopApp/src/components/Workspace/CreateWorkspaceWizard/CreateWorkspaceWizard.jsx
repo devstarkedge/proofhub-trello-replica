@@ -28,7 +28,7 @@ const INITIAL_FORM = {
  * Plan step exits the wizard entirely and hands off to /contact-sales
  * instead of advancing to Setup (see handleSelectEnterprise).
  */
-const CreateWorkspaceWizard = ({ isOpen, onClose, onCreated }) => {
+const CreateWorkspaceWizard = ({ isOpen, onClose, onCreated, portalContainer }) => {
   const { createWorkspace, uploadWorkspaceIcon } = useContext(WorkspaceContext);
   const navigate = useNavigate();
 
@@ -303,12 +303,13 @@ const CreateWorkspaceWizard = ({ isOpen, onClose, onCreated }) => {
       </AnimatePresence>
 
       <WizardExitConfirm
+        portalContainer={portalContainer}
         isOpen={showExitConfirm}
         onDiscard={handleDiscard}
         onContinueEditing={() => setShowExitConfirm(false)}
       />
     </>,
-    document.body
+    portalContainer || document.body
   );
 };
 

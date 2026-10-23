@@ -1,7 +1,8 @@
 import { useContext, useState, useEffect } from 'react';
-import { Home, Users, Settings, UserCheck, Bell, CalendarClock, ChevronDown, ChevronRight, DollarSign, Zap, TrendingUp, ShieldCheck, CalendarDays, Fingerprint } from 'lucide-react';
-import { NavLink, useLocation } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { Home, Users, Settings, UserCheck, Bell, CalendarClock, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, X, DollarSign, Zap, TrendingUp, ShieldCheck, CalendarDays, Fingerprint } from 'lucide-react';
+import { NavLink, useLocation, matchPath } from 'react-router-dom';
+import { Dialog } from 'radix-ui';
+import SidebarTooltip from './SidebarTooltip';
 import AuthContext from '../context/AuthContext';
 import WorkspaceSwitcher from './Workspace/WorkspaceSwitcher';
 import useAccessControl from '../hooks/useAccessControl';
@@ -10,9 +11,6 @@ import useJoinRequestsLive from '../hooks/useJoinRequestsLive';
 import useRegularizationApprovalLive from '../hooks/useRegularizationApprovalLive';
 import useLeavePendingLive from '../hooks/useLeavePendingLive';
 import { getDefaultLeaveRouteForRole } from '../utils/leaveAccess';
-
-const MotionDiv = motion.div;
-const MotionAside = motion.aside;
 
 // Icon color configuration for each nav item
 const iconColors = {
@@ -33,7 +31,7 @@ const iconColors = {
   '/attendance': { color: '#0ea5e9', bg: 'rgba(14, 165, 233, 0.12)' }, // Sky - Attendance
 };
 
-const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
+const Sidebar = ({ isMobile = false, collapsed = false, onToggleCollapse, onClose }) => {
   const leavePendingCount = useLeavePendingLive();
   const { user } = useContext(AuthContext);
   const [hoveredItem, setHoveredItem] = useState(null);
@@ -67,18 +65,6 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
       setPmSheetExpanded(true);
     }
   }, [isPMSheetActive]);
-
-  // Close drawer with Escape on mobile
-  useEffect(() => {
-    if (!isMobile) return;
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isMobile, onClose]);
 
   // Sales/Finance visibility now comes from useAccessControl() above, which
   // already stays live via the shared socket-driven refresh — no per-module
@@ -171,7 +157,6 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
   };
 
   const navItems = getNavItems();
-  const [logoHover, setLogoHover] = useState(false);
 
   // Theme-aware styles using CSS variables
   const sidebarStyles = {
@@ -186,297 +171,137 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
     return iconColors[path] || { color: 'var(--color-text-secondary)', bg: 'transparent' };
   };
 
-  // Render PM Sheet children
-  const renderPMSheetChildren = (isDesktop = true) => {
-    const iconConfig = getIconConfig('/pm-sheet');
-    
-    return (
-      <div className="ml-6 mt-1 space-y-1 border-l-2 pl-3" style={{ borderColor: iconConfig.bg }}>
-        {pmSheetChildren.map((child) => {
-          const isChildActive = location.pathname === child.path;
-          const isChildHovered = hoveredItem === child.path;
-          
-          return (
-            <NavLink
-              key={child.path}
-              to={child.path}
-              onClick={!isDesktop ? onClose : undefined}
-              className="flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200"
-              onMouseEnter={() => setHoveredItem(child.path)}
-              onMouseLeave={() => setHoveredItem(null)}
-              style={{
-                backgroundColor: isChildActive ? iconConfig.bg : isChildHovered ? 'var(--color-sidebar-item-hover)' : 'transparent',
-                color: isChildActive ? iconConfig.color : isChildHovered ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-              }}
-            >
-              <span style={{ fontWeight: isChildActive ? 600 : 500 }}>{child.label}</span>
-            </NavLink>
-          );
-        })}
-      </div>
-    );
-  };
-
-  // Render PM Sheet parent with expandable children
-  const renderPMSheetItem = (item, isDesktop = true) => {
-    const { icon: Icon, label } = item;
-    const iconConfig = getIconConfig('/pm-sheet');
-    const isHovered = hoveredItem === '/pm-sheet-parent';
-    const isActive = isPMSheetActive;
-
-    return (
-      <div key="/pm-sheet">
-        <button
-          onClick={() => setPmSheetExpanded(!pmSheetExpanded)}
-          className="w-full sidebar-nav-item flex items-center min-h-[44px] px-3 py-3 text-sm font-medium rounded-lg group relative overflow-hidden"
-          onMouseEnter={() => setHoveredItem('/pm-sheet-parent')}
-          onMouseLeave={() => setHoveredItem(null)}
-          style={{
-            touchAction: 'manipulation',
-            backgroundColor: isActive ? iconConfig.bg : isHovered ? 'var(--color-sidebar-item-hover)' : 'transparent',
-            color: isActive ? iconConfig.color : isHovered ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-            borderLeft: isActive ? `3px solid ${iconConfig.color}` : '3px solid transparent',
-            marginLeft: '-3px',
-            paddingLeft: 'calc(0.75rem + 3px)',
-            transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
-          }}
-        >
-          {/* Icon container with colored background */}
-          <div 
-            className="flex items-center justify-center w-8 h-8 rounded-lg mr-3 transition-all duration-200"
-            style={{
-              backgroundColor: isActive || isHovered ? iconConfig.bg : 'transparent',
-              transform: isHovered ? 'scale(1.1)' : 'scale(1)',
-            }}
-          >
-            <Icon 
-              className="h-[18px] w-[18px] transition-all duration-200" 
-              style={{ 
-                color: isActive || isHovered ? iconConfig.color : 'var(--color-text-muted)',
-                strokeWidth: isActive ? 2.5 : 2,
-              }}
-            />
-          </div>
-          
-          {/* Label */}
-          <span className="transition-all duration-200 flex-1 text-left" style={{
+  const renderPMSheetChildren = () => (
+    <div id="sidebar-pm-sheet-pages" className="ml-6 mt-1 space-y-1 border-l-2 pl-3" style={{ borderColor: getIconConfig('/pm-sheet').bg }}>
+      {pmSheetChildren.map((child) => (
+        <NavLink key={child.path} to={child.path} end onClick={isMobile ? onClose : undefined}
+          className="sidebar-child-link block truncate rounded-lg px-3 py-2 text-sm"
+          style={({ isActive }) => ({
+            color: isActive ? getIconConfig('/pm-sheet').color : 'var(--color-text-secondary)',
+            backgroundColor: isActive ? getIconConfig('/pm-sheet').bg : 'transparent',
             fontWeight: isActive ? 600 : 500,
-          }}>
-            {label}
-          </span>
+          })}>
+          {child.label}
+        </NavLink>
+      ))}
+    </div>
+  );
 
-          {/* Expand/Collapse chevron */}
-          {pmSheetExpanded ? (
-            <ChevronDown className="h-4 w-4 transition-transform duration-200" style={{ color: isActive ? iconConfig.color : 'var(--color-text-muted)' }} />
-          ) : (
-            <ChevronRight className="h-4 w-4 transition-transform duration-200" style={{ color: isActive ? iconConfig.color : 'var(--color-text-muted)' }} />
-          )}
-        </button>
-
-        {/* Children */}
-        {pmSheetExpanded && renderPMSheetChildren(isDesktop)}
-      </div>
-    );
-  };
-
-  // Render nav item with colored icon
-  const renderNavItem = (item, isDesktop = true) => {
-    // Handle PM Sheet with children separately
-    if (item.hasChildren) {
-      return renderPMSheetItem(item, isDesktop);
-    }
-
-    const { path, icon: Icon, label, badge, matchPrefix, iconKey } = item;
+  const renderNavItem = (item) => {
+    const { path, icon: Icon, label, badge, matchPrefix, iconKey, hasChildren } = item;
     const iconConfig = getIconConfig(iconKey || path);
     const isHovered = hoveredItem === path;
-    const isItemActive = (routerActive) => (matchPrefix ? location.pathname.startsWith(matchPrefix) : routerActive);
-
+    const isItemActive = (routerActive) => hasChildren ? isPMSheetActive
+      : matchPrefix ? location.pathname.startsWith(matchPrefix) : routerActive;
+    // Tooltip's slot merges style objects, so resolve route styling before
+    // passing the link through it (a NavLink style callback would be lost).
+    const active = isItemActive(Boolean(matchPath({ path, end: path === '/' }, location.pathname)));
+    const itemStyle = (isActive) => ({
+      backgroundColor: isActive ? iconConfig.bg : isHovered ? 'var(--color-sidebar-item-hover)' : 'transparent',
+      color: isActive ? iconConfig.color : isHovered ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+      borderLeftColor: isActive ? iconConfig.color : 'transparent',
+    });
+    const contents = (isActive) => (
+      <>
+        <span className="sidebar-item-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+          style={{ backgroundColor: isActive || isHovered ? iconConfig.bg : 'transparent' }}>
+          <Icon aria-hidden="true" className="h-[18px] w-[18px]"
+            style={{ color: isActive || isHovered ? iconConfig.color : 'var(--color-text-muted)', strokeWidth: isActive ? 2.5 : 2 }} />
+        </span>
+        <span className="sidebar-item-label flex-1 truncate text-left" style={{ fontWeight: isActive ? 600 : 500 }}>{label}</span>
+        {!!badge && (
+          <span aria-hidden="true" className="sidebar-item-badge flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-xs font-bold text-white"
+            style={{ background: 'linear-gradient(135deg, #ef4444, #ec4899)' }}>
+            {badge > 99 ? '99+' : badge}
+          </span>
+        )}
+        {hasChildren && <span className="sidebar-item-label" aria-hidden="true">
+          {pmSheetExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        </span>}
+      </>
+    );
+    const shared = {
+      className: 'sidebar-nav-item relative flex min-h-[44px] w-full items-center gap-3 rounded-lg border-l-[3px] px-3 py-3 text-sm font-medium',
+      onMouseEnter: () => setHoveredItem(path),
+      onMouseLeave: () => setHoveredItem(null),
+      'aria-label': badge ? label + ', ' + badge + ' pending requests' : label,
+    };
     return (
-      <NavLink
-        key={path}
-        to={path}
-        onClick={!isDesktop ? onClose : undefined}
-        className="sidebar-nav-item flex items-center min-h-[44px] px-3 py-3 text-sm font-medium rounded-lg group relative overflow-hidden"
-        onMouseEnter={() => setHoveredItem(path)}
-        onMouseLeave={() => setHoveredItem(null)}
-        style={({ isActive: routerActive }) => {
-          const isActive = isItemActive(routerActive);
-          return {
-            touchAction: 'manipulation',
-            backgroundColor: isActive ? iconConfig.bg : isHovered ? 'var(--color-sidebar-item-hover)' : 'transparent',
-            color: isActive ? iconConfig.color : isHovered ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
-            borderLeft: isActive ? `3px solid ${iconConfig.color}` : '3px solid transparent',
-            marginLeft: '-3px',
-            paddingLeft: 'calc(0.75rem + 3px)',
-            transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
-            transform: isHovered && !isActive ? 'translateX(4px)' : 'translateX(0)',
-          };
-        }}
-      >
-        {({ isActive: routerActive }) => {
-          const isActive = isItemActive(routerActive);
-          return (
-            <>
-              {/* Icon container with colored background */}
-              <div 
-                className="flex items-center justify-center w-8 h-8 rounded-lg mr-3 transition-all duration-200"
-                style={{
-                  backgroundColor: isActive || isHovered ? iconConfig.bg : 'transparent',
-                  transform: isHovered ? 'scale(1.1)' : 'scale(1)',
-                }}
-              >
-                <Icon 
-                  className="h-[18px] w-[18px] transition-all duration-200" 
-                  style={{ 
-                    color: isActive || isHovered ? iconConfig.color : 'var(--color-text-muted)',
-                    strokeWidth: isActive ? 2.5 : 2,
-                  }}
-                />
-              </div>
-              
-              {/* Label */}
-              <span className="transition-all duration-200 flex-1" style={{
-                fontWeight: isActive ? 600 : 500,
-              }}>
-                {label}
-              </span>
-
-            {/* Live pending count (e.g. Join Requests) */}
-            {!!badge && (
-              <span
-                className="ml-2 text-white text-xs rounded-full h-5 min-w-[20px] px-1.5 flex items-center justify-center font-bold flex-shrink-0"
-                style={{ background: 'linear-gradient(135deg, #ef4444, #ec4899)' }}
-              >
-                {badge > 99 ? '99+' : badge}
-              </span>
-            )}
-
-            {/* Hover glow effect */}
-            {isHovered && !isActive && (
-              <div 
-                className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
-                style={{
-                  background: `linear-gradient(90deg, ${iconConfig.bg} 0%, transparent 100%)`,
-                  opacity: 0.5,
-                }}
-              />
-            )}
-          </>
-        );
-      }}
-      </NavLink>
+      <div key={path}>
+        <SidebarTooltip enabled={collapsed} label={badge ? label + ' (' + badge + ')' : label}>
+          {hasChildren ? (
+            <button {...shared} type="button" aria-expanded={!collapsed && pmSheetExpanded} aria-controls="sidebar-pm-sheet-pages"
+              onClick={() => {
+                if (collapsed) { onToggleCollapse(); setPmSheetExpanded(true); }
+                else setPmSheetExpanded((value) => !value);
+              }} style={itemStyle(isPMSheetActive)}>
+              {contents(isPMSheetActive)}
+            </button>
+          ) : (
+            <NavLink {...shared} to={path} end={path === '/'} onClick={isMobile ? onClose : undefined}
+              style={itemStyle(active)}>
+              {contents(active)}
+            </NavLink>
+          )}
+        </SidebarTooltip>
+        {hasChildren && pmSheetExpanded && !collapsed && renderPMSheetChildren()}
+      </div>
     );
   };
 
-  return (
+  const sidebarContent = (
     <>
-      {/* Desktop sidebar (hidden on small screens) */}
-      {!isMobile && (
-        <aside 
-          className="hidden lg:flex w-[var(--sidebar-width)] h-screen fixed left-0 top-0 overflow-y-auto flex-col justify-between border-r"
-          style={sidebarStyles}
-          aria-hidden={isMobile}
-        >
-          <div>
-            <div
-              className="px-4 h-[var(--header-height)] flex items-center border-b"
-              style={{ borderColor: 'var(--color-border-default)' }}
-            >
-              <WorkspaceSwitcher />
-            </div>
-
-            <nav className="mt-5 px-3 space-y-1">
-              {navItems.map((item) => renderNavItem(item, true))}
-            </nav>
-          </div>
-
-          <div 
-            className="p-4 border-t"
-            style={{ borderColor: 'var(--color-border-subtle)' }}
-          >
-            <div className="flex items-center justify-end gap-2">
-              <span 
-                className="text-xs"
-                style={{ color: 'var(--color-text-muted)' }}
-              >
-                Powered by
-              </span>
-              <a href="https://www.starkedge.com/" target="_blank" rel="noopener noreferrer">
-                <img
-                  src="/starkedge.logo.webp"
-                  alt="StarkEdge"
-                  className="h-4 w-auto object-contain"
-                  onMouseEnter={() => setLogoHover(true)}
-                  onMouseLeave={() => setLogoHover(false)}
-                  style={{
-                    transition: 'transform 200ms ease, filter 200ms ease',
-                    transform: logoHover ? 'scale(1.1)' : 'scale(1)',
-                    filter: logoHover ? 'drop-shadow(0 0 12px var(--color-primary))' : 'none',
-                    cursor: 'pointer'
-                  }}
-                />
-              </a>
-            </div>
-          </div>
-        </aside>
-      )}
-
-      {/* Mobile drawer sidebar (visible only when isMobile=true) */}
-      {isMobile && (
-        <div className="lg:hidden" aria-modal="true" role="dialog">
-          <MotionDiv
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-40 backdrop-blur-sm"
-            style={{ backgroundColor: 'rgba(0, 0, 0, 0.45)' }}
-            onClick={onClose}
-            aria-hidden="true"
-          />
-
-          <MotionAside
-            initial={{ x: '-100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '-100%' }}
-            transition={{ type: 'tween', duration: 0.24, ease: [0.4, 0, 0.2, 1] }}
-            className="fixed inset-y-0 left-0 z-50 h-screen w-[80%] max-w-[300px] min-w-[220px] bg-white dark:bg-gray-900 shadow-2xl flex flex-col border-r border-gray-200 dark:border-gray-800"
-            style={{ ...sidebarStyles, transform: 'translateZ(0)' }}
-          >
-            <div
-              className="sticky top-0 z-10 flex items-center justify-between px-4 h-[var(--header-height)] border-b bg-inherit"
-              style={{ borderColor: 'var(--color-border-default)', paddingTop: 'env(safe-area-inset-top)' }}
-            >
-              <div className="flex-1 min-w-0 flex items-center h-full">
-                <WorkspaceSwitcher compact onNavigate={onClose} />
-              </div>
-            </div>
-
-            <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-1" style={{ WebkitOverflowScrolling: 'touch' }}>
-              {navItems.map((item) => renderNavItem(item, false))}
-            </nav>
-
-            <div
-              className="sticky bottom-0 border-t bg-inherit p-3"
-              style={{ borderColor: 'var(--color-border-subtle)', paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.75rem)' }}
-            >
-              <button
-                type="button"
-                className="w-full flex items-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 bg-white/90 dark:bg-gray-900/90 hover:bg-gray-100 dark:hover:bg-gray-800 transition"
-                onClick={onClose}
-              >
-                <span className="flex-1 text-left text-xs text-gray-500 dark:text-gray-400">Close</span>
-                <span className="text-xs font-medium text-gray-700 dark:text-gray-200">Tap to complete</span>
-              </button>
-              <div className="mt-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-                <span>Powered by</span>
-                <a href="https://www.starkedge.com/" target="_blank" rel="noopener noreferrer" className="font-semibold text-primary-600 dark:text-primary-400">StarkEdge</a>
-              </div>
-            </div>
-          </MotionAside>
+      <div className={'sidebar-workspace-header relative flex h-[var(--header-height)] shrink-0 items-center gap-1 border-b ' + (collapsed ? 'px-4' : 'px-3')}
+        style={{ borderColor: 'var(--color-border-default)' }}>
+        <WorkspaceSwitcher collapsed={collapsed} compact={isMobile} onNavigate={isMobile ? onClose : undefined} containModals={isMobile} />
+        {isMobile ? (
+          <Dialog.Close asChild>
+            <button type="button" aria-label="Close menu" className="sidebar-control h-11 w-11 shrink-0"><X size={20} /></button>
+          </Dialog.Close>
+        ) : (
+          <SidebarTooltip label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+            <button type="button" className={'sidebar-control shrink-0 ' + (collapsed ? 'sidebar-rail-toggle' : 'h-8 w-8')}
+              onClick={onToggleCollapse} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-expanded={!collapsed} aria-controls="sidebar-navigation">
+              {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+            </button>
+          </SidebarTooltip>
+        )}
+      </div>
+      <nav id="sidebar-navigation" aria-label="Main navigation" className={'min-h-0 flex-1 overflow-y-auto overflow-x-hidden space-y-1 ' + (collapsed ? 'px-2 pb-4 pt-6' : 'px-3 py-5')}>
+        {navItems.map(renderNavItem)}
+      </nav>
+      <div className={'sidebar-footer shrink-0 border-t ' + (collapsed ? 'p-3' : 'p-4')} style={{ borderColor: 'var(--color-border-subtle)' }}>
+        <div className={'flex items-center gap-2 ' + (collapsed ? 'justify-center' : 'justify-end')}>
+          {!collapsed && <span className="whitespace-nowrap text-xs" style={{ color: 'var(--color-text-muted)' }}>Powered by</span>}
+          <SidebarTooltip enabled={collapsed} label="Powered by StarkEdge">
+            <a href="https://www.starkedge.com/" target="_blank" rel="noopener noreferrer" aria-label="Powered by StarkEdge" className="rounded-md">
+              <img src={collapsed ? '/footer-logo-new.webp' : '/starkedge.logo.webp'} alt="StarkEdge" className={collapsed ? 'h-8 w-8 object-contain' : 'h-4 w-auto object-contain'} />
+            </a>
+          </SidebarTooltip>
         </div>
-      )}
+      </div>
     </>
+  );
+
+  if (isMobile) return (
+    <Dialog.Portal>
+      <Dialog.Overlay className="sidebar-drawer-backdrop fixed inset-0 z-50 bg-black/45 backdrop-blur-sm" />
+      <Dialog.Content aria-modal="true" aria-describedby={undefined} className="flowtask-sidebar sidebar-drawer fixed inset-y-0 left-0 z-[60] flex h-dvh w-[min(300px,calc(100vw-2rem))] flex-col border-r shadow-2xl" style={sidebarStyles}
+        onEscapeKeyDown={(event) => {
+          // Workspace dialogs share this focus scope; let their own close controls act first.
+          if (event.target.closest('[data-workspace-modal]')) event.preventDefault();
+        }}>
+        <Dialog.Title className="sr-only">Main navigation</Dialog.Title>
+        {sidebarContent}
+      </Dialog.Content>
+    </Dialog.Portal>
+  );
+
+  return (
+    <aside aria-label="Sidebar" data-collapsed={collapsed} className="flowtask-sidebar hidden md:flex fixed inset-y-0 left-0 z-40 h-dvh w-[var(--sidebar-width)] flex-col border-r" style={sidebarStyles}>
+      {sidebarContent}
+    </aside>
   );
 };
 

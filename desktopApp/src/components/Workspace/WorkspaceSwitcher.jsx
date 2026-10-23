@@ -1,6 +1,6 @@
 import { useContext, useState, useRef, useEffect, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Popover } from 'radix-ui';
 import { ChevronDown, Plus, Settings, Check, Loader } from 'lucide-react';
 import AuthContext from '../../context/AuthContext';
 import WorkspaceContext from '../../context/WorkspaceContext';
@@ -15,11 +15,9 @@ const WorkspaceOnboardingChecklist = lazy(() => import('./WorkspaceOnboardingChe
  * component should render a workspace picker; Header.jsx and Sidebar.jsx's
  * nav list intentionally have theirs removed in favor of this.
  *
- * Icon behavior: a workspace with no custom icon shows the full FlowTask
- * lockup (unchanged default). The moment a workspace uploads a custom icon,
- * this swaps to [icon] + workspace name — matching Slack/Notion-style
- * per-workspace branding without needing a separate "default workspace
- * icon" asset (the FlowTask mark IS the default).
+ * Both header sizes use the workspace icon (or the existing FlowTask mark).
+ * The expanded header also shows the workspace name; the compact rail
+ * keeps the same picker accessible through its icon.
  */
 const WorkspaceIcon = ({ icon, size, alt }) => {
   if (!icon?.url) return null;
@@ -53,7 +51,7 @@ const WorkspaceIcon = ({ icon, size, alt }) => {
   );
 };
 
-const WorkspaceSwitcher = ({ compact = false, onNavigate = () => {} }) => {
+const WorkspaceSwitcher = ({ compact = false, collapsed = false, containModals = false, onNavigate = () => {} }) => {
   const navigate = useNavigate();
   const { user } = useContext(AuthContext);
   const { workspaces, currentWorkspace, switchWorkspace } = useContext(WorkspaceContext);
@@ -63,16 +61,6 @@ const WorkspaceSwitcher = ({ compact = false, onNavigate = () => {} }) => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const ref = useRef(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (ref.current && !ref.current.contains(event.target)) {
-        setOpen(false);
-      }
-    };
-    if (open) document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [open]);
 
   // Authenticated users from the "Create Workspace" flow (e.g. from NoWorkspacePage
   // or if redirected after login from somewhere that set this flag) auto-open the
@@ -107,38 +95,40 @@ const WorkspaceSwitcher = ({ compact = false, onNavigate = () => {} }) => {
   };
 
   const hasCustomIcon = !!currentWorkspace?.icon?.url;
-  const iconSize = compact ? 32 : 40;
+  const iconSize = compact || collapsed ? 32 : 36;
 
   return (
-    <div ref={ref} className="relative">
+    <Popover.Root open={open} onOpenChange={setOpen}>
+    <div className={collapsed ? 'min-w-0' : 'min-w-0 flex-1'}>
+      <Popover.Trigger asChild>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 rounded-xl transition-colors hover:bg-gray-500/5 px-1 py-1"
-        aria-haspopup="true"
-        aria-expanded={open}
+        className={`w-full flex items-center gap-2 rounded-xl transition-colors hover:bg-gray-500/5 px-1 py-1 min-h-11 ${collapsed ? 'justify-center' : ''}`}
+        aria-label={`Switch workspace: ${currentWorkspace?.name || 'FlowTask'}`}
+        title={collapsed ? currentWorkspace?.name || 'Switch workspace' : undefined}
       >
         {hasCustomIcon ? (
           <>
             <WorkspaceIcon icon={currentWorkspace.icon} size={iconSize} alt={currentWorkspace.name} />
-            <div className="flex flex-col items-start min-w-0 flex-1 text-left">
+            {!collapsed && <div className="flex flex-col items-start min-w-0 flex-1 text-left">
               <span className={`font-bold truncate w-full ${compact ? 'text-sm' : 'text-base'}`} style={{ color: 'var(--color-text-primary)' }}>
                 {currentWorkspace.name}
               </span>
               {!compact && (
                 <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>FlowTask</span>
               )}
-            </div>
+            </div>}
           </>
         ) : (
-          <img
-            src={effectiveMode === 'dark' ? '/LogoDark.svg' : '/Logo.svg'}
-            alt="FlowTask"
-            className={compact ? 'h-9 w-auto object-contain' : 'h-10 w-auto object-contain'}
-            style={{ filter: effectiveMode === 'dark' ? 'brightness(1.1)' : 'none' }}
-          />
+          <>
+            <img src="/Fav.png" alt="" width={iconSize} height={iconSize} className="shrink-0 object-contain" />
+            {!collapsed && <div className="min-w-0 flex-1 text-left">
+              <div className={`truncate font-bold ${compact ? 'text-sm' : 'text-base'}`} style={{ color: 'var(--color-text-primary)' }}>{currentWorkspace?.name || 'FlowTask'}</div>
+              {!compact && <div className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>FlowTask</div>}
+            </div>}
+          </>
         )}
-        <ChevronDown
+        {!collapsed && <ChevronDown
           size={16}
           className="flex-shrink-0"
           style={{
@@ -146,18 +136,15 @@ const WorkspaceSwitcher = ({ compact = false, onNavigate = () => {} }) => {
             transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
             transition: 'transform 200ms ease',
           }}
-        />
+        />}
       </button>
+      </Popover.Trigger>
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: -8, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -8, scale: 0.97 }}
-            transition={{ duration: 0.15 }}
-            className={`absolute top-full left-0 mt-2 ${compact ? 'w-56' : 'w-72'} rounded-2xl shadow-2xl z-[60] overflow-hidden border`}
-            style={{ backgroundColor: 'var(--color-card-bg)', borderColor: 'var(--color-border-default)' }}
+      <Popover.Portal>
+          <Popover.Content side={collapsed ? 'right' : 'bottom'} align="start" sideOffset={8} collisionPadding={8}
+            aria-label="Workspace selection"
+            className="w-[min(288px,calc(100vw-1rem))] rounded-2xl shadow-2xl z-[80] overflow-y-auto border outline-none"
+            style={{ backgroundColor: 'var(--color-card-bg)', borderColor: 'var(--color-border-default)', maxHeight: 'var(--radix-popover-content-available-height)' }}
           >
             {/* Current workspace */}
             {currentWorkspace && (
@@ -238,19 +225,21 @@ const WorkspaceSwitcher = ({ compact = false, onNavigate = () => {} }) => {
                 Create Workspace
               </button>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          </Popover.Content>
+      </Popover.Portal>
 
       <Suspense fallback={null}>
         <CreateWorkspaceWizard
+          portalContainer={containModals ? ref.current : undefined}
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
           onCreated={() => setShowOnboarding(true)}
         />
-        <WorkspaceOnboardingChecklist isOpen={showOnboarding} onClose={() => setShowOnboarding(false)} />
+        <WorkspaceOnboardingChecklist portalContainer={containModals ? ref.current : undefined} isOpen={showOnboarding} onClose={() => setShowOnboarding(false)} />
       </Suspense>
+      <div ref={ref} data-workspace-modal />
     </div>
+    </Popover.Root>
   );
 };
 
