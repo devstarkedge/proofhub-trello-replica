@@ -15,18 +15,18 @@ import { buildCalendarContext, classifyDateWithContext } from './leaveCalendar.s
 import { assertPolicyVersionAvailable, resolvePolicyContext, findLeaveTypeRule } from './leavePolicy.service.js';
 import { getEffectiveEmploymentProfile } from './leaveEmployeeProfile.service.js';
 import {
-  assertValidDateRange, assertValidDayType, assertNoOverlap, assertEmploymentEligible,
+  assertValidDateRange, assertNotPastLeaveDate, assertValidDayType, assertNoOverlap, assertEmploymentEligible,
   assertDayTypeMatchesLeaveTypeCategory, assertShortLeaveDuration, assertHalfDayAllowed, checkBlackout
 } from './leaveRequest.validation.js';
 import { reserveFromBuckets, releaseReservationsForRequest, restoreConsumptionForRequest } from './leaveBalance.service.js';
 import { generateApprovalChain } from './leaveApproval.service.js';
 import { getOrCreateActiveWorkflow } from './leaveApprovalWorkflow.service.js';
-import { scheduleApprovalReminders } from '../../schedulers/leaveReminderScheduler.js';
 import { resolveActiveMembersByRole } from './leaveApprovalAudience.service.js';
 import * as leaveHooks from './leaveHooks.js';
 import { getLeaveActionContext } from './leaveActionEligibility.service.js';
 import { canViewUserInLeaveScope } from './leaveAuthorization.service.js';
 import LeaveApprovalWorkflow from './leaveApprovalWorkflow.model.js';
+import { enqueueLeaveEvent, deliverLeaveEventsSoon } from './leaveEvents.service.js';
 
 const auditEntry = ({ workspaceId, actor, action, targetId, before, after }) => ({
   workspace: workspaceId, actor, action, category: 'leave_management',
@@ -91,6 +91,7 @@ export async function submitLeaveRequest({
 
   const workspace = await Workspace.findById(workspaceId).select('timezone').lean();
   const timezone = getWorkspaceTimezone(workspace);
+  assertNotPastLeaveDate(startDate, timezone);
 
   const leaveType = await LeaveType.findOne({ _id: leaveTypeId, workspaceId, isActive: true }).lean();
   if (!leaveType) throw new ErrorResponse('Leave type not found or inactive', 404);
@@ -203,6 +204,8 @@ export async function submitLeaveRequest({
       })], { session });
 
       created = { request: request.toObject(), days, approvalLevels: approvalLevels.map((l) => l.toObject()) };
+      await enqueueLeaveEvent({ workspaceId, key: `submitted-${request._id}`, kind: 'SUBMITTED',
+        payload: { request: created.request, approvalLevels: created.approvalLevels, workflow: workflow.toObject() } }, session);
     }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
   } catch (error) {
     if (!isLeaveClientIdDuplicate(error)) throw error;
@@ -219,18 +222,7 @@ export async function submitLeaveRequest({
 
   if (created.replayed) return created;
 
-  try {
-    await leaveHooks.onRequestSubmitted(created.request, requesterId);
-    await leaveHooks.onApprovalRequired(created.request, created.approvalLevels, requesterId);
-  } catch (error) {
-    console.error('[Leave] post-submit notification error:', error.message);
-  }
-
-  try {
-    await Promise.all(created.approvalLevels.map((level) => scheduleApprovalReminders(level, workflow)));
-  } catch (error) {
-    console.error('[Leave] post-submit reminder-scheduling error:', error.message);
-  }
+  deliverLeaveEventsSoon(workspaceId);
 
   return created;
 }

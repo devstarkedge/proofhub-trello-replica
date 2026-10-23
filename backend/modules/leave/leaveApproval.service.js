@@ -6,10 +6,11 @@ import AuditLog from '../../models/AuditLog.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import { resolveDepartmentManagers, resolveActiveMembersByRole, resolveAdminApprovers } from './leaveApprovalAudience.service.js';
 import { releaseReservationsForRequest, consumeReservationsForRequest } from './leaveBalance.service.js';
-import * as leaveHooks from './leaveHooks.js';
 import { getLeaveActionContext, eligibleStage, orderStages } from './leaveActionEligibility.service.js';
 import { canViewUserInLeaveScope } from './leaveAuthorization.service.js';
 import { queryLeaveRequests } from './leaveRequestQuery.service.js';
+import { approvalOutcome } from './leaveApprovalRules.js';
+import { enqueueLeaveEvent, deliverLeaveEventsSoon } from './leaveEvents.service.js';
 
 const auditEntry = ({ workspaceId, actor, action, targetId, before, after }) => ({
   workspace: workspaceId,
@@ -21,42 +22,22 @@ const auditEntry = ({ workspaceId, actor, action, targetId, before, after }) => 
   changes: { before, after }
 });
 
-function tierOf(roleTierMap, role) {
-  const map = roleTierMap instanceof Map ? roleTierMap : new Map(Object.entries(roleTierMap || {}));
-  return map.has(role) ? map.get(role) : 0; // unknown/custom roles default to Employee tier (conservative)
-}
-
 /**
- * Build the approval chain for a newly-submitted request. A level is
- * created only if it sits strictly above the requester's own tier (see
- * LeaveApprovalWorkflow.roleTierMap) — reproducing Employee-needs-
- * Manager+HR+Admin / Manager-or-HR-needs-only-Admin / Admin-always-needs-
- * someone-else without any per-role branch in this function. Mutates
- * `request.blockedReason` in place when the Admin level resolves to zero
- * eligible approvers; caller must persist that change in the same
- * transaction. Must run inside the caller's session — writes LeaveApproval
- * rows via insertMany.
+ * Snapshot current workspace approvers, excluding the requester. Admin and
+ * one of Manager/HR must approve, regardless of the requester's own tier.
  */
 export async function generateApprovalChain({ workspaceId, request, requesterMembership, workflow, session }) {
-  const roleTierMap = workflow.roleTierMap instanceof Map ? workflow.roleTierMap : new Map(Object.entries(workflow.roleTierMap || {}));
-  const requesterTier = tierOf(roleTierMap, requesterMembership.role);
-  const managerTier = roleTierMap.has('manager') ? roleTierMap.get('manager') : 1;
-
   const levels = [];
+  const managerIds = await resolveDepartmentManagers({
+    workspaceId, departmentIds: requesterMembership.department, excludeUserId: request.requester
+  });
+  if (managerIds.length > 0) levels.push({ level: 'DEPARTMENT_MANAGER', eligibleApproverUserIds: managerIds });
 
-  if (requesterTier < managerTier) {
-    const managerIds = await resolveDepartmentManagers({
-      workspaceId, departmentIds: requesterMembership.department, excludeUserId: request.requester
-    });
-    if (managerIds.length > 0) levels.push({ level: 'DEPARTMENT_MANAGER', eligibleApproverUserIds: managerIds });
-
-    const hrIds = await resolveActiveMembersByRole({ workspaceId, role: 'hr', excludeUserId: request.requester });
-    if (hrIds.length > 0) levels.push({ level: 'HR', eligibleApproverUserIds: hrIds });
-  }
-
+  const hrIds = await resolveActiveMembersByRole({ workspaceId, role: 'hr', excludeUserId: request.requester });
+  if (hrIds.length > 0) levels.push({ level: 'HR', eligibleApproverUserIds: hrIds });
   const adminIds = await resolveAdminApprovers({ workspaceId, excludeUserId: request.requester, workflow });
   levels.push({ level: 'ADMIN', eligibleApproverUserIds: adminIds });
-  if (adminIds.length === 0) {
+  if (adminIds.length === 0 || levels.length === 1) {
     request.blockedReason = 'NO_ELIGIBLE_APPROVER';
   }
 
@@ -120,34 +101,38 @@ export async function decideApproval({ workspaceId, approvalId, actor, decision,
       }
 
       const allLevels = await LeaveApproval.find({ workspaceId, request: request._id }).session(session);
-      const anyRejected = allLevels.some((level) => level.status === 'REJECTED');
-      const allApproved = allLevels.every((level) => level.status === 'APPROVED');
-      const anyApproved = allLevels.some((level) => level.status === 'APPROVED');
+      const outcome = approvalOutcome(allLevels);
 
       const statusBefore = request.status;
       let finalOutcome = null;
 
-      if (anyRejected) {
+      if (outcome === 'REJECTED') {
         await LeaveApproval.updateMany(
           { workspaceId, request: request._id, status: 'PENDING' },
           { $set: { status: 'VOIDED' } },
           { session }
         );
+        for (const level of allLevels) if (level.status === 'PENDING') level.status = 'VOIDED';
         request.status = LEAVE_REQUEST_STATUSES.REJECTED;
         await releaseReservationsForRequest({
           workspaceId, request: request._id, reason: 'Leave request rejected', actor: actorId, session
         });
         finalOutcome = 'REJECTED';
-      } else if (allApproved) {
+      } else if (outcome === 'APPROVED') {
         request.status = LEAVE_REQUEST_STATUSES.APPROVED;
         await consumeReservationsForRequest({
           workspaceId, request: request._id, reason: 'Leave request fully approved', actor: actorId, session
         });
         finalOutcome = 'APPROVED';
-      } else if (anyApproved) {
+      } else if (outcome === 'PARTIALLY_APPROVED') {
         request.status = LEAVE_REQUEST_STATUSES.PARTIALLY_APPROVED;
       }
       await request.save({ session });
+      if (finalOutcome === 'APPROVED') {
+        await LeaveApproval.updateMany({ workspaceId, request: request._id, status: 'PENDING' },
+          { $set: { status: 'VOIDED' } }, { session });
+        for (const level of allLevels) if (level.status === 'PENDING') level.status = 'VOIDED';
+      }
       if(finalOutcome==='APPROVED')await enqueueLeaveAttendanceChanges(request,session);
 
       await AuditLog.create([auditEntry({
@@ -162,20 +147,14 @@ export async function decideApproval({ workspaceId, approvalId, actor, decision,
         allLevels: allLevels.map((level) => level.toObject()),
         finalOutcome
       };
+      await enqueueLeaveEvent({ workspaceId, key: `decision-${approvalId}`, kind: 'DECIDED',
+        payload: { result, actor: { _id: actorId } } }, session);
     }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
   } finally {
     await session.endSession();
   }
 
-  try {
-    await leaveHooks.onApprovalDecisionRecorded(result, actor);
-    if (result.finalOutcome === 'APPROVED') await leaveHooks.onRequestApproved(result.request);
-    if (result.finalOutcome === 'REJECTED') await leaveHooks.onRequestRejected(result.request, result.approval);
-  } catch (error) {
-    // Notification failure must never surface as a failed approval — the
-    // decision itself already committed successfully above.
-    console.error('[Leave] post-approval notification error:', error.message);
-  }
+  deliverLeaveEventsSoon(workspaceId);
 
   return result;
 }

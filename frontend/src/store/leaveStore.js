@@ -48,9 +48,12 @@ const useLeaveStore = create(
         return data;
       },
 
-      submitLeaveRequest: async (payload) => {
-        const { data } = await leaveApi.submitRequest(payload);
-        set((state) => ({ myRequests: [data.request, ...state.myRequests.filter((request) => request._id !== data.request._id)] }));
+      submitLeaveRequest: async (payload, workspaceId) => {
+        const token = localStorage.getItem('token');
+        const { data } = await leaveApi.submitRequest(payload, { workspaceId });
+        if (token === localStorage.getItem('token') && (!workspaceId || localStorage.getItem('workspaceId') === String(workspaceId))) {
+          set((state) => ({ myRequests: [data.request, ...state.myRequests.filter((request) => request._id !== data.request._id)] }));
+        }
         // The API mutation event invalidates the existing QueryClient balance
         // read. Do not issue a second, unused balance request from this store.
         return data;

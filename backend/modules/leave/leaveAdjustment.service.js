@@ -16,17 +16,36 @@ import * as leaveHooks from './leaveHooks.js';
 /**
  * Manual HR/Admin balance adjustment — always a ledger entry, never a
  * direct balance overwrite. A credit mints a new bucket that expires the
- * same way a normal accrual would (per the user's current policy); a debit
+ * same way a normal accrual would, with an optional expiry for that credit; a debit
  * draws down existing active buckets FIFO exactly like leave consumption.
  * Every adjustment requires a reason and is audit-logged.
  */
-export async function createManualAdjustment({ workspaceId, actor, userId, leaveTypeId, amount, operation, count, reason, clientAdjustmentId }) {
+export function normalizeAdjustmentExpiry(expiryRule, numericAmount) {
+  if (expiryRule === undefined) return undefined;
+  if (numericAmount < 0) throw new ErrorResponse('Expiry can only be set for a leave credit', 400);
+  if (!expiryRule || typeof expiryRule !== 'object' || Array.isArray(expiryRule)
+    || !['NEVER', 'FIXED_MONTHS_AFTER_CREDIT', 'CALENDAR_YEAR_END'].includes(expiryRule.mode)) {
+    throw new ErrorResponse('Choose a valid credit expiry option', 400);
+  }
+  if (expiryRule.mode === 'FIXED_MONTHS_AFTER_CREDIT') {
+    if (!Number.isSafeInteger(expiryRule.months) || expiryRule.months < 1) {
+      throw new ErrorResponse('Expiry months must be a positive whole number', 400);
+    }
+    return { mode: expiryRule.mode, months: expiryRule.months };
+  }
+  if (expiryRule.months != null) throw new ErrorResponse('Expiry months only apply to fixed-month expiry', 400);
+  return { mode: expiryRule.mode, months: null };
+}
+
+export async function createManualAdjustment({ workspaceId, actor, userId, leaveTypeId, amount, operation, count, reason, clientAdjustmentId, expiryRule }) {
   if (!reason || !reason.trim()) throw new ErrorResponse('A reason is required for a manual adjustment', 400);
   const hasCount = operation !== undefined || count !== undefined;
   if (hasCount && (amount !== undefined || !['CREDIT', 'DEBIT'].includes(operation) || count === '' || count === null)) throw new ErrorResponse('Choose Credit or Debit and enter a positive leave count; do not send a signed amount', 400);
   const numericAmount = hasCount ? Number(count) * (operation === 'DEBIT' ? -1 : 1) : Number(amount);
   if (!Number.isFinite(numericAmount) || numericAmount === 0 || Math.abs(numericAmount) > 1000000 || (hasCount && Number(count) < 0)) throw new ErrorResponse('Leave count must be positive and at most 1000000', 400);
   if (clientAdjustmentId !== undefined && (typeof clientAdjustmentId !== 'string' || !clientAdjustmentId.trim() || clientAdjustmentId.length > 100)) throw new ErrorResponse('Invalid adjustment request identifier', 400);
+  const adjustmentExpiryRule = normalizeAdjustmentExpiry(expiryRule, numericAmount);
+  const creditedAt = new Date();
 
   const leaveType = await LeaveType.findOne({ _id: leaveTypeId, workspaceId }).lean();
   if (!leaveType || !leaveType.isActive) throw new ErrorResponse('Active leave type not found', 404);
@@ -45,6 +64,10 @@ export async function createManualAdjustment({ workspaceId, actor, userId, leave
         if (existing.length) {
           const total = existing.reduce((n, e) => n + e.amount, 0);
           if (existing.some((e) => String(e.user) !== String(userId) || String(e.leaveType) !== String(leaveTypeId) || e.reason !== reason.trim() || e.type !== (numericAmount > 0 ? 'MANUAL_CREDIT' : 'MANUAL_DEBIT')) || Math.abs(total - Math.abs(numericAmount)) > 1e-9) throw new ErrorResponse('This adjustment identifier was already used with different values', 409);
+          if (existing.some((e) => (e.adjustmentExpiryRule?.mode || null) !== (adjustmentExpiryRule?.mode || null)
+            || (e.adjustmentExpiryRule?.months ?? null) !== (adjustmentExpiryRule?.months ?? null))) {
+            throw new ErrorResponse('This adjustment identifier was already used with a different expiry', 409);
+          }
           result = { ledgerEntries: existing, replayed: true };
           replayed = true;
           return;
@@ -71,11 +94,14 @@ export async function createManualAdjustment({ workspaceId, actor, userId, leave
       if (numericAmount > 0) {
         const workspaceDoc = await Workspace.findById(workspaceId).select('timezone').session(session);
         const timezone = getWorkspaceTimezone(workspaceDoc);
-        const expiresAt = rule ? computeExpiryDate(new Date(), rule.expiryRule, timezone) : null;
+        const expiresAt = computeExpiryDate(creditedAt, adjustmentExpiryRule || rule.expiryRule, timezone);
+        if (expiresAt && (!Number.isFinite(expiresAt.getTime()) || expiresAt <= creditedAt)) {
+          throw new ErrorResponse('Credit expiry must resolve to a valid future date', 400);
+        }
 
         const { bucket, ledgerEntry } = await creditBucket({
           workspaceId, user: userId, leaveType: leaveTypeId, policyVersion: policyContext.policyVersion._id,
-          period: null, sourceType: 'MANUAL_CREDIT', amount: numericAmount, creditedAt: new Date(), expiresAt,
+          period: null, sourceType: 'MANUAL_CREDIT', amount: numericAmount, creditedAt, expiresAt, adjustmentExpiryRule,
           reason: reason.trim(), createdBy: actorId, session, ledgerType: 'MANUAL_CREDIT', clientAdjustmentId, actorRole: actor.role,
           policySource: { assignmentId: policyContext.assignment._id, scope: policyContext.assignment.scope, scopeRef: policyContext.assignment.scopeRef }
         });
@@ -91,7 +117,9 @@ export async function createManualAdjustment({ workspaceId, actor, userId, leave
       await AuditLog.create([{
         workspace: workspaceId, actor: actorId, action: 'LEAVE_MANUAL_ADJUSTMENT', category: 'leave_management',
         targetType: 'User', targetId: userId,
-        changes: { before: null, after: { leaveType: leaveType.key, amount: numericAmount, reason } }
+        changes: { before: null, after: { leaveType: leaveType.key, amount: numericAmount, reason,
+          ...(numericAmount > 0 ? { expiryRule: adjustmentExpiryRule || rule.expiryRule, expiresAt: result.bucket.expiresAt,
+            expirySource: adjustmentExpiryRule ? 'MANUAL' : 'POLICY' } : {}) } }
       }], { session });
     });
   } finally {
@@ -179,7 +207,7 @@ export async function listManualAdjustments({
       .populate('actor', 'name email avatar')
       .populate('leaveType', 'name key color category')
       .populate('policyVersion', 'versionNumber status')
-      .populate('bucket', 'creditedAmount consumedAmount debitedAmount status')
+      .populate('bucket', 'creditedAmount consumedAmount debitedAmount status creditedAt expiresAt')
       .lean()
   ]);
 

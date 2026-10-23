@@ -11,6 +11,8 @@ import useLeaveStore from '../../store/leaveStore';
 import AuthContext from '../../context/AuthContext';
 import WorkspaceContext from '../../context/WorkspaceContext';
 import { createLeaveSubmissionIdentity } from '../../utils/leaveSubmissionIdentity';
+import { workspaceDateKey } from '../../utils/workspaceDateRange';
+import { getLeaveDraft, setLeaveDraft, runLeaveBackgroundAction } from '../../utils/leaveBackgroundActions';
 
 const HALF_DAY_SIDE_OPTIONS = [
   { value: 'HALF_DAY_FIRST_HALF', label: 'First Half' },
@@ -56,19 +58,21 @@ function buildLeaveOptions(leaveTypes) {
   return options;
 }
 
-const LeaveRequestForm = ({ onSubmitted, onCancel }) => {
+const LeaveRequestForm = ({ onSubmitted, onQueued, onCancel }) => {
   const { user } = useContext(AuthContext);
   const { currentWorkspace } = useContext(WorkspaceContext);
+  const draftKey = `${currentWorkspace?._id}:${user?._id || user?.id}`;
+  const draft = getLeaveDraft(draftKey);
   const submission = useRef(null);
   const inFlight = useRef(false);
   const [leaveTypes, setLeaveTypes] = useState([]);
-  const [leaveOptionKey, setLeaveOptionKey] = useState('');
+  const [leaveOptionKey, setLeaveOptionKey] = useState(draft?.leaveOptionKey || '');
   const [serverError, setServerError] = useState(null);
   const submitLeaveRequest = useLeaveStore((state) => state.submitLeaveRequest);
 
   const { register, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm({
     resolver: zodResolver(leaveRequestSchema),
-    defaultValues: { leaveTypeId: '', dayType: '', reason: '', shortLeaveDurationMinutes: null }
+    defaultValues: draft?.values || { leaveTypeId: '', dayType: '', reason: '', shortLeaveDurationMinutes: null }
   });
 
   const startDate = watch('startDate');
@@ -126,10 +130,16 @@ const LeaveRequestForm = ({ onSubmitted, onCancel }) => {
         submission.current = { key, identity: createLeaveSubmissionIdentity({ key, storage }) };
       }
       const identity = submission.current.identity;
+      const today = workspaceDateKey(new Date(), currentWorkspace.timezone);
+      if (values.startDate < today) throw new Error('Leave can only be requested for today or a future date.');
       const clientRequestId = await identity.forPayload(values);
-      const result = await submitLeaveRequest({ ...values, clientRequestId });
-      identity.complete(clientRequestId);
-      onSubmitted?.(result);
+      setLeaveDraft(draftKey, { values, leaveOptionKey });
+      const workspaceId = currentWorkspace._id;
+      runLeaveBackgroundAction({ key: `${key}:${clientRequestId}`, workspaceId,
+        pendingMessage: 'Sending leave request…', successMessage: 'Leave request submitted',
+        action: () => submitLeaveRequest({ ...values, clientRequestId }, workspaceId),
+        onSuccess: (result) => { identity.complete(clientRequestId); setLeaveDraft(draftKey, null); onSubmitted?.(result); } });
+      onQueued?.();
     } catch (error) {
       setServerError(error.response?.data?.message || (error.request
         ? 'The submission result could not be confirmed. Check My Leave or retry the same details safely.'
@@ -179,6 +189,7 @@ const LeaveRequestForm = ({ onSubmitted, onCancel }) => {
       )}
 
       <LeaveDateRangePicker
+        minDate={workspaceDateKey(new Date(), currentWorkspace?.timezone)}
         startDate={startDate}
         endDate={endDate}
         singleDay={shape !== 'FULL_DAY'}

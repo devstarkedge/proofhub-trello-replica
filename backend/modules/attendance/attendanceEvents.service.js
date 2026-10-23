@@ -6,6 +6,8 @@ import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import AttendanceDay from './attendanceDay.model.js';
 import AttendanceSession from './attendanceSession.model.js';
 import AttendanceEvent from './attendanceEvent.model.js';
+import LeaveRequestDay from '../leave/leaveRequestDay.model.js';
+import { getWorkspaceTimezone, instantToDateOnlyKey } from '../leave/leaveTimezone.util.js';
 import { WorkSession } from '../tracking/tracking.models.js';
 import { resolveAttendanceObserverUserIds } from './attendanceAuthorization.service.js';
 import * as hooks from './attendanceHooks.js';
@@ -17,9 +19,10 @@ export async function enqueueAttendanceEvent(event,dbSession) {
 // Share a workday write with checkout to serialize Leave decisions against it.
 export async function enqueueLeaveAttendanceChanges(request,dbSession) {
   const workspace=await Workspace.findById(request.workspaceId).select('timezone').session(dbSession).lean();
-  const zone=workspace?.timezone||'UTC';
-  const start=DateTime.fromJSDate(new Date(request.startDate)).setZone(zone).toISODate(),end=DateTime.fromJSDate(new Date(request.endDate)).setZone(zone).toISODate();
-  const days=await AttendanceDay.find({workspaceId:request.workspaceId,user:request.requester,workDateKey:{$gte:start,$lte:end}}).select('_id workDateKey').session(dbSession).lean();
+  const zone=getWorkspaceTimezone(workspace);
+  const leaveDays=await LeaveRequestDay.find({workspaceId:request.workspaceId,request:request._id}).select('date').session(dbSession).lean();
+  const dateKeys=leaveDays.map(day=>instantToDateOnlyKey(day.date,zone));
+  const days=await AttendanceDay.find({workspaceId:request.workspaceId,user:request.requester,workDateKey:{$in:dateKeys}}).select('_id workDateKey').session(dbSession).lean();
   for(const day of days){
     await AttendanceDay.updateOne({_id:day._id},{$inc:{evaluationRevision:1}},{session:dbSession});
     await enqueueAttendanceEvent({workspaceId:request.workspaceId,user:request.requester,key:`leave-${request._id}-${request.status}-${day.workDateKey}`,kind:'RECALCULATE',workDateKey:day.workDateKey},dbSession);

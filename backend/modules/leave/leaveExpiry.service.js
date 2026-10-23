@@ -39,6 +39,9 @@ export async function runExpirySweepForWorkspace(workspaceId) {
           if (!bucket) return;
           const expiredAmount = Math.max(0, bucket.creditedAmount - bucket.consumedAmount
             - (bucket.debitedAmount || 0) - bucket.reservedAmount);
+          // Released reservations may already have expired between the deadline
+          // and this sweep. Journal only the newly expired remainder.
+          const newlyExpiredAmount = Math.max(0, expiredAmount - (bucket.expiredAmount || 0));
           const updated = await LeaveAccrualBucket.findOneAndUpdate(
             { _id: candidate._id, workspaceId, status: 'active', expiresAt: { $lte: now } },
             {
@@ -52,18 +55,18 @@ export async function runExpirySweepForWorkspace(workspaceId) {
           );
           if (!updated) return; // already processed by a concurrent/previous sweep — genuine no-op
 
-          if (updated.expiredAmount > 0) {
+          if (newlyExpiredAmount > 0) {
             await LeaveLedger.create([{
               workspaceId, user: updated.user, leaveType: updated.leaveType, bucket: updated._id,
-              type: 'LEAVE_EXPIRED', amount: updated.expiredAmount, actor: null, occurredAt: now,
+              type: 'LEAVE_EXPIRED', amount: newlyExpiredAmount, actor: null, occurredAt: now,
               policyVersion: updated.policyVersion
             }], { session });
           }
-          expiredBucket = updated.toObject();
+          expiredBucket = { ...updated.toObject(), newlyExpiredAmount };
         });
         if (expiredBucket) {
           expiredCount++;
-          if (expiredBucket.expiredAmount > 0) expiredForNotification.push(expiredBucket);
+          if (expiredBucket.newlyExpiredAmount > 0) expiredForNotification.push(expiredBucket);
         }
       } catch (error) {
         console.error('[Leave] expiry sweep error', { workspaceId, bucketId: candidate._id, error: error.message });
@@ -81,7 +84,7 @@ export async function runExpirySweepForWorkspace(workspaceId) {
           await leaveHooks.onBucketExpired({
             workspaceId, userId: bucket.user,
             leaveTypeName: nameById.get(String(bucket.leaveType)) || 'leave',
-            amount: bucket.expiredAmount
+            amount: bucket.newlyExpiredAmount
           });
         } catch (error) {
           console.error('[Leave] post-expiry notification error:', error.message);

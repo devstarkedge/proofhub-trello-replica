@@ -3,16 +3,20 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight, ChevronDown, X, XCircle } from 'lucide-react';
 
+const calendarDate = (value) => value && /^\d{4}-\d{2}-\d{2}$/.test(value)
+  ? new Date(`${value}T00:00:00`) : new Date(value);
+
 const DatePickerModal = ({ 
   isOpen, 
   onClose, 
   onSelectDate, 
   selectedDate, 
   title,
-  minDate = null // Optional: Minimum selectable date (for validation like Due Date >= Start Date)
+  minDate = null,
+  todayDate = null
 }) => {
   const [currentMonth, setCurrentMonth] = useState(
-    selectedDate ? new Date(selectedDate) : new Date()
+    selectedDate ? calendarDate(selectedDate) : todayDate ? calendarDate(todayDate) : new Date()
   );
   const modalRef = useRef(null);
   const monthDropdownRef = useRef(null);
@@ -48,9 +52,9 @@ const DatePickerModal = ({
   // Reset current month when selectedDate changes or modal opens
   useEffect(() => {
     if (isOpen) {
-      setCurrentMonth(selectedDate ? new Date(selectedDate) : new Date());
+      setCurrentMonth(selectedDate ? calendarDate(selectedDate) : todayDate ? calendarDate(todayDate) : new Date());
     }
-  }, [isOpen, selectedDate]);
+  }, [isOpen, selectedDate, todayDate]);
 
   // Close on escape key
   useEffect(() => {
@@ -111,7 +115,7 @@ const DatePickerModal = ({
 
   const isSelectedDate = (day) => {
     if (!selectedDate) return false;
-    const selected = new Date(selectedDate);
+    const selected = calendarDate(selectedDate);
     return (
       selected.getDate() === day &&
       selected.getMonth() === currentMonth.getMonth() &&
@@ -120,7 +124,7 @@ const DatePickerModal = ({
   };
 
   const isToday = (day) => {
-    const today = new Date();
+    const today = todayDate ? calendarDate(todayDate) : new Date();
     return (
       today.getDate() === day &&
       today.getMonth() === currentMonth.getMonth() &&
@@ -132,7 +136,7 @@ const DatePickerModal = ({
   const isDateDisabled = (day) => {
     if (!minDate) return false;
     const checkDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
-    const minDateObj = new Date(minDate);
+    const minDateObj = calendarDate(minDate);
     // Reset time to compare only dates
     checkDate.setHours(0, 0, 0, 0);
     minDateObj.setHours(0, 0, 0, 0);
@@ -142,9 +146,9 @@ const DatePickerModal = ({
   // Check if quick select date would be disabled
   const isQuickSelectDisabled = (offset) => {
     if (!minDate) return false;
-    const quickDate = new Date();
+    const quickDate = todayDate ? calendarDate(todayDate) : new Date();
     quickDate.setDate(quickDate.getDate() + offset);
-    const minDateObj = new Date(minDate);
+    const minDateObj = calendarDate(minDate);
     quickDate.setHours(0, 0, 0, 0);
     minDateObj.setHours(0, 0, 0, 0);
     return quickDate < minDateObj;
@@ -359,7 +363,7 @@ const DatePickerModal = ({
                       disabled={quickDisabled}
                       onClick={() => {
                         if (quickDisabled) return;
-                        const date = new Date();
+                        const date = todayDate ? calendarDate(todayDate) : new Date();
                         date.setDate(date.getDate() + option.offset);
                         // Format as YYYY-MM-DD using local date (not UTC to avoid timezone shift)
                         const year = date.getFullYear();

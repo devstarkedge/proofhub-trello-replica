@@ -1,71 +1,31 @@
+import { useState } from 'react';
+import { CalendarDays } from 'lucide-react';
+import DatePickerModal from '../DatePickerModal';
 
-
-/**
- * No date-RANGE picker exists anywhere in FlowTask today (DatePickerModal.jsx
- * is single-date only) — this is genuinely new. Deliberately built on plain
- * native <input type="date"> rather than a custom calendar-grid widget: it's
- * fully accessible and keyboard-operable for free, and the leave request
- * form's real complexity is the validation/classification behind it, not
- * the date-picking UI itself.
- */
-const inputClass =
-  'w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-border-focus)]';
-const inputStyle = {
-  backgroundColor: 'var(--color-bg-base)',
-  borderColor: 'var(--color-border-default)',
-  color: 'var(--color-text-primary)'
-};
-
-const LeaveDateRangePicker = ({ startDate, endDate, onChange, singleDay = false, minDate }) => {
-  const handleStartChange = (value) => {
-    onChange({ startDate: value, endDate: singleDay ? value : (endDate && endDate >= value ? endDate : value) });
+export default function LeaveDateRangePicker({ startDate, endDate, onChange, singleDay = false, minDate, todayDate }) {
+  const [picking, setPicking] = useState(null);
+  const select = (value) => {
+    if (picking === 'start') {
+      onChange({ startDate: value || '', endDate: singleDay ? value || '' : endDate && endDate >= value ? endDate : value || '' });
+    } else onChange({ startDate, endDate: value || '' });
   };
-  const handleEndChange = (value) => {
-    onChange({ startDate, endDate: value });
-  };
-
-  if (singleDay) {
-    return (
-      <div>
-        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>Date</label>
-        <input
-          type="date"
-          className={inputClass}
-          style={inputStyle}
-          value={startDate || ''}
-          min={minDate}
-          onChange={(e) => handleStartChange(e.target.value)}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid grid-cols-2 gap-3">
-      <div>
-        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>Start Date</label>
-        <input
-          type="date"
-          className={inputClass}
-          style={inputStyle}
-          value={startDate || ''}
-          min={minDate}
-          onChange={(e) => handleStartChange(e.target.value)}
-        />
-      </div>
-      <div>
-        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>End Date</label>
-        <input
-          type="date"
-          className={inputClass}
-          style={inputStyle}
-          value={endDate || ''}
-          min={startDate || minDate}
-          onChange={(e) => handleEndChange(e.target.value)}
-        />
-      </div>
+  const field = (kind, label, value) => <div>
+    <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>{label}</label>
+    <button type="button" aria-label={label} onClick={() => setPicking(kind)}
+      className="flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm"
+      style={{ backgroundColor: 'var(--color-bg-base)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' }}>
+      <span>{value ? value.split('-').reverse().join('-') : 'Select date'}</span><CalendarDays className="h-4 w-4" />
+    </button>
+  </div>;
+  return <>
+    <div className={singleDay ? '' : 'grid grid-cols-2 gap-3'}>
+      {field('start', singleDay ? 'Date' : 'Start Date', startDate)}
+      {!singleDay && field('end', 'End Date', endDate)}
     </div>
-  );
-};
-
-export default LeaveDateRangePicker;
+    <DatePickerModal isOpen={Boolean(picking)} onClose={() => setPicking(null)} onSelectDate={select}
+      todayDate={todayDate || minDate}
+      selectedDate={picking === 'end' ? endDate : startDate}
+      minDate={picking === 'end' && startDate > (minDate || '') ? startDate : minDate}
+      title={singleDay ? 'Leave Date' : picking === 'end' ? 'Leave End Date' : 'Leave Start Date'} />
+  </>;
+}

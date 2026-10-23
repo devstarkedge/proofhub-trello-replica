@@ -80,13 +80,21 @@ const WfhRequestForm = ({ onCancel, onSubmitted }) => {
   );
 };
 
-const RegularizationRequestForm = ({ onCancel, onSubmitted }) => {
-  const [workDateKey, setWorkDateKey] = useState('');
-  const [type, setType] = useState(REGULARIZATION_TYPES[0].value);
+const RegularizationRequestForm = ({ onCancel, onSubmitted, initialValues }) => {
+  const [workDateKey, setWorkDateKey] = useState(initialValues?.workDateKey || '');
+  const [type, setType] = useState(initialValues?.type || REGULARIZATION_TYPES[0].value);
   const [checkInAt, setCheckInAt] = useState('');
   const [checkOutAt, setCheckOutAt] = useState('');
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (initialValues?.workDateKey) setWorkDateKey(initialValues.workDateKey);
+    if (initialValues?.type) setType(initialValues.type);
+    if (initialValues?.checkInAt) setCheckInAt(initialValues.checkInAt);
+    if (initialValues?.checkOutAt) setCheckOutAt(initialValues.checkOutAt);
+    if (initialValues?.reason) setReason(initialValues.reason);
+  }, [initialValues]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -127,6 +135,8 @@ const MyAttendancePage = () => {
   const [regularizations, setRegularizations] = useState([]);
   const [showWfhForm, setShowWfhForm] = useState(false);
   const [showRegularizationForm, setShowRegularizationForm] = useState(false);
+  const [regularizationInitialValues, setRegularizationInitialValues] = useState(null);
+  const regularizationFormRef = useRef(null);
 
   const requestGeneration=useRef(0),activeScope=useRef(scope);activeScope.current=scope;
   const invalidateRequests=useCallback(()=>{requestGeneration.current++;},[]);
@@ -208,8 +218,29 @@ const MyAttendancePage = () => {
           </div>
           <Button
             size="sm"
-            className="shrink-0 bg-amber-600 hover:bg-amber-700 text-white"
-            onClick={() => setShowRegularizationForm(true)}
+            className="shrink-0 bg-amber-600 hover:bg-amber-700 text-white cursor-pointer"
+            onClick={() => {
+              let prefilledCheckIn = '';
+              if (today.unresolvedMissedCheckout.checkInAt) {
+                const d = new Date(today.unresolvedMissedCheckout.checkInAt);
+                if (!isNaN(d.getTime())) {
+                  const hours = String(d.getHours()).padStart(2, '0');
+                  const minutes = String(d.getMinutes()).padStart(2, '0');
+                  prefilledCheckIn = `${hours}:${minutes}`;
+                }
+              }
+              setRegularizationInitialValues({
+                workDateKey: today.unresolvedMissedCheckout.workDateKey,
+                type: 'MISSED_CHECK_OUT',
+                checkInAt: prefilledCheckIn,
+                checkOutAt: '',
+                reason: ''
+              });
+              setShowRegularizationForm(true);
+              setTimeout(() => {
+                regularizationFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }, 50);
+            }}
           >
             Request Regularization
           </Button>
@@ -251,9 +282,36 @@ const MyAttendancePage = () => {
 
       <Panel
         title="Regularization Requests"
-        action={!showRegularizationForm && <Button size="sm" onClick={() => setShowRegularizationForm(true)}><Plus className="h-3.5 w-3.5" /> New Request</Button>}
+        action={
+          !showRegularizationForm && (
+            <Button
+              size="sm"
+              onClick={() => {
+                setRegularizationInitialValues(null);
+                setShowRegularizationForm(true);
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" /> New Request
+            </Button>
+          )
+        }
       >
-        {showRegularizationForm && <div className="mb-4"><RegularizationRequestForm onCancel={() => setShowRegularizationForm(false)} onSubmitted={() => { setShowRegularizationForm(false); loadRequests(); }} /></div>}
+        {showRegularizationForm && (
+          <div ref={regularizationFormRef} className="mb-4">
+            <RegularizationRequestForm
+              initialValues={regularizationInitialValues}
+              onCancel={() => {
+                setShowRegularizationForm(false);
+                setRegularizationInitialValues(null);
+              }}
+              onSubmitted={() => {
+                setShowRegularizationForm(false);
+                setRegularizationInitialValues(null);
+                loadRequests();
+              }}
+            />
+          </div>
+        )}
         {!regularizations.length ? <LeaveEmptyState title="No regularization requests yet" compact /> : (
           <div className="overflow-hidden rounded-xl border" style={{ borderColor: 'var(--color-border-default)' }}>
             {regularizations.map((request) => (

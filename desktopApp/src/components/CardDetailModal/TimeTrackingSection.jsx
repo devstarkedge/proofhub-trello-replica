@@ -79,6 +79,9 @@ const TimeTrackingSection = ({
   loggedValidationError,
   billedValidationError,
   canAccessBilledTime = true,
+  billedTimeLoading = false,
+  billedTimeError = null,
+  onRetryBilledTime,
   billedTimeHiddenReason = null,
   project,
   billingSource,
@@ -848,9 +851,9 @@ const TimeTrackingSection = ({
                   </div>
 
                   {/* COLUMN 3: BILLED TIME OR MILESTONE APPROVAL */}
-                  {!isEmployee && isMilestoneProject ? (
+                  {!billedTimeLoading && !billedTimeError && !isEmployee && isMilestoneProject ? (
                     <MilestoneApprovalPanel project={project} source={billingSource} />
-                  ) : !isMilestoneProject ? (
+                  ) : !isMilestoneProject || billedTimeLoading || billedTimeError ? (
                     <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-850/30 p-4 flex flex-col">
                       <div className="flex items-center justify-between pb-2.5 mb-3 border-b border-gray-200/80 dark:border-gray-800">
                         <div className="flex items-center gap-2">
@@ -866,7 +869,12 @@ const TimeTrackingSection = ({
                         )}
                       </div>
 
-                      {!canAccessBilledTime ? (
+                      {billedTimeLoading || billedTimeError ? (
+                        <div role={billedTimeError ? 'alert' : 'status'} className="my-auto rounded-xl border border-amber-200/80 bg-amber-50/60 p-4 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                          <p>{billedTimeError ? 'Unable to load billing settings.' : 'Loading billing settings…'}</p>
+                          {billedTimeError && <button type="button" onClick={onRetryBilledTime} className="mt-2 font-semibold underline">Retry billing settings</button>}
+                        </div>
+                      ) : !canAccessBilledTime ? (
                         <div className="my-auto p-4 rounded-xl border border-amber-200/80 dark:border-amber-900/60 bg-amber-50/60 dark:bg-amber-950/30 text-xs space-y-2">
                           <div className="flex items-center gap-2 text-amber-900 dark:text-amber-200 font-semibold text-sm">
                             <Info size={16} className="text-amber-600 dark:text-amber-400 shrink-0" />

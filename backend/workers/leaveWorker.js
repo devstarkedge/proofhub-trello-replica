@@ -27,6 +27,7 @@ import { resolveAdminApprovers } from '../modules/leave/leaveApprovalAudience.se
 import { getOrCreateActiveWorkflow } from '../modules/leave/leaveApprovalWorkflow.service.js';
 import * as leaveHooks from '../modules/leave/leaveHooks.js';
 import config from '../config/index.js';
+import { processAllLeaveEvents } from '../modules/leave/leaveEvents.service.js';
 
 async function loadPendingApprovalContext(approvalId, workspaceId) {
   const approval = await LeaveApproval.findOne({ _id: approvalId, workspaceId }).lean();
@@ -37,6 +38,9 @@ async function loadPendingApprovalContext(approvalId, workspaceId) {
 }
 
 const JOB_HANDLERS = {
+  async 'leave-event-delivery'() {
+    await processAllLeaveEvents();
+  },
   async 'leave-monthly-accrual'(_job) {
     const results = await runMonthlyAccrualForAllWorkspaces();
     return { workspacesProcessed: results.length };

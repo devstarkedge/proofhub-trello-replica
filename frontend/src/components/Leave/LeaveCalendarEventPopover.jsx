@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CalendarDays, X } from 'lucide-react';
+import { CalendarDays, ExternalLink, X } from 'lucide-react';
 
 const VIEWPORT_MARGIN = 12;
 const POPOVER_GAP = 8;
 
-const LeaveCalendarEventPopover = ({ anchor, date, events, onClose, onMouseEnter, onMouseLeave }) => {
+const LeaveCalendarEventPopover = ({ anchor, date, events, onClose, onOpenRequest, onMouseEnter, onMouseLeave }) => {
   const popoverRef = useRef(null);
   const [position, setPosition] = useState(null);
 
@@ -94,7 +94,12 @@ const LeaveCalendarEventPopover = ({ anchor, date, events, onClose, onMouseEnter
             className="rounded-lg border-l-4 px-3 py-2.5"
             style={{ backgroundColor: event.backgroundColor, borderLeftColor: event.color }}
           >
-            <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: event.color }}>{event.kindLabel}</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: event.color }}>{event.kindLabel}</p>
+              {event.kind === 'pending' && event.requestId && onOpenRequest && <button type="button"
+                className="rounded p-1 hover:bg-black/5" aria-label={`Open leave request for ${event.title}`}
+                title="Open Leave Request Details" onClick={() => onOpenRequest(event.requestId)}><ExternalLink className="h-4 w-4" /></button>}
+            </div>
             <p className="mt-0.5 break-words text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>{event.title}</p>
             {event.details.length > 0 && (
               <dl className="mt-2 space-y-1">

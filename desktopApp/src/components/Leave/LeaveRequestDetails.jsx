@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   X,
   Link as LinkIcon,
@@ -23,6 +23,10 @@ import LeaveApprovalTimeline from './LeaveApprovalTimeline';
 import useLeaveQuery from '../../hooks/useLeaveQuery';
 import { formatHours } from '../../utils/duration';
 import { formatFriendlyDateTime, formatFriendlyDateRange, formatFriendlyDuration } from '../../utils/leavePresentation';
+import WorkspaceContext from '../../context/WorkspaceContext';
+import AuthContext from '../../context/AuthContext';
+import { isLeaveBackgroundActionPending, subscribeLeaveBackgroundActions } from '../../utils/leaveBackgroundActions';
+import { leaveRequestActionKey, runLeaveRequestAction } from '../../utils/leaveRequestActions';
 
 const LEVEL_LABELS = {
   DEPARTMENT_MANAGER: 'Department Manager',
@@ -117,21 +121,24 @@ function getEventDisplayConfig(event, labels) {
   }
 }
 
-export default function LeaveRequestDetails({ requestId, onClose, onChanged }) {
+export default function LeaveRequestDetails({ requestId, onClose }) {
+  const { currentWorkspace } = useContext(WorkspaceContext);
+  const { user } = useContext(AuthContext);
+  const workspaceId = currentWorkspace?._id, userId = user?._id || user?.id;
+  const actionKey = leaveRequestActionKey(workspaceId, userId, requestId);
+  const busy = useSyncExternalStore(subscribeLeaveBackgroundActions,
+    () => isLeaveBackgroundActionPending(actionKey), () => false);
   const read = useLeaveQuery('request-detail', requestId, leaveApi.getRequestDetail);
   const detail = read.isError ? null : read.data;
   const loading = read.isPending;
   const [actionError, setError] = useState('');
   const error = actionError || read.error?.response?.data?.message || (read.isError ? 'Unable to load request details.' : '');
-  const [busy, setBusy] = useState(false);
   const [confirmation, setConfirmation] = useState(null);
   const [comment, setComment] = useState('');
   const [copiedLink, setCopiedLink] = useState(false);
 
-  const inFlight = useRef(false);
   const panel = useRef(null);
 
-  const load = read.refetch;
   useEffect(() => {
     if (!detail) {
       setConfirmation(null);
@@ -162,35 +169,20 @@ export default function LeaveRequestDetails({ requestId, onClose, onChanged }) {
     setError('');
   };
 
-  const execute = async (event) => {
+  const execute = (event) => {
     event.preventDefault();
-    if (inFlight.current || !confirmation) return;
-    inFlight.current = true;
-    setBusy(true);
-    setError('');
-    try {
-      const { kind, stageId, decision } = confirmation;
-      if (kind === 'approval') await leaveApi.decideApproval(stageId, decision, comment);
-      if (kind === 'cancel') await leaveApi.cancelPendingRequest(requestId);
-      if (kind === 'requestCancellation') await leaveApi.requestCancellation(requestId, comment);
-      if (kind === 'reviewCancellation') await leaveApi.decideCancellationRequest(requestId, decision, comment);
-      if (kind === 'cancelApproved') await leaveApi.hrCancelApprovedLeave(requestId, comment);
-      setConfirmation(null);
-      toast.success('Leave request updated successfully');
-      onChanged();
-      await load();
-    } catch (err) {
-      await load();
-      setConfirmation(null);
-      setError(err.response?.data?.message || 'The action could not be completed.');
-    } finally {
-      inFlight.current = false;
-      setBusy(false);
+    if (isLeaveBackgroundActionPending(actionKey) || !confirmation || loading) return;
+    if (!workspaceId || !userId) {
+      setError('Select a workspace before updating leave.');
+      return;
     }
+    if (confirmation.reasonRequired && !comment.trim()) return;
+    runLeaveRequestAction({ ...confirmation, workspaceId, userId, requestId, comment });
+    onClose();
   };
 
   const trapFocus = (event) => {
-    if (event.key === 'Escape' && !busy) onClose();
+    if (event.key === 'Escape') onClose();
     if (event.key !== 'Tab') return;
     const elements = [...panel.current.querySelectorAll('button:not(:disabled), textarea, a[href], input')].filter(
       (element) => element.offsetParent !== null
@@ -268,9 +260,7 @@ export default function LeaveRequestDetails({ requestId, onClose, onChanged }) {
   return (
     <div
       className="fixed inset-0 z-[999] flex justify-end bg-black/40 backdrop-blur-[2px] transition-opacity animate-in fade-in duration-150"
-      onClick={() => {
-        if (!busy) onClose();
-      }}
+      onClick={onClose}
     >
       <section
         ref={panel}
@@ -328,7 +318,6 @@ export default function LeaveRequestDetails({ requestId, onClose, onChanged }) {
             <button
               type="button"
               aria-label="Close"
-              disabled={busy}
               onClick={onClose}
               className="rounded-lg p-1.5 hover:bg-[var(--color-bg-muted)] transition-all cursor-pointer text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] active:scale-95"
             >
@@ -339,6 +328,12 @@ export default function LeaveRequestDetails({ requestId, onClose, onChanged }) {
 
         {/* Scrollable Content Body - Compact Spacing */}
         <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-3.5 space-y-2.5">
+          {busy && (
+            <div role="status" className="flex items-center gap-2 rounded-xl bg-[var(--color-primary-subtle)] p-2.5 text-xs text-[var(--color-text-secondary)]">
+              <Clock className="h-3.5 w-3.5 animate-spin flex-shrink-0" />
+              <span>Saving your leave update. You can continue working.</span>
+            </div>
+          )}
           {error && (
             <div
               role="alert"
@@ -604,6 +599,7 @@ export default function LeaveRequestDetails({ requestId, onClose, onChanged }) {
                   )}
                 </div>
 
+                <p className="mb-2.5 text-[11px] text-[var(--color-text-muted)]">Requires Admin approval and one approval from a Manager or HR.</p>
                 <LeaveApprovalTimeline approvals={detail.approvals} timezone={timezone} />
               </div>
 

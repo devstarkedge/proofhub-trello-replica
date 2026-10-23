@@ -5,8 +5,12 @@ import { toast } from 'react-toastify';
 import Database from '../../services/database';
 import * as leaveApi from '../../services/leaveApi';
 import DayStatusIndicator from '../Leave/DayStatusIndicator';
+import LeaveCalendarEventPopover from '../Leave/LeaveCalendarEventPopover';
 import AuthContext from '../../context/AuthContext';
 import DepartmentContext from '../../context/DepartmentContext';
+import WorkspaceContext from '../../context/WorkspaceContext';
+import useLeaveQuery from '../../hooks/useLeaveQuery';
+import { LEAVE_SCOPE_REFRESH_EVENTS, subscribeLeaveRefresh } from '../../utils/leaveRequestSync';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import {
@@ -339,6 +343,9 @@ const EnhancedDateCell = memo(({
   const [showHoverCard, setShowHoverCard] = useState(false);
   const hoverTimeoutRef = useRef(null);
   const cellRef = useRef(null);
+  const approvedLeave = dayStatus?.status === 'ON_LEAVE' && ['APPROVED', 'CANCELLATION_REQUESTED'].includes(dayStatus.requestStatus);
+  const leaveAccent = dayStatus?.leaveTypeColor || 'var(--color-primary-600)';
+  const leaveDayLabel = ({ FULL_DAY: 'Full day', HALF_DAY_FIRST_HALF: 'First half', HALF_DAY_SECOND_HALF: 'Second half', SHORT_LEAVE: 'Short leave' })[dayStatus?.dayType] || 'Leave';
 
   // Handle hover with delay
   const handleMouseEnter = useCallback(() => {
@@ -347,19 +354,19 @@ const EnhancedDateCell = memo(({
       clearTimeout(hoverTimeoutRef.current);
     }
     // Show hover card after 300ms delay
-    if (day?.hasData) {
+    if (day?.hasData || approvedLeave) {
       hoverTimeoutRef.current = setTimeout(() => {
         setShowHoverCard(true);
       }, 300);
     }
-  }, [day?.hasData]);
+  }, [day?.hasData, approvedLeave]);
 
   const handleMouseLeave = useCallback(() => {
     // Clear timeout and hide hover card
     if (hoverTimeoutRef.current) {
       clearTimeout(hoverTimeoutRef.current);
     }
-    setShowHoverCard(false);
+    hoverTimeoutRef.current = setTimeout(() => setShowHoverCard(false), 140);
   }, []);
 
   // Cleanup timeout on unmount
@@ -374,11 +381,27 @@ const EnhancedDateCell = memo(({
   return (
     <td 
       ref={cellRef}
-      className={`px-2 py-2 text-center font-medium border ${style.bg} ${style.text} ${style.border} ${style.gradient || ''} rounded-md cursor-pointer transition-all hover:scale-105 hover:shadow-md hover:z-10 relative`}
+      className={`px-2 py-2 text-center font-medium border ${approvedLeave ? 'border-[var(--color-border-subtle)]' : `${style.bg} ${style.text} ${style.border} ${style.gradient || ''}`} rounded-md ${day?.hasData ? 'cursor-pointer' : 'cursor-default'} transition-all hover:shadow-md hover:z-10 relative`}
+      style={approvedLeave ? {
+        backgroundColor: `color-mix(in srgb, ${leaveAccent} 5%, var(--color-card-bg))`,
+        boxShadow: `inset 0 2px 0 color-mix(in srgb, ${leaveAccent} 45%, transparent)`
+      } : undefined}
       onClick={() => day?.hasData && onOpenModal(member, date)}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      tabIndex={approvedLeave ? 0 : undefined}
+      onFocus={approvedLeave ? () => setShowHoverCard(true) : undefined}
+      onBlur={approvedLeave ? () => setShowHoverCard(false) : undefined}
     >
+      {approvedLeave ? (
+        <div className="flex min-h-[2.75rem] flex-col items-center justify-center gap-1">
+          <DayStatusIndicator dayStatus={dayStatus} showCode />
+          <span className="text-[10px] font-medium leading-3" style={{ color: 'var(--color-text-secondary)' }}>{leaveDayLabel}</span>
+          {day?.totalMinutes > 0 && <span className="flex items-center gap-1 text-[10px] leading-3" style={{ color: 'var(--color-text-muted)' }}>
+            <Clock className="h-2.5 w-2.5" aria-hidden="true" />{value}
+          </span>}
+        </div>
+      ) : (
       <div className="relative flex items-center justify-center gap-0.5">
         {/* Over/Under indicator */}
         {status === 'over-logged' && (
@@ -389,18 +412,39 @@ const EnhancedDateCell = memo(({
         )}
         <span className="whitespace-nowrap text-xs">{value}</span>
       </div>
+      )}
 
       {/* Leave/holiday/weekly-off overlay — purely additive read-only join
           against GET /api/leave/dashboard/day-status; never derived from or
           written back into this cell's own tracked-time data. */}
-      {dayStatus && dayStatus.status !== 'WORKING_DAY' && (
+      {dayStatus && !['WORKING_DAY', 'ON_LEAVE'].includes(dayStatus.status) && (
         <div className="absolute top-0.5 right-0.5">
           <DayStatusIndicator dayStatus={dayStatus} />
         </div>
       )}
 
       {/* Hover Card */}
-      {showHoverCard && day?.hasData && (
+      {showHoverCard && approvedLeave && (
+        <LeaveCalendarEventPopover
+          anchor={cellRef.current}
+          date={new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+          events={[{
+            id: `${member.user._id}-${date}`, kind: 'leave', kindLabel: 'Approved leave',
+            title: dayStatus.leaveTypeName || leaveDayLabel,
+            color: leaveAccent, backgroundColor: `color-mix(in srgb, ${leaveAccent} 8%, var(--color-card-bg))`,
+            details: [
+              { label: 'Employee', value: member.user.name },
+              { label: 'Duration', value: leaveDayLabel },
+              { label: 'Status', value: dayStatus.requestStatus === 'CANCELLATION_REQUESTED' ? 'Approved · cancellation requested' : 'Approved' },
+              ...(day?.totalMinutes > 0 ? [{ label: 'Logged time', value }] : [])
+            ]
+          }]}
+          onClose={() => setShowHoverCard(false)}
+          onMouseEnter={() => clearTimeout(hoverTimeoutRef.current)}
+          onMouseLeave={handleMouseLeave}
+        />
+      )}
+      {showHoverCard && !approvedLeave && day?.hasData && (
         <DateCellHoverCard
           userId={member.user._id}
           date={date}
@@ -431,6 +475,7 @@ const EmptyState = memo(({ message, submessage }) => (
 
 // Main Component
 const TeamLoggedTimeView = memo(({ onClose }) => {
+  const { currentWorkspace } = useContext(WorkspaceContext);
   const { user } = useContext(AuthContext);
   const { currentDepartment, departments } = useContext(DepartmentContext);
   
@@ -443,7 +488,7 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
   // Leave/holiday/weekly-off overlay — {[userId]: {[dateKey]: {status,...}}}.
   // Fetched independently of fetchData()/teamData below so a failure here
   // can never affect the actual tracked-time data this view exists for.
-  const [dayStatusMap, setDayStatusMap] = useState({});
+
   
   // Filter state - department is controlled by header context only
   const [dateRange, setDateRange] = useState(() => DATE_PRESETS[1].getValue());
@@ -460,9 +505,12 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
   const [detailModal, setDetailModal] = useState({ isOpen: false, userId: null, date: null, userName: null, userAvatar: null });
 
   // Fetch data
-  const fetchData = useCallback(async () => {
+  const fetchGeneration = useRef(0);
+  const fetchData = useCallback(async ({ background = false } = {}) => {
+    if (!currentWorkspace?._id) return;
+    const generation = ++fetchGeneration.current;
     try {
-      setLoading(true);
+      if (!background) setLoading(true);
       setError(null);
 
       const params = {
@@ -478,50 +526,37 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
           : Promise.resolve(null)
       ]);
 
+      if (generation !== fetchGeneration.current) return;
       setTeamData(teamResponse.data);
       if (insightsResponse) {
         setInsights(insightsResponse.data);
       }
     } catch (err) {
+      if (generation !== fetchGeneration.current) return;
       console.error('Error fetching team data:', err);
       setError(err.message || 'Failed to load team data');
       toast.error('Failed to load team data');
     } finally {
-      setLoading(false);
+      if (generation === fetchGeneration.current) setLoading(false);
     }
-  }, [currentDepartment, dateRange, user?.role]);
+  }, [currentWorkspace?._id, currentDepartment, dateRange, user?.role]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  // The Work Calendar drives this view's expectedMinutes/productivity math
-  // (see teamAnalyticsController.js), so a calendar edit elsewhere must
-  // refresh this data too — otherwise an admin who just changed the
-  // calendar would see stale productivity numbers until a hard refresh.
-  useEffect(() => {
-    const onCalendarUpdated = () => fetchData();
-    window.addEventListener('socket-leave-calendar-updated', onCalendarUpdated);
-    return () => window.removeEventListener('socket-leave-calendar-updated', onCalendarUpdated);
-  }, [fetchData]);
-
-  // Independent leave/holiday/weekly-off overlay fetch — runs whenever the
-  // member list or date range changes, entirely decoupled from fetchData()
-  // above. A failure here only means the overlay is missing, never breaks
-  // the actual time-tracking view.
-  useEffect(() => {
-    const memberIds = (teamData?.teamData || []).map((member) => member.user?._id).filter(Boolean);
-    if (!memberIds.length) {
-      setDayStatusMap({});
-      return;
-    }
-    leaveApi.getDayStatus({
-      userIds: memberIds,
-      startDate: dateRange.start,
-      endDate: dateRange.end,
-      visibility: (user?.role === 'admin' || user?.role === 'manager' || user?.role === 'hr') ? 'department' : 'approved_only'
-    }).then(({ data }) => setDayStatusMap(data || {})).catch(() => setDayStatusMap({}));
-  }, [teamData, dateRange, user?.role]);
+  const overlayUserIds = (teamData?.teamData || []).map((member) => member.user?._id).filter(Boolean);
+  const overlayRead = useLeaveQuery('teams-day-status', {
+    userIds: overlayUserIds, startDate: dateRange.start, endDate: dateRange.end, visibility: 'approved_only'
+  }, leaveApi.getDayStatus, { enabled: overlayUserIds.length > 0 });
+  const dayStatusMap = overlayRead.isError ? {} : overlayRead.data || {};
+  const refetchOverlay = overlayRead.refetch;
+  useEffect(() => subscribeLeaveRefresh({ workspaceId: currentWorkspace?._id,
+    onInvalidate: (event) => {
+      if (LEAVE_SCOPE_REFRESH_EVENTS.includes(event.type)) { fetchGeneration.current++; setTeamData(null); setInsights(null); }
+    },
+    refresh: () => { fetchData({ background: true }); refetchOverlay(); }
+  }), [currentWorkspace?._id, fetchData, refetchOverlay]);
 
   const handleRefresh = async () => {
     setRefreshing(true);

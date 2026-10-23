@@ -193,7 +193,7 @@ export async function restoreConsumptionForRequest({ workspaceId, request, reaso
 export async function creditBucket({
   workspaceId, user, leaveType, policyVersion, period = null, sourceType,
   amount, creditedAt, expiresAt = null, reason = '', createdBy = null, session,
-  ledgerType = 'MONTHLY_CREDIT', clientAdjustmentId = null, policySource, actorRole
+  ledgerType = 'MONTHLY_CREDIT', clientAdjustmentId = null, policySource, actorRole, adjustmentExpiryRule
 }) {
   const [bucket] = await LeaveAccrualBucket.create([{
     workspaceId, user, leaveType, policyVersion, period, sourceType,
@@ -202,7 +202,7 @@ export async function creditBucket({
   }], { session });
   const [ledgerEntry] = await LeaveLedger.create([{
     workspaceId, user, leaveType, bucket: bucket._id, type: ledgerType,
-    amount, reason, actor: createdBy, occurredAt: creditedAt || new Date(), policyVersion, clientAdjustmentId, policySource, actorRole
+    amount, reason, actor: createdBy, occurredAt: creditedAt || new Date(), policyVersion, clientAdjustmentId, policySource, actorRole, adjustmentExpiryRule
   }], { session });
   return { bucket, ledgerEntry };
 }
@@ -263,14 +263,19 @@ export async function getBalanceSummary({ workspaceId, user, leaveType }) {
   return projectBalanceBuckets(buckets);
 }
 
-export function projectBalanceBuckets(buckets) {
+export function projectBalanceBuckets(buckets, now = new Date()) {
   let earned = 0, consumed = 0, debited = 0, reserved = 0, expired = 0;
   for (const bucket of buckets) {
     earned += bucket.creditedAmount;
     consumed += bucket.consumedAmount;
     debited += (bucket.debitedAmount || 0);
     reserved += bucket.reservedAmount;
-    expired += bucket.expiredAmount;
+    // Availability must change at the expiry instant, even before the next
+    // maintenance sweep persists its ledger entry. Pending reservations stay protected.
+    const elapsed = bucket.expiresAt && new Date(bucket.expiresAt) <= now;
+    const effectiveExpired = elapsed ? Math.max(bucket.expiredAmount,
+      bucket.creditedAmount - bucket.consumedAmount - (bucket.debitedAmount || 0) - bucket.reservedAmount) : bucket.expiredAmount;
+    expired += effectiveExpired;
   }
   const available = Math.max(0, earned - consumed - debited - reserved - expired);
   return { earned, consumed, debited, reserved, expired, available };
@@ -278,7 +283,8 @@ export function projectBalanceBuckets(buckets) {
 
 /** Per-bucket breakdown for display (e.g. "2 Full Days expiring 31 Mar"). */
 export async function listActiveBucketsForDisplay({ workspaceId, user, leaveType }) {
-  const buckets = await LeaveAccrualBucket.find({ workspaceId, user, leaveType, status: 'active' }).lean();
+  const buckets = await LeaveAccrualBucket.find({ workspaceId, user, leaveType, status: 'active',
+    $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }] }).lean();
   buckets.sort(fifoComparator);
   return buckets.map((bucket) => ({
     ...bucket,
@@ -297,10 +303,11 @@ export async function getFullBalanceBreakdown({ workspaceId, user }) {
   const byType = new Map();
   for (const bucket of allBuckets) { const key = String(bucket.leaveType); if (!byType.has(key)) byType.set(key, []); byType.get(key).push(bucket); }
   const breakdown = [];
+  const now = new Date();
   for (const leaveType of leaveTypes) {
     const typeBuckets = byType.get(String(leaveType._id)) || [];
-    const summary = projectBalanceBuckets(typeBuckets);
-    const buckets = typeBuckets.filter((bucket) => bucket.status === 'active').sort(fifoComparator).map((bucket) => ({ ...bucket, availableAmount: Math.max(0, availableOf(bucket)) }));
+    const summary = projectBalanceBuckets(typeBuckets, now);
+    const buckets = typeBuckets.filter((bucket) => bucket.status === 'active' && (!bucket.expiresAt || bucket.expiresAt > now)).sort(fifoComparator).map((bucket) => ({ ...bucket, availableAmount: Math.max(0, availableOf(bucket)) }));
     breakdown.push({
       leaveType: { id: leaveType._id, name: leaveType.name, key: leaveType.key, category: leaveType.category, color: leaveType.color },
       ...summary,

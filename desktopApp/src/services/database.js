@@ -196,9 +196,10 @@ class DatabaseService {
     return data;
   }
 
-  async getProject(projectId) {
+  async getProject(projectId, { signal, workspaceId } = {}) {
     const headers = buildHeaders();
-    const res = await fetch(`${baseURL}/api/boards/${projectId}`, { headers });
+    if (workspaceId) headers['x-workspace-id'] = workspaceId;
+    const res = await fetch(`${baseURL}/api/boards/${projectId}`, { headers, signal });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
     }

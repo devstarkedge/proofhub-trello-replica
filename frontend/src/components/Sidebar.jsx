@@ -8,6 +8,7 @@ import useAccessControl from '../hooks/useAccessControl';
 import usePermissions from '../hooks/usePermissions';
 import useJoinRequestsLive from '../hooks/useJoinRequestsLive';
 import useRegularizationApprovalLive from '../hooks/useRegularizationApprovalLive';
+import useLeavePendingLive from '../hooks/useLeavePendingLive';
 import { getDefaultLeaveRouteForRole } from '../utils/leaveAccess';
 
 const MotionDiv = motion.div;
@@ -33,6 +34,7 @@ const iconColors = {
 };
 
 const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
+  const leavePendingCount = useLeavePendingLive();
   const { user } = useContext(AuthContext);
   const [hoveredItem, setHoveredItem] = useState(null);
   const [pmSheetExpanded, setPmSheetExpanded] = useState(false);
@@ -99,7 +101,7 @@ const Sidebar = ({ isMobile = false, onClose = () => {} }) => {
       { path: '/', icon: Home, label: 'Home' },
       { path: '/my-shortcuts', icon: Zap, label: 'My Shortcuts' },
       { path: '/announcements', icon: Bell, label: 'Announcements' },
-      { path: leavePath, icon: CalendarDays, label: 'Leave', matchPrefix: '/leave', iconKey: '/leave' },
+      { path: leavePath, icon: CalendarDays, label: 'Leave', matchPrefix: '/leave', iconKey: '/leave', badge: leavePendingCount || null },
       {
         path: '/attendance',
         icon: Fingerprint,

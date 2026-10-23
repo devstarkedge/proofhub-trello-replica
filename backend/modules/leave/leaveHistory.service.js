@@ -58,6 +58,7 @@ async function normalizeGroups({ groups, scope, detail = false }) {
     .select('type amount balanceDelta actor actorRole leaveType bucket request policyVersion policySource relatedEntryId clientAdjustmentId reason')
     .populate({ path: 'actor', select: 'name avatar', transform: (doc, id) => doc || (id ? { _id: id } : null) }).populate('leaveType', 'name key color category');
   if (detail) query.populate({ path: 'policyVersion', select: 'versionNumber policy', populate: { path: 'policy', select: 'name' } });
+  else query.populate('policyVersion', 'versionNumber');
   const entries = await query.lean();
   const [buckets, requests] = await Promise.all([
     LeaveAccrualBucket.find({ ...scope, _id: { $in: entries.map((entry) => entry.bucket).filter(Boolean) } }).select('period sourceType creditedAt expiresAt expiredAt policyVersion').lean(),

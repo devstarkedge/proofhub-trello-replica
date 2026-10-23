@@ -1,5 +1,6 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useContext } from 'react';
 import { ListViewSkeleton } from '../components/LoadingSkeleton';
+import WorkspaceContext from '../context/WorkspaceContext';
 
 const TeamLoggedTimeView = lazy(() => import('../components/TeamAnalytics/TeamLoggedTimeView'));
 
@@ -9,9 +10,10 @@ const TeamLoggedTimeView = lazy(() => import('../components/TeamAnalytics/TeamLo
  * Accessible via /list-view/teams route
  */
 const ListViewTeams = () => {
+  const { currentWorkspace } = useContext(WorkspaceContext);
   return (
     <Suspense fallback={<ListViewSkeleton />}>
-      <TeamLoggedTimeView />
+      <TeamLoggedTimeView key={currentWorkspace?._id} />
     </Suspense>
   );
 };

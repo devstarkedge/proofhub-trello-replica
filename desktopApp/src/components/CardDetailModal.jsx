@@ -141,8 +141,9 @@ const CardDetailModal = React.memo(({
   const currentProject = useModalHierarchyStore((state) => state.currentProject);
 
   // Check if user can access billed time based on project client info and user role
-  const { canAccessBilledTime, hiddenReason: billedTimeHiddenReason } = useBilledTimeAccess(
-    currentProject?.clientDetails
+  const { canAccessBilledTime, hiddenReason: billedTimeHiddenReason, project: billingProject,
+    loading: billedTimeLoading, error: billedTimeError, retry: retryBilling } = useBilledTimeAccess(
+    card?.board?._id || card?.board || currentProject?._id
   );
 
   const labelUpdateRef = React.useRef(onLabelUpdate);
@@ -2070,8 +2071,11 @@ const CardDetailModal = React.memo(({
                   loggedValidationError={loggedValidationError}
                   billedValidationError={billedValidationError}
                   canAccessBilledTime={canAccessBilledTime}
+                  billedTimeLoading={billedTimeLoading}
+                  billedTimeError={billedTimeError}
+                  onRetryBilledTime={retryBilling}
                   billedTimeHiddenReason={billedTimeHiddenReason}
-                  project={currentProject}
+                  project={billingProject}
                   billingSource={{ sourceType: 'task', sourceId: card._id || card.id }}
                 />
 

@@ -1,8 +1,8 @@
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import { resolveLeaveAccessScope } from './leaveAuthorization.service.js';
-import LeaveApprovalWorkflow from './leaveApprovalWorkflow.model.js';
 import Workspace from '../../models/Workspace.js';
 import { PENDING_STATUSES, APPROVED_STATUSES } from './leaveRequest.model.js';
+import { stageIsReady } from './leaveApprovalRules.js';
 
 export const STAGE_ORDER = { DEPARTMENT_MANAGER: 0, HR: 1, ADMIN: 2 };
 export const stageOrder = (stage) => stage.sequence ?? STAGE_ORDER[stage.level] ?? 99;
@@ -13,17 +13,13 @@ export const orderStages = (stages) => [...stages].sort((a, b) => stageOrder(a) 
 export async function getLeaveActionContext({ workspaceId, viewer, session = null }) {
   const userId = viewer._id || viewer.id;
   const getVisibility = () => resolveLeaveAccessScope({ viewer, workspaceId, includeEmployees: true, session });
-  const getWorkflow = () => LeaveApprovalWorkflow.findOne({ workspaceId, isActive: true }).select('adminFallbackApproverUserId').session(session).lean();
   const getWorkspace = () => Workspace.findById(workspaceId).select('owner timezone').session(session).lean();
   // MongoDB transactions do not support parallel operations on one session.
-  const [visibility, workflow, workspace] = session
-    ? [await getVisibility(), await getWorkflow(), await getWorkspace()]
-    : await Promise.all([getVisibility(), getWorkflow(), getWorkspace()]);
-  // The previous resolver plus its unconditional fallback union is exactly
-  // active admins OR active configured fallback/owner. Resolve that union once.
-  const admins = await WorkspaceMembership.find({ workspace: workspaceId, status: 'active', $or: [
-    { role: 'admin' }, { user: { $in: [workflow?.adminFallbackApproverUserId, workspace?.owner].filter(Boolean) } }
-  ] }).session(session).select('user').lean();
+  const [visibility, workspace] = session
+    ? [await getVisibility(), await getWorkspace()]
+    : await Promise.all([getVisibility(), getWorkspace()]);
+  const admins = await WorkspaceMembership.find({ workspace: workspaceId, status: 'active', role: 'admin' })
+    .session(session).select('user').lean();
   return { user: visibility.viewer, userId: String(userId), access: visibility.access,
     managedIds: new Set(visibility.employeeIds.map(String)), adminIds: new Set(admins.map((member) => String(member.user))), visibility, workspace };
 }
@@ -36,9 +32,10 @@ export function eligibleStage({ request, stage, stages, context, decision = 'APP
   const action = decision === 'REJECTED' ? 'reject_assigned' : 'approve_assigned';
   const delegated = context.access.source === 'override' && context.access.actions[action] === true;
   const authority = delegated || (stage.level === 'DEPARTMENT_MANAGER' ? context.managedIds.has(requesterId)
-    : stage.level === 'HR' ? context.user.role === 'hr' : context.adminIds.has(context.userId));
+    : stage.level === 'HR' ? context.user.role === 'hr' : context.user.role === 'admin');
+  if (stage.level === 'ADMIN' && context.user.role !== 'admin') return false;
   if (!authority) return false;
-  return stage.mode !== 'SEQUENTIAL' || stages.every((other) => stageOrder(other) >= stageOrder(stage) || other.status === 'APPROVED');
+  return stageIsReady(stage, stages);
 }
 
 export function requestActions({ request, stages, context }) {

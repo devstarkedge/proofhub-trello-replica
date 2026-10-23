@@ -29,7 +29,8 @@ const PrivateRoute = ({ children, requiredRole }) => {
     if (location.pathname === '/' && !window.flowtaskDesktop?.isDesktop) {
       return <LandingPage />;
     }
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    const returnTo = location.pathname + location.search + location.hash;
+    return <Navigate to={`/login?returnTo=${encodeURIComponent(returnTo)}`} state={{ from: location }} replace />;
   }
 
   // Force admin to change password if required

@@ -60,6 +60,7 @@ import AttendanceLayout from "./layouts/AttendanceLayout";
 import AttendanceSettingsLayout from "./layouts/AttendanceSettingsLayout";
 import PermissionConfirmModal from "./components/AccessControl/PermissionConfirmModal";
 import ProjectTrash from "./pages/ProjectTrash";
+import ProjectWorkspaceGate from "./components/ProjectWorkspaceGate";
 import SelectWorkspacePage from "./pages/SelectWorkspacePage";
 import NoWorkspacePage from "./pages/NoWorkspacePage";
 import InvitePage from "./pages/InvitePage";
@@ -133,8 +134,8 @@ function App() {
                 <Route path="/my-shortcuts" element={<MyShortcutsPage />} />
                 <Route path="/time-tracking" element={<TimeTrackingPage />} />
                 <Route path="/workspace-settings" element={<WorkspaceSettingsPage />} />
-                <Route path="/workflow/:deptId/:projectId" element={<WorkFlow />} />
-                <Route path="/workflow/:deptId/:projectId/:taskId" element={<WorkFlow />} />
+                <Route path="/workflow/:deptId/:projectId" element={<ProjectWorkspaceGate><WorkFlow /></ProjectWorkspaceGate>} />
+                <Route path="/workflow/:deptId/:projectId/:taskId" element={<ProjectWorkspaceGate><WorkFlow /></ProjectWorkspaceGate>} />
                 <Route path="/workflow/:deptId/:projectId/trash" element={<ProjectTrash />} />
 
                 {/* Leave Management — self-service (dashboard/my-leave/calendar)

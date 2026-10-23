@@ -9,6 +9,7 @@ import LeaveCalendarEventPopover from './LeaveCalendarEventPopover';
 import * as leaveApi from '../../services/leaveApi';
 import { toDateKey } from '../../utils/leaveDateKey';
 import useLeaveQuery from '../../hooks/useLeaveQuery';
+import LeaveRequestDetails from './LeaveRequestDetails';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAY_TYPE_LABELS = {
@@ -80,6 +81,7 @@ function buildHolidayEvent(holiday, date, index) {
 
 function buildEventsForDate({ status, holidays, date, leaveEvents = [] }) {
   const events = leaveEvents.map((day) => ({
+    requestId: day.request._id,
     id: String(day._id), kind: day.pending ? 'pending' : 'leave',
     kindLabel: day.pending ? 'Pending Leave' : 'Approved Leave',
     title: day.request.requester?.name || day.request.leaveType?.name || 'Leave',
@@ -133,6 +135,7 @@ const LeaveCalendarGrid = ({ userId }) => {
   const { currentWorkspace } = useContext(WorkspaceContext);
   const [cursor, setCursor] = useState(() => new Date(workspaceDateKey(new Date(), currentWorkspace?.timezone) + 'T12:00:00'));
   const [activeDetails, setActiveDetails] = useState(null);
+  const [requestId, setRequestId] = useState(null);
   const closeTimerRef = useRef(null);
 
   const cells = useMemo(() => buildMonthCells(cursor.getFullYear(), cursor.getMonth()), [cursor]);
@@ -369,11 +372,13 @@ const LeaveCalendarGrid = ({ userId }) => {
           anchor={activeDetails.anchor}
           date={activeDetails.date}
           events={activeEvents}
+          onOpenRequest={(id) => { cancelScheduledClose(); setActiveDetails(null); setRequestId(id); }}
           onClose={() => setActiveDetails(null)}
           onMouseEnter={cancelScheduledClose}
           onMouseLeave={scheduleClose}
         />
       )}
+      {requestId && <LeaveRequestDetails requestId={requestId} onClose={() => setRequestId(null)} onChanged={loadDayStatus} />}
     </div>
   );
 };

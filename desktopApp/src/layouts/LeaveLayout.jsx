@@ -40,7 +40,7 @@ const LeaveLayout = () => {
     const unsubscribe = subscribeLeaveRefresh({ workspaceId: currentWorkspace?._id,
       onInvalidate: (event) => {
         // Never keep a previously authorized department visible during revalidation.
-        if ([...LEAVE_SCOPE_REFRESH_EVENTS, 'socket-connected', 'socket-disconnected', 'focus'].includes(event.type)) reset(true);
+        if (LEAVE_SCOPE_REFRESH_EVENTS.includes(event.type)) reset(true);
       },
       refresh: () => {
         useLeaveStore.setState({ readsPaused: false });

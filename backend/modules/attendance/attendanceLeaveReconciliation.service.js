@@ -1,5 +1,6 @@
 import LeaveRequest, { APPROVED_STATUSES } from '../leave/leaveRequest.model.js';
 import LeaveRequestDay from '../leave/leaveRequestDay.model.js';
+import mongoose from 'mongoose';
 
 /**
  * Read-only bridge into the Leave module (spec §27-30). Attendance NEVER
@@ -21,12 +22,19 @@ const NONE_RESULT = Object.freeze({
 
 /** The approved leave (if any) in effect for this user on this exact business date. `dayInstant` must already be a workspace-tz-midnight instant (dateOnlyToInstant), not a bare `new Date()`. */
 export async function resolveLeaveContextForDate({ workspaceId, userId, dayInstant, dbSession = null }) {
-  const requests = await LeaveRequest.find({ workspaceId, requester:userId, status:{$in:APPROVED_STATUSES}, startDate:{$lte:dayInstant}, endDate:{$gte:dayInstant} })
-    .select('_id leaveType status').session(dbSession).populate({path:'leaveType',select:'name category',options:{session:dbSession}}).lean();
-  if (!requests.length) return { ...NONE_RESULT, approvedLeaves:[] };
-  const days = await LeaveRequestDay.find({workspaceId,date:dayInstant,request:{$in:requests.map(r=>r._id)}}).session(dbSession).lean();
+  // Join on the authoritative workspace business date. Request date fields may
+  // be UTC-midnight labels, which differ from workspace midnight on day one.
+  const days = await LeaveRequestDay.aggregate([
+    { $match: { workspaceId: new mongoose.Types.ObjectId(workspaceId), date: dayInstant } },
+    { $lookup: { from: LeaveRequest.collection.name, localField: 'request', foreignField: '_id', pipeline: [
+      { $match: { workspaceId: new mongoose.Types.ObjectId(workspaceId), requester: new mongoose.Types.ObjectId(userId), status: { $in: APPROVED_STATUSES } } },
+      { $project: { leaveType: 1, status: 1 } }
+    ], as: '_request' } }, { $unwind: '$_request' }
+  ]).session(dbSession);
+  if (!days.length) return { ...NONE_RESULT, approvedLeaves: [] };
+  await LeaveRequestDay.populate(days, { path: '_request.leaveType', model: 'LeaveType', select: 'name category', options: { session: dbSession } });
   const approvedLeaves = days.map(day => {
-    const request=requests.find(r=>String(r._id)===String(day.request));
+    const request=day._request;
     return {requestId:request._id,status:request.status,dayType:day.dayType,leaveTypeName:request.leaveType?.name||'Approved leave',leaveTypeCategory:request.leaveType?.category,
       startLocalTime:day.shortLeaveStartTime,endLocalTime:day.shortLeaveEndTime,durationMinutes:day.shortLeaveDurationMinutes};
   });

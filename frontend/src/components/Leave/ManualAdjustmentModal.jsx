@@ -16,6 +16,8 @@ const ManualAdjustmentModal = ({ onClose, onDone }) => {
   const [users, setUsers] = useState([]);
   const [leaveTypes, setLeaveTypes] = useState([]);
   const [form, setForm] = useState({ userId: '', leaveTypeId: '', operation: 'CREDIT', count: '', reason: '' });
+  const [expiryMode, setExpiryMode] = useState('POLICY');
+  const [expiryMonths, setExpiryMonths] = useState('3');
   const clientAdjustmentId = useRef(crypto.randomUUID());
   const [submitting, setSubmitting] = useState(false);
 
@@ -30,9 +32,16 @@ const ManualAdjustmentModal = ({ onClose, onDone }) => {
       toast.error('All fields, including a reason, are required');
       return;
     }
+    const customExpiry = form.operation === 'CREDIT' && expiryMode !== 'POLICY';
+    if (customExpiry && expiryMode === 'FIXED_MONTHS_AFTER_CREDIT'
+      && (!Number.isSafeInteger(Number(expiryMonths)) || Number(expiryMonths) < 1)) {
+      toast.error('Expiry months must be a positive whole number');
+      return;
+    }
     setSubmitting(true);
     try {
-      await leaveApi.createAdjustment({ ...form, count: Number(form.count), clientAdjustmentId: clientAdjustmentId.current });
+      await leaveApi.createAdjustment({ ...form, count: Number(form.count), clientAdjustmentId: clientAdjustmentId.current,
+        ...(customExpiry ? { expiryRule: { mode: expiryMode, months: expiryMode === 'FIXED_MONTHS_AFTER_CREDIT' ? Number(expiryMonths) : null } } : {}) });
       window.dispatchEvent(new CustomEvent('socket-leave-balance-updated'));
       toast.success('Balance adjustment recorded');
       onDone?.();
@@ -45,8 +54,8 @@ const ManualAdjustmentModal = ({ onClose, onDone }) => {
 
   return (
     <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4" onClick={onClose}>
-      <form onSubmit={submit} className="w-full max-w-md rounded-2xl p-6 space-y-3" style={{ backgroundColor: 'var(--color-bg-base)' }} onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-base font-bold" style={{ color: 'var(--color-text-primary)' }}>Manual Balance Adjustment</h3>
+      <form onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="manual-adjustment-title" className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl p-6 space-y-3" style={{ backgroundColor: 'var(--color-bg-base)' }} onClick={(e) => e.stopPropagation()}>
+        <h3 id="manual-adjustment-title" className="text-base font-bold" style={{ color: 'var(--color-text-primary)' }}>Manual Balance Adjustment</h3>
 
         <div>
           <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>Employee</label>
@@ -78,6 +87,31 @@ const ManualAdjustmentModal = ({ onClose, onDone }) => {
           <input type="number" required min="0" max="1000000" step={leaveTypes.find((t) => t._id === form.leaveTypeId)?.category === 'SHORT_LEAVE' ? '1' : '0.5'} className={inputClass} style={inputStyle} value={form.count} onChange={(e) => setForm({ ...form, count: e.target.value })} />
           <p className="mt-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>Enter entitlements, not hours. The employee’s policy determines permitted increments and balance limits.</p>
         </div>
+
+        {form.operation === 'CREDIT' && (
+          <div className="rounded-xl border p-3 space-y-3" style={{ borderColor: 'var(--color-border-default)', backgroundColor: 'var(--color-bg-subtle)' }}>
+            <label className="block text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+              Credit expiry
+              <select className={`${inputClass} mt-1.5`} style={inputStyle} value={expiryMode} onChange={(e) => setExpiryMode(e.target.value)}>
+                <option value="POLICY">Use employee’s leave policy</option>
+                <option value="FIXED_MONTHS_AFTER_CREDIT">Fixed months after credit</option>
+                <option value="CALENDAR_YEAR_END">End of calendar year</option>
+                <option value="NEVER">Never expires</option>
+              </select>
+            </label>
+            {expiryMode === 'FIXED_MONTHS_AFTER_CREDIT' && (
+              <label className="block text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+                Expires after (months)
+                <input type="number" min="1" step="1" required className={`${inputClass} mt-1.5`} style={inputStyle}
+                  value={expiryMonths} onChange={(e) => setExpiryMonths(e.target.value)} />
+              </label>
+            )}
+            <p className="text-xs leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
+              {expiryMode === 'POLICY' ? 'This credit follows the employee’s applicable leave policy.'
+                : 'Applies only to this credit. Unused leave expires using the workspace’s timezone.'}
+            </p>
+          </div>
+        )}
 
         <div>
           <label className="block text-xs font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>Reason (required)</label>

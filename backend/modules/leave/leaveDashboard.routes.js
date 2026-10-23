@@ -15,6 +15,7 @@ router.get('/scope', controller.getDashboardScope);
 // department or workspace grant. Personal dashboards are open to members.
 router.get('/records', controller.getRecords);
 router.get('/summary', controller.getSummary);
+router.get('/pending-count', controller.getPendingCount);
 
 // /employee always self-scopes to the caller — every member may see their
 // own leave data regardless of dashboard scope, so no extra gate is needed

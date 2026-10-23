@@ -20,7 +20,7 @@ export default function useLeaveQuery(resource, params, fetcher, { enabled = tru
     retry: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    refetchInterval: 60000,
+    refetchInterval: false,
     refetchIntervalInBackground: false
   });
 }

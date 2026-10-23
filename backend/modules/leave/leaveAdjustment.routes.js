@@ -53,6 +53,7 @@ router.post(
     body('count').optional().isNumeric(),
     body('operation').optional().isIn(['CREDIT', 'DEBIT']),
     body('clientAdjustmentId').optional().isString().isLength({ min: 1, max: 100 }),
+    body('expiryRule').optional().isObject({ strict: true }),
     body('reason').trim().notEmpty(),
     validate
   ],

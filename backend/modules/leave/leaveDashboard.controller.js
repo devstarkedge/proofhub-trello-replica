@@ -26,6 +26,12 @@ export const getSummary = asyncHandler(async (req, res) => {
   res.json({ success: true, data });
 });
 
+export const getPendingCount = asyncHandler(async (req, res) => {
+  const scope = await resolveLeaveAccessScope({ viewer: req.user, workspaceId: req.workspaceId });
+  const count = await LeaveRequest.countDocuments({ ...scope.requestFilter, status: { $in: PENDING_STATUSES } });
+  res.json({ success: true, data: { count } });
+});
+
 const ACTIVE_PENDING_STATUSES = PENDING_STATUSES;
 const CLOSED_STATUSES = [...APPROVED_STATUSES, 'REJECTED', ...CANCELLED_STATUSES, 'EXPIRED'];
 

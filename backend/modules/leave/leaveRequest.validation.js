@@ -31,6 +31,13 @@ export function assertValidDateRange(startDate, endDate) {
   }
 }
 
+export function assertNotPastLeaveDate(startDate, timezone, now = new Date()) {
+  const dateKey = startDate instanceof Date ? instantToDateOnlyKey(startDate, 'UTC') : String(startDate).slice(0, 10);
+  if (dateKey < instantToDateOnlyKey(now, timezone)) {
+    throw new ErrorResponse('Leave can only be requested for today or a future date', 400);
+  }
+}
+
 /** `existingRequests` must already be filtered to this requester and active statuses. */
 export function assertNoOverlap({ existingRequests, startDate, endDate, excludeRequestId = null }) {
   const start = new Date(startDate).getTime();

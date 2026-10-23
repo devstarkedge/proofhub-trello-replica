@@ -88,7 +88,7 @@ export async function onApprovalDecisionRecorded(result, decidingActor) {
   await emitRequestChange([request.requester], EVENTS.REQUEST_UPDATED, request);
   // Notify every eligible approver of this level (including whoever just
   // decided it) so a peer who could also have acted on it sees it's resolved.
-  await emitRequestChange(approval.eligibleApproverUserIds || [], EVENTS.APPROVAL_UPDATED, request);
+  await emitRequestChange((result.allLevels || [approval]).flatMap((stage) => stage.eligibleApproverUserIds || []), EVENTS.APPROVAL_UPDATED, request);
 
   await evaluateAndDeliver({
     type: 'leave_approval_decision_recorded',

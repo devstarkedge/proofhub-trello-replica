@@ -51,9 +51,9 @@ export async function getDayStatusForUsers({ workspaceId, userIds, startDate, en
       { $match: { $and: [requestScope, { workspaceId: new mongoose.Types.ObjectId(workspaceId), requester: { $in: userIds.map((id) => new mongoose.Types.ObjectId(id)) }, status: { $in: allowedStatuses } }] } },
       { $project: { requester: 1, status: 1, leaveType: 1 } }
     ], as: 'request' } }, { $unwind: '$request' },
-    { $project: { request: 1, date: 1, dayType: 1 } }
+    { $project: { request: 1, date: 1, dayType: 1, shortLeaveDurationMinutes: 1 } }
   ]) : [];
-  if (days.length) await LeaveRequestDay.populate(days, { path: 'request.leaveType', model: 'LeaveType', select: 'name category' });
+  if (days.length) await LeaveRequestDay.populate(days, { path: 'request.leaveType', model: 'LeaveType', select: 'name category color key' });
   const userSet = new Set(userIds.map(String));
 
   const leaveByKey = new Map();
@@ -67,7 +67,11 @@ export async function getDayStatusForUsers({ workspaceId, userIds, startDate, en
       requestStatus: request.status,
       dayType: day.dayType,
       leaveTypeName: request.leaveType?.name || null,
-      leaveTypeCategory: request.leaveType?.category || null
+      leaveTypeCategory: request.leaveType?.category || null,
+      leaveTypeKey: request.leaveType?.key || null,
+      leaveTypeColor: request.leaveType?.color || null,
+      shortLeaveDurationMinutes: day.shortLeaveDurationMinutes || null,
+      leaveCode: day.dayType === 'SHORT_LEAVE' ? 'SL' : day.dayType.startsWith('HALF_DAY') ? 'HL' : 'FL'
     });
   }
 

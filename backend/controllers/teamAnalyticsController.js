@@ -1,13 +1,40 @@
 import mongoose from 'mongoose';
+import { DateTime } from 'luxon';
 import Card from '../models/Card.js';
 import Subtask from '../models/Subtask.js';
 import SubtaskNano from '../models/SubtaskNano.js';
-import User from '../models/User.js';
+import WorkspaceMembership from '../models/WorkspaceMembership.js';
+import Workspace from '../models/Workspace.js';
 import Department from '../models/Department.js';
 import '../models/Board.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
-import { getExpectedMinutesByUser, getExpectedMinutesForRange, resolveWorkspaceDay } from '../modules/leave/workCalendarResolver.service.js';
+import { getExpectedMinutesByUser } from '../modules/workCalendar/workCalendarFacade.js';
+import { getWorkspaceTimezone, eachCalendarDate, instantToDateOnlyKey, dateOnlyToInstant } from '../modules/leave/leaveTimezone.util.js';
+import { validateDateRange } from '../utils/calendarDateRange.js';
+
+async function analyticsDateBounds(workspaceId, query, defaultDays = 7) {
+  const workspace = await Workspace.findById(workspaceId).select('timezone').lean();
+  const timezone = getWorkspaceTimezone(workspace);
+  const endKey = query.endDate || instantToDateOnlyKey(new Date(), timezone);
+  const startKey = query.startDate || DateTime.fromISO(endKey, { zone: timezone }).minus({ days: defaultDays }).toISODate();
+  validateDateRange(startKey, endKey);
+  const start = dateOnlyToInstant(startKey, timezone);
+  const nextDate = DateTime.fromISO(endKey, { zone: timezone }).plus({ days: 1 }).startOf('day').toUTC().toJSDate();
+  return { start, end: new Date(+nextDate - 1), nextDate, timezone,
+    dateRange: [...eachCalendarDate(startKey, endKey, timezone)].map((date) => instantToDateOnlyKey(date, timezone)) };
+}
+
+async function expectedUserDay({ workspaceId, date, departmentId, userId }) {
+  const result = await getExpectedMinutesByUser({ workspaceId, users: [{ userId, departmentId }], startDate: date, endDate: date });
+  return result.get(String(userId))?.dailyBreakdown[0] || { expectedMinutes: 0, isWorkingDay: false };
+}
+
+async function workspaceAnalyticsUsers(workspaceId, userIds) {
+  const members = await WorkspaceMembership.find({ workspace: workspaceId, user: { $in: userIds }, status: 'active' })
+    .select('user role department').populate('user', 'name email avatar title').populate('department', 'name').lean();
+  return members.filter((member) => member.user).map((member) => ({ ...member.user, role: member.role, department: member.department }));
+}
 
 /** A user's primary department id (first entry) — User.department is inconsistently an array or a single ref in legacy data, same tolerance this file's role-based-access code above already applies. */
 function primaryDepartmentId(userInfo) {
@@ -25,24 +52,13 @@ export const getTeamLoggedTime = asyncHandler(async (req, res, next) => {
   const user = req.user;
 
   // Parse dates (default to last 7 days)
-  const end = endDate ? new Date(endDate) : new Date();
-  const start = startDate ? new Date(startDate) : new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
-  start.setHours(0, 0, 0, 0);
-  end.setHours(23, 59, 59, 999);
-
-  // Generate date range for the timeline
-  const dateRange = [];
-  const currentDate = new Date(start);
-  while (currentDate <= end) {
-    dateRange.push(new Date(currentDate).toISOString().split('T')[0]);
-    currentDate.setDate(currentDate.getDate() + 1);
-  }
+  const { start, end, timezone, dateRange } = await analyticsDateBounds(req.workspaceId, { startDate, endDate });
 
   // Role-based access control
   let allowedUserIds = [];
   let departmentQuery = {};
 
-  if (user.role === 'admin') {
+  if (['admin', 'hr'].includes(user.role)) {
     // Admin: Can see all users in all departments or specified department
     if (departmentId && departmentId !== 'all') {
       departmentQuery._id = new mongoose.Types.ObjectId(departmentId);
@@ -88,10 +104,7 @@ export const getTeamLoggedTime = asyncHandler(async (req, res, next) => {
   }
 
   // Fetch user details
-  const users = await User.find({ _id: { $in: allowedUserIds } })
-    .select('name email avatar department role title')
-    .populate('department', 'name')
-    .lean();
+  const users = await workspaceAnalyticsUsers(req.workspaceId, allowedUserIds);
 
   // Aggregation pipeline to get logged time from Cards, Subtasks, and SubtaskNanos
   const loggedTimeAggregation = [
@@ -112,7 +125,7 @@ export const getTeamLoggedTime = asyncHandler(async (req, res, next) => {
       $group: {
         _id: {
           userId: '$loggedTime.user',
-          date: { $dateToString: { format: '%Y-%m-%d', date: '$loggedTime.date' } }
+          date: { $dateToString: { format: '%Y-%m-%d', date: '$loggedTime.date', timezone } }
         },
         totalMinutes: {
           $sum: { $add: [{ $multiply: ['$loggedTime.hours', 60] }, '$loggedTime.minutes'] }
@@ -285,10 +298,7 @@ export const getSmartInsights = asyncHandler(async (req, res, next) => {
   }
 
   // Parse dates
-  const end = endDate ? new Date(endDate) : new Date();
-  const start = startDate ? new Date(startDate) : new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
-  start.setHours(0, 0, 0, 0);
-  end.setHours(23, 59, 59, 999);
+  const { start, end, timezone, dateRange } = await analyticsDateBounds(req.workspaceId, { startDate, endDate }, 7);
 
   // Get department access
   let departmentQuery = {};
@@ -316,9 +326,7 @@ export const getSmartInsights = asyncHandler(async (req, res, next) => {
   const userIds = Array.from(allUserIds).map(id => new mongoose.Types.ObjectId(id));
 
   // Get users
-  const users = await User.find({ _id: { $in: userIds } })
-    .select('name email avatar department')
-    .lean();
+  const users = await workspaceAnalyticsUsers(req.workspaceId, userIds);
 
   // Aggregation for insights
   const insightsAggregation = [
@@ -342,7 +350,7 @@ export const getSmartInsights = asyncHandler(async (req, res, next) => {
           $sum: { $add: [{ $multiply: ['$loggedTime.hours', 60] }, '$loggedTime.minutes'] }
         },
         taskCount: { $sum: 1 },
-        uniqueDays: { $addToSet: { $dateToString: { format: '%Y-%m-%d', date: '$loggedTime.date' } } }
+        uniqueDays: { $addToSet: { $dateToString: { format: '%Y-%m-%d', date: '$loggedTime.date', timezone } } }
       }
     },
     {
@@ -381,7 +389,7 @@ export const getSmartInsights = asyncHandler(async (req, res, next) => {
   mergeInsights(nanoInsights);
 
   // Calculate date range days
-  const totalDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+  const totalDays = dateRange.length;
   // Expected minutes and "idle days" are resolved through the Work
   // Calendar Engine, not a flat 480min x every calendar day — a weekend,
   // holiday, or recurring-off day must never count against a user as an
@@ -480,10 +488,7 @@ export const getDepartmentAnalytics = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Only admin and managers can access department analytics', 403));
   }
 
-  const end = endDate ? new Date(endDate) : new Date();
-  const start = startDate ? new Date(startDate) : new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
-  start.setHours(0, 0, 0, 0);
-  end.setHours(23, 59, 59, 999);
+  const { start, end, timezone, dateRange } = await analyticsDateBounds(req.workspaceId, { startDate, endDate }, 7);
 
   // Get departments based on role
   let departmentQuery = { isActive: true };
@@ -548,10 +553,10 @@ export const getDepartmentAnalytics = asyncHandler(async (req, res, next) => {
 
     // One calendar resolution per department (every member shares that
     // department's calendar), not 480min x every calendar day.
-    const expectedMinutesPerMember = await getExpectedMinutesForRange({
-      workspaceId: req.workspaceId, startDate: start, endDate: end, departmentId: dept._id
-    });
-    const expectedMinutes = deptUserIds.length * expectedMinutesPerMember;
+    const activeUsers = await workspaceAnalyticsUsers(req.workspaceId, deptUserIds);
+    const expectedByUser = await getExpectedMinutesByUser({ workspaceId: req.workspaceId, startDate: start, endDate: end,
+      users: activeUsers.map((member) => ({ userId: member._id, departmentId: dept._id })) });
+    const expectedMinutes = [...expectedByUser.values()].reduce((sum, expected) => sum + expected.totalExpectedMinutes, 0);
     const avgProductivity = expectedMinutes > 0
       ? Math.round((totalMinutes / expectedMinutes) * 100)
       : 0;
@@ -581,10 +586,7 @@ export const getDailyTrends = asyncHandler(async (req, res, next) => {
   const { departmentId, startDate, endDate, granularity = 'daily' } = req.query;
   const user = req.user;
 
-  const end = endDate ? new Date(endDate) : new Date();
-  const start = startDate ? new Date(startDate) : new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
-  start.setHours(0, 0, 0, 0);
-  end.setHours(23, 59, 59, 999);
+  const { start, end, timezone, dateRange } = await analyticsDateBounds(req.workspaceId, { startDate, endDate }, 30);
 
   // Get user scope based on role
   let userIds = [];
@@ -626,7 +628,7 @@ export const getDailyTrends = asyncHandler(async (req, res, next) => {
     },
     {
       $group: {
-        _id: { $dateToString: { format: dateFormat, date: '$loggedTime.date' } },
+        _id: { $dateToString: { format: dateFormat, date: '$loggedTime.date', timezone } },
         totalMinutes: {
           $sum: { $add: [{ $multiply: ['$loggedTime.hours', 60] }, '$loggedTime.minutes'] }
         },
@@ -703,10 +705,7 @@ export const getMyLoggedTimeSummary = asyncHandler(async (req, res, next) => {
   const { startDate, endDate } = req.query;
   const userId = req.user._id;
 
-  const end = endDate ? new Date(endDate) : new Date();
-  const start = startDate ? new Date(startDate) : new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
-  start.setHours(0, 0, 0, 0);
-  end.setHours(23, 59, 59, 999);
+  const { start, end, timezone, dateRange } = await analyticsDateBounds(req.workspaceId, { startDate, endDate }, 30);
 
   const aggregation = [
     {
@@ -724,7 +723,7 @@ export const getMyLoggedTimeSummary = asyncHandler(async (req, res, next) => {
     },
     {
       $group: {
-        _id: { $dateToString: { format: '%Y-%m-%d', date: '$loggedTime.date' } },
+        _id: { $dateToString: { format: '%Y-%m-%d', date: '$loggedTime.date', timezone } },
         totalMinutes: {
           $sum: { $add: [{ $multiply: ['$loggedTime.hours', 60] }, '$loggedTime.minutes'] }
         },
@@ -762,11 +761,11 @@ export const getMyLoggedTimeSummary = asyncHandler(async (req, res, next) => {
 
   const dailyLogs = Array.from(dailyMap.values()).sort((a, b) => b.date.localeCompare(a.date));
   const totalMinutes = dailyLogs.reduce((sum, d) => sum + d.totalMinutes, 0);
-  const totalDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+  const totalDays = dateRange.length;
   const daysWithLogs = dailyLogs.length;
-  const expectedMinutes = await getExpectedMinutesForRange({
-    workspaceId: req.workspaceId, startDate: start, endDate: end, departmentId: primaryDepartmentId(req.user)
-  });
+  const expectedByUser = await getExpectedMinutesByUser({ workspaceId: req.workspaceId, startDate: start, endDate: end,
+    users: [{ userId, departmentId: primaryDepartmentId(req.user) }] });
+  const expectedMinutes = expectedByUser.get(String(userId))?.totalExpectedMinutes || 0;
   const productivityScore = expectedMinutes > 0 ? Math.round((totalMinutes / expectedMinutes) * 100) : 0;
 
   res.status(200).json({
@@ -1035,10 +1034,7 @@ export const getDateHoverDetails = asyncHandler(async (req, res, next) => {
   }
 
   const targetUserId = new mongoose.Types.ObjectId(userId);
-  const targetDate = new Date(date);
-  targetDate.setHours(0, 0, 0, 0);
-  const nextDate = new Date(targetDate);
-  nextDate.setDate(nextDate.getDate() + 1);
+  const { start: targetDate, nextDate } = await analyticsDateBounds(req.workspaceId, { startDate: date, endDate: date }, 0);
 
   // Role-based access check
   if (user.role === 'employee' && user._id.toString() !== userId) {
@@ -1047,7 +1043,7 @@ export const getDateHoverDetails = asyncHandler(async (req, res, next) => {
 
   // Needed both for the manager access check below and to resolve this
   // date against the target user's own department calendar.
-  const targetUser = await User.findById(targetUserId).select('department').lean();
+  const targetUser = await WorkspaceMembership.findOne({ workspace: req.workspaceId, user: targetUserId, status: 'active' }).select('department').lean();
   if (!targetUser) {
     return next(new ErrorResponse('User not found', 404));
   }
@@ -1209,8 +1205,8 @@ export const getDateHoverDetails = asyncHandler(async (req, res, next) => {
     }));
 
   const totalMinutes = allTasks.reduce((sum, t) => sum + t.minutes, 0);
-  const { expectedMinutes, isWorkingDay } = await resolveWorkspaceDay({
-    workspaceId: req.workspaceId, date: targetDate, departmentId: primaryDepartmentId(targetUser)
+  const { expectedMinutes, isWorkingDay } = await expectedUserDay({
+    workspaceId: req.workspaceId, userId: targetUserId, date: targetDate, departmentId: primaryDepartmentId(targetUser)
   });
 
   // A non-working day (weekly-off/holiday/recurring-off) has 0 expected
@@ -1254,10 +1250,7 @@ export const getDateDetailedLogs = asyncHandler(async (req, res, next) => {
   }
 
   const targetUserId = new mongoose.Types.ObjectId(userId);
-  const targetDate = new Date(date);
-  targetDate.setHours(0, 0, 0, 0);
-  const nextDate = new Date(targetDate);
-  nextDate.setDate(nextDate.getDate() + 1);
+  const { start: targetDate, nextDate } = await analyticsDateBounds(req.workspaceId, { startDate: date, endDate: date }, 0);
 
   // Role-based access check (same as hover)
   if (user.role === 'employee' && user._id.toString() !== userId) {
@@ -1265,7 +1258,7 @@ export const getDateDetailedLogs = asyncHandler(async (req, res, next) => {
   }
 
   if (user.role === 'manager') {
-    const targetUser = await User.findById(targetUserId).select('department').lean();
+    const targetUser = await WorkspaceMembership.findOne({ workspace: req.workspaceId, user: targetUserId, status: 'active' }).select('department').lean();
     if (!targetUser) {
       return next(new ErrorResponse('User not found', 404));
     }
@@ -1278,9 +1271,7 @@ export const getDateDetailedLogs = asyncHandler(async (req, res, next) => {
   }
 
   // Get user info
-  const targetUser = await User.findById(targetUserId)
-    .select('name email avatar department')
-    .lean();
+  const [targetUser] = await workspaceAnalyticsUsers(req.workspaceId, [targetUserId]);
 
   if (!targetUser) {
     return next(new ErrorResponse('User not found', 404));
@@ -1495,8 +1486,8 @@ export const getDateDetailedLogs = asyncHandler(async (req, res, next) => {
     .sort((a, b) => b.totalMinutes - a.totalMinutes);
 
   const totalMinutes = hierarchy.reduce((sum, t) => sum + t.totalMinutes, 0);
-  const { expectedMinutes, isWorkingDay } = await resolveWorkspaceDay({
-    workspaceId: req.workspaceId, date: targetDate, departmentId: primaryDepartmentId(targetUser)
+  const { expectedMinutes, isWorkingDay } = await expectedUserDay({
+    workspaceId: req.workspaceId, userId: targetUserId, date: targetDate, departmentId: primaryDepartmentId(targetUser)
   });
 
   // Same rule as the hover card — a day off is never "under-logged".

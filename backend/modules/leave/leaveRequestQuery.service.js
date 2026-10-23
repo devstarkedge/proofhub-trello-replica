@@ -8,7 +8,7 @@ import LeaveRequestDay from './leaveRequestDay.model.js';
 import LeaveApproval from './leaveApproval.model.js';
 import LeaveType from './leaveType.model.js';
 import { resolveLeaveAccessScope } from './leaveAuthorization.service.js';
-import { getLeaveActionContext, requestActions, orderStages, STAGE_ORDER } from './leaveActionEligibility.service.js';
+import { getLeaveActionContext, requestActions, orderStages } from './leaveActionEligibility.service.js';
 import { getWorkspaceTimezone, dateOnlyToInstant, instantToDateOnlyKey } from './leaveTimezone.util.js';
 import { validateDateRange } from '../../utils/calendarDateRange.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
@@ -56,14 +56,17 @@ function actionableMatch(context) {
     delegated === true,
     { $and: [{ $eq: ['$$stage.level', 'DEPARTMENT_MANAGER'] }, { $in: ['$requester', [...context.managedIds].map((id) => new mongoose.Types.ObjectId(id))] }] },
     { $and: [{ $eq: ['$$stage.level', 'HR'] }, context.user.role === 'hr'] },
-    { $and: [{ $eq: ['$$stage.level', 'ADMIN'] }, context.adminIds.has(context.userId)] }
+    { $and: [{ $eq: ['$$stage.level', 'ADMIN'] }, context.user.role === 'admin'] }
   ] };
-  const order = (variable) => ({ $ifNull: [`${variable}.sequence`, { $switch: { branches: Object.entries(STAGE_ORDER).map(([level, value]) => ({ case: { $eq: [`${variable}.level`, level] }, then: value })), default: 99 } }] });
   return { $and: [
     { $in: ['$status', PENDING_STATUSES] }, { $ne: ['$requester', new mongoose.Types.ObjectId(context.userId)] },
     { $gt: [{ $size: { $filter: { input: '$_stages', as: 'stage', cond: { $and: [
       { $eq: ['$$stage.status', 'PENDING'] }, { $in: [new mongoose.Types.ObjectId(context.userId), { $ifNull: ['$$stage.eligibleApproverUserIds', []] }] }, allowed,
-      { $or: [{ $ne: ['$$stage.mode', 'SEQUENTIAL'] }, { $eq: [{ $size: { $filter: { input: '$_stages', as: 'previous', cond: { $and: [{ $lt: [order('$$previous'), order('$$stage')] }, { $ne: ['$$previous.status', 'APPROVED'] }] } } } }, 0] }] }
+      { $or: [{ $ne: ['$$stage.level', 'ADMIN'] }, context.user.role === 'admin'] },
+      { $or: [{ $ne: ['$$stage.mode', 'SEQUENTIAL'] }, { $ne: ['$$stage.level', 'ADMIN'] },
+        { $gt: [{ $size: { $filter: { input: '$_stages', as: 'support', cond: { $and: [
+          { $in: ['$$support.level', ['DEPARTMENT_MANAGER', 'HR']] }, { $eq: ['$$support.status', 'APPROVED'] }
+        ] } } } }, 0] }] }
     ] } } } }, 0] }
   ] };
 }
@@ -177,7 +180,7 @@ async function enrichRequests({ requests, workspaceId, timezone, context, detail
     const requestDays = daysById.get(String(request._id)) || [];
     const stages = orderStages(approvalsById.get(String(request._id)) || []);
     return { ...request, days: requestDays, approvals: detail ? stages : stages.map(({ _id, level, sequence, mode, status }) => ({ _id, level, sequence, mode, status })), actions: requestActions({ request, stages, context }),
-      progress: { total: stages.length, approved: stages.filter((stage) => stage.status === 'APPROVED').length },
+      progress: { total: 2, approved: Number(stages.some((stage) => stage.level === 'ADMIN' && stage.status === 'APPROVED')) + Number(stages.some((stage) => stage.level !== 'ADMIN' && stage.status === 'APPROVED')) },
       startDateKey: requestDays.length ? instantToDateOnlyKey(requestDays[0].date, timezone) : null,
       endDateKey: requestDays.length ? instantToDateOnlyKey(requestDays.at(-1).date, timezone) : null };
   });

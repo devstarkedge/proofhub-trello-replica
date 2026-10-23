@@ -24,7 +24,7 @@ api.interceptors.response.use(
   },
   (error) => {
     const message = error.response?.data?.message || 'An error occurred';
-    if (!axios.isCancel(error) && ![403, 423].includes(error.response?.status)) toast.error(message);
+    if (!error.config?.silentError && !axios.isCancel(error) && ![403, 423].includes(error.response?.status)) toast.error(message);
     return Promise.reject(error);
   }
 );
@@ -53,7 +53,8 @@ export const editDefaultPolicy = async (policyId, payload) => (await api.patch(`
 export const activateDefaultPolicy = async (policyId) => (await api.post(`/policies/default/${policyId}/activate`)).data;
 export const archiveDefaultPolicy = async (policyId) => (await api.post(`/policies/default/${policyId}/archive`)).data;
 export const deleteArchivedPolicy = async (policyId, kind = 'default') => (await api.delete(`/policies/${kind}/${policyId}`)).data;
-const readOptions = ({ signal, workspaceId } = {}) => ({ signal, ...(workspaceId ? { headers: { 'x-workspace-id': workspaceId } } : {}) });
+const readOptions = ({ signal, workspaceId, silentError } = {}) => ({ signal, silentError, ...(workspaceId ? { headers: { 'x-workspace-id': workspaceId } } : {}) });
+export const getPendingCount = async (_params, options) => (await api.get('/dashboard/pending-count', readOptions(options))).data;
 export const getCalendarEvents = async (params, options) => (await api.get('/calendar/events', { params, ...readOptions(options) })).data;
 export const getDashboardRecords = async (params, options) => (await api.get('/dashboard/records', { params, ...readOptions(options) })).data;
 export const getDashboardSummary = async (params = {}, options) => (await api.get('/dashboard/summary', { params, ...readOptions(options) })).data;
@@ -87,20 +88,20 @@ export const getUserBalance = async (userId) => (await api.get(`/balance/${userI
 export const getMyRequests = async (params = {}) => (await api.get('/requests/mine', { params })).data;
 export const getUserRequests = async (userId, params = {}) => (await api.get(`/requests/user/${userId}`, { params })).data;
 export const getRequestDetail = async (requestId, options) => (await api.get(`/requests/${requestId}`, readOptions(options))).data;
-export const submitRequest = async (payload) => (await api.post('/requests', payload)).data;
-export const cancelPendingRequest = async (requestId) => (await api.post(`/requests/${requestId}/cancel`)).data;
-export const requestCancellation = async (requestId, reason) =>
-  (await api.post(`/requests/${requestId}/request-cancellation`, { reason })).data;
+export const submitRequest = async (payload, options) => (await api.post('/requests', payload, { ...readOptions(options), silentError: true })).data;
+export const cancelPendingRequest = async (requestId, options) => (await api.post(`/requests/${requestId}/cancel`, undefined, readOptions(options))).data;
+export const requestCancellation = async (requestId, reason, options) =>
+  (await api.post(`/requests/${requestId}/request-cancellation`, { reason }, readOptions(options))).data;
 
 // ─── Approvals ──────────────────────────────────────────────────────────────
 export const getApprovalQueue = async () => (await api.get('/approvals/queue')).data;
-export const decideApproval = async (approvalId, decision, comment) =>
-  (await api.post(`/approvals/${approvalId}/decide`, { decision, comment })).data;
+export const decideApproval = async (approvalId, decision, comment, options) =>
+  (await api.post(`/approvals/${approvalId}/decide`, { decision, comment }, readOptions(options))).data;
 export const getApprovalTimeline = async (requestId) => (await api.get(`/approvals/requests/${requestId}/timeline`)).data;
-export const decideCancellationRequest = async (requestId, decision, reason) =>
-  (await api.post(`/approvals/requests/${requestId}/cancellation-decision`, { decision, reason })).data;
-export const hrCancelApprovedLeave = async (requestId, reason) =>
-  (await api.post(`/approvals/requests/${requestId}/hr-cancel`, { reason })).data;
+export const decideCancellationRequest = async (requestId, decision, reason, options) =>
+  (await api.post(`/approvals/requests/${requestId}/cancellation-decision`, { decision, reason }, readOptions(options))).data;
+export const hrCancelApprovedLeave = async (requestId, reason, options) =>
+  (await api.post(`/approvals/requests/${requestId}/hr-cancel`, { reason }, readOptions(options))).data;
 
 // ─── Adjustments ────────────────────────────────────────────────────────────
 export const createAdjustment = async (payload) => (await api.post('/adjustments', payload)).data;

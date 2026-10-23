@@ -1,9 +1,10 @@
 import { useContext, useEffect } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Navigate, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Fingerprint } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
 import LeaveContentContainer from '../components/Leave/LeaveContentContainer';
 import useRegularizationApprovalLive from '../hooks/useRegularizationApprovalLive';
+import { getDefaultAttendanceRoute } from '../utils/attendanceNavigation';
 
 const MAIN_ATTENDANCE_ROUTES = ['/attendance', '/attendance/my', '/attendance/team', '/attendance/approvals'];
 
@@ -15,13 +16,18 @@ const AttendanceLayout = () => {
   const { pendingCount: regularizationPendingCount } = useRegularizationApprovalLive();
 
   useEffect(() => {
-    if (MAIN_ATTENDANCE_ROUTES.includes(location.pathname)) {
+    if (MAIN_ATTENDANCE_ROUTES.includes(location.pathname) && !(role === 'admin' && location.pathname === '/attendance/my')) {
       sessionStorage.setItem('flowtask.attendance.lastRoute', location.pathname);
     }
-  }, [location.pathname]);
+  }, [location.pathname, role]);
+
+  // Redirect before rendering the self-service page and its attendance reads.
+  if (location.pathname === '/attendance' || (role === 'admin' && location.pathname === '/attendance/my')) {
+    return <Navigate to={getDefaultAttendanceRoute(role)} replace />;
+  }
 
   const tabs = [
-    { label: 'My Attendance', to: '/attendance/my', visible: true },
+    { label: 'My Attendance', to: '/attendance/my', visible: role !== 'admin' },
     // Visibility here is a frontend convenience only, matching Approvals'
     // own existing convention — a custom role who genuinely manages a
     // department (Department.managers) but doesn't hold one of these role

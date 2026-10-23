@@ -4,10 +4,9 @@ import workspaceScopePlugin from '../workspaces/workspaceScopePlugin.js';
 /**
  * One row per approval level (DEPARTMENT_MANAGER / HR / ADMIN) for a given
  * LeaveRequest — an OR-gate across `eligibleApproverUserIds` (any one of
- * them deciding resolves the level) and an AND-gate across every level that
- * was actually created for the request (see leaveApproval.service.js). A
- * level with no applicable/available approvers is simply never created —
- * there is no 'SKIPPED' status.
+ * them deciding resolves the level). Final approval requires ADMIN plus
+ * either DEPARTMENT_MANAGER or HR from a different person. Remaining pending
+ * stages are VOIDED when the request is finalized.
  *
  * `eligibleApproverUserIds` is a frozen snapshot taken when the request was
  * submitted. It preserves assignment history; a decision additionally

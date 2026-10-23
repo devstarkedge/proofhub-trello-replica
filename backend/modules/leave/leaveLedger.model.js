@@ -55,6 +55,15 @@ const leaveLedgerSchema = new mongoose.Schema({
     default: undefined
   },
   clientAdjustmentId: { type: String, default: null, maxlength: 100 },
+  // Preserve the explicit credit expiry for idempotent retries. Omitted means
+  // the employee's policy supplied the expiry, including for older records.
+  adjustmentExpiryRule: {
+    type: new mongoose.Schema({
+      mode: { type: String, enum: ['NEVER', 'FIXED_MONTHS_AFTER_CREDIT', 'CALENDAR_YEAR_END'], required: true },
+      months: { type: Number, default: null, min: 1 }
+    }, { _id: false }),
+    default: undefined
+  },
   occurredAt: { type: Date, required: true, default: Date.now },
   policyVersion: { type: mongoose.Schema.Types.ObjectId, ref: 'LeavePolicyVersion', default: null }
 }, { timestamps: true });

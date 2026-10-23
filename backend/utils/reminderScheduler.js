@@ -6,6 +6,7 @@ import notificationService from './notificationService.js';
 import { sendEmail } from './email.js';
 import { runBackground } from './backgroundTasks.js';
 import { slackHooks } from './slackHooks.js';
+import { buildProjectDetailsUrl } from './projectLinks.js';
 
 // ── Legacy no-ops (polling replaced by event-driven BullMQ jobs) ──
 export const startReminderScheduler = () => {
@@ -20,7 +21,7 @@ export const checkAndSendReminders = async () => {};
 export const sendReminderNotification = async (reminder) => {
   try {
     const user = await User.findById(reminder.createdBy._id || reminder.createdBy);
-    
+
     if (!user) {
       console.error('User not found for reminder notification');
       return;
@@ -64,7 +65,12 @@ export const sendReminderNotification = async (reminder) => {
  */
 export const sendReminderEmail = async (reminder, user) => {
   try {
-    const projectName = reminder.project?.name || 'Unknown Project';
+    const project = await Board.findOne({ _id: reminder.project?._id || reminder.project, workspaceId: reminder.workspaceId })
+      .select('department name').lean();
+    if (!project) throw new Error('Reminder project is unavailable in its workspace');
+    const projectDetailsUrl = buildProjectDetailsUrl({ departmentId: project.department,
+      projectId: project._id, workspaceId: reminder.workspaceId });
+    const projectName = project.name || reminder.project?.name || 'Unknown Project';
     const clientName = reminder.client?.name || 'N/A';
     const clientEmail = reminder.client?.email || 'N/A';
     const clientPhone = reminder.client?.phone || 'N/A';
@@ -110,7 +116,7 @@ export const sendReminderEmail = async (reminder, user) => {
             <div class="content">
               <p>Hi ${user.name},</p>
               <p>This is a reminder that you have a scheduled follow-up due soon:</p>
-              
+
               <div class="reminder-box">
                 <h3>📋 ${projectName}</h3>
                 <div class="info-row">
@@ -142,7 +148,7 @@ export const sendReminderEmail = async (reminder, user) => {
               </div>
 
               <div style="text-align: center;">
-                <a href="${process.env.FRONTEND_URL}/projects/${reminder.project._id || reminder.project}" class="button">
+                <a href="${projectDetailsUrl}" class="button">
                   View Project Details
                 </a>
               </div>
@@ -182,10 +188,10 @@ export const sendReminderEmail = async (reminder, user) => {
 export const markOverdueReminders = async () => {
   try {
     const now = new Date();
-    
+
     // Find overdue pending reminders (past due date by more than 24 hours)
     const overdueThreshold = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    
+
     const result = await Reminder.updateMany(
       {
         status: 'pending',
@@ -236,7 +242,7 @@ export const checkAndTagAwaitingResponse = async (reminder) => {
 
       // Notify all admins
       const admins = await workspaceAdmins(reminder.workspaceId);
-      
+
       for (const admin of admins) {
         await notificationService.createNotification({
           type: 'awaiting_client_response',
@@ -251,7 +257,7 @@ export const checkAndTagAwaitingResponse = async (reminder) => {
             projectName: reminder.project?.name,
             url: '/reminders'
           }
-        });
+        });
       }
 
       console.log(`Project ${reminder.project._id || reminder.project} tagged as awaiting client response`);

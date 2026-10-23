@@ -1,10 +1,12 @@
-import { useRef, useState } from 'react';
+import { useContext, useState } from 'react';
 import { ArrowLeft, Rocket, Settings } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { Button } from '../components/ui/button';
 import LeaveContentContainer from '../components/Leave/LeaveContentContainer';
 import * as attendanceApi from '../services/attendanceApi';
+import AuthContext from '../context/AuthContext';
+import { getAttendanceReturnRoute } from '../utils/attendanceNavigation';
 
 const SETTINGS_TABS = [
   { label: 'Policy', to: '/attendance/settings/policy' },
@@ -14,23 +16,13 @@ const SETTINGS_TABS = [
   { label: 'Office Hours Overrides', to: '/attendance/settings/office-hours' }
 ];
 
-const isSafeAttendanceReturn = (path) => (
-  typeof path === 'string'
-  && /^\/attendance(?:\/my|\/approvals)?$/.test(path)
-  && !path.startsWith('/attendance/settings')
-);
-
 const AttendanceSettingsLayout = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useContext(AuthContext);
   const [settingUp, setSettingUp] = useState(false);
-  const backTargetRef = useRef((() => {
-    const stateTarget = location.state?.fromAttendance;
-    const storedTarget = sessionStorage.getItem('flowtask.attendance.lastRoute');
-    if (isSafeAttendanceReturn(stateTarget)) return stateTarget;
-    if (isSafeAttendanceReturn(storedTarget)) return storedTarget;
-    return '/attendance/my';
-  })());
+  const backTarget = getAttendanceReturnRoute(location.state?.fromAttendance
+    || sessionStorage.getItem('flowtask.attendance.lastRoute'), user?.role);
 
   const runSetup = async () => {
     setSettingUp(true);
@@ -55,7 +47,7 @@ const AttendanceSettingsLayout = () => {
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
-                onClick={() => navigate(backTargetRef.current)}
+                onClick={() => navigate(backTarget)}
                 className="flex flex-none items-center gap-1.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors hover:bg-[var(--color-bg-muted)]"
                 style={{ color: 'var(--color-text-secondary)' }}
               >
@@ -77,7 +69,7 @@ const AttendanceSettingsLayout = () => {
               <NavLink
                 key={tab.to}
                 to={tab.to}
-                state={{ fromAttendance: backTargetRef.current }}
+                state={{ fromAttendance: backTarget }}
                 className="flex-none whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors"
                 style={({ isActive }) => isActive
                   ? { backgroundColor: 'var(--color-primary-600)', color: 'var(--color-text-on-primary)' }

@@ -119,8 +119,9 @@ const SubtaskDetailModal = ({
   const currentProject = useModalHierarchyStore((state) => state.currentProject);
 
   // Check if user can access billed time based on project client info and user role
-  const { canAccessBilledTime, hiddenReason: billedTimeHiddenReason } = useBilledTimeAccess(
-    currentProject?.clientDetails
+  const { canAccessBilledTime, hiddenReason: billedTimeHiddenReason, project: billingProject,
+    loading: billedTimeLoading, error: billedTimeError, retry: retryBilling } = useBilledTimeAccess(
+    initialData.board || initialData.project || currentProject?._id
   );
 
   /**
@@ -1426,8 +1427,11 @@ const SubtaskDetailModal = ({
                   loggedValidationError={loggedValidationError}
                   billedValidationError={billedValidationError}
                   canAccessBilledTime={canAccessBilledTime}
+                  billedTimeLoading={billedTimeLoading}
+                  billedTimeError={billedTimeError}
+                  onRetryBilledTime={retryBilling}
                   billedTimeHiddenReason={billedTimeHiddenReason}
-                  project={currentProject}
+                  project={billingProject}
                   billingSource={{ sourceType: 'subtask', sourceId: entityId }}
                 />
 

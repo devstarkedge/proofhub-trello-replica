@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { registerResettable } from './resetRegistry';
+import { mergeModalProject } from '../utils/projectBilling';
 
 const initialState = {
   stack: [],
@@ -44,7 +46,7 @@ const deriveHierarchy = (stack = []) => {
 
 const useModalHierarchyStore = create((set, get) => ({
   ...initialState,
-  setProject: (project) => set({ currentProject: project }),
+  setProject: (project) => set((state) => ({ currentProject: mergeModalProject(state.currentProject, project) })),
   setActiveItem: (type, data) => {
     if (!type || !data) return;
     const entityId = data._id || data.id;
@@ -82,7 +84,7 @@ const useModalHierarchyStore = create((set, get) => ({
     });
     set({
       stack: [entry],
-      currentProject: project || get().currentProject,
+      currentProject: project ? mergeModalProject(get().currentProject, project) : get().currentProject,
       currentTask: task,
       currentSubtask: null,
       currentNenoSubtask: null,
@@ -163,5 +165,6 @@ const useModalHierarchyStore = create((set, get) => ({
   },
 }));
 
+registerResettable(() => useModalHierarchyStore.setState(initialState));
 export default useModalHierarchyStore;
 

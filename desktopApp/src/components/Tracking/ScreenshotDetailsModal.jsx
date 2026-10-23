@@ -149,16 +149,6 @@ export default function ScreenshotDetailsModal({
           </div>
 
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleOpenFullScreen}
-              disabled={!imageUrl || imageLoading}
-              className="flex items-center gap-1.5 text-xs h-9 cursor-pointer"
-            >
-              <Maximize2 className="w-3.5 h-3.5" />
-              <span>Full Screen</span>
-            </Button>
             <button
               type="button"
               aria-label="Close details"
@@ -364,22 +354,13 @@ export default function ScreenshotDetailsModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3.5 bg-gray-50/70 dark:bg-gray-800/30 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between flex-shrink-0">
+        <div className="px-6 py-3.5 bg-gray-50/70 dark:bg-gray-800/30 border-t border-gray-100 dark:border-gray-800 flex items-center justify-end flex-shrink-0">
           <Button
             variant="outline"
             size="sm"
             onClick={onClose}
           >
             Close
-          </Button>
-          <Button
-            size="sm"
-            onClick={handleOpenFullScreen}
-            disabled={!imageUrl || imageLoading}
-            className="flex items-center gap-1.5"
-          >
-            <Maximize2 className="w-3.5 h-3.5" />
-            <span>Open Full-Screen Preview</span>
           </Button>
         </div>
       </section>

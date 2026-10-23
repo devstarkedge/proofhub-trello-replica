@@ -23,6 +23,10 @@ const SIX_HOURS = 6 * 60 * 60 * 1000;
 const ONE_DAY = 24 * 60 * 60 * 1000;
 
 export async function registerLeaveMaintenanceJobs() {
+  await leaveQueue.add('leave-event-delivery', {}, {
+    repeat: { every: 15000 }, jobId: 'repeat:leave-event-delivery', removeOnComplete: true, removeOnFail: { count: 50 }
+  });
+  await leaveQueue.add('leave-event-delivery', {}, { jobId: 'initial-leave-event-delivery' });
   await leaveQueue.add(
     'leave-monthly-accrual',
     {},

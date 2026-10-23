@@ -1,6 +1,8 @@
 import Workspace from '../../models/Workspace.js';
 import { getWorkspaceTimezone, instantToDateOnlyKey, eachCalendarDate } from './leaveTimezone.util.js';
 import { buildCalendarContext, classifyDateWithContext } from './leaveCalendar.service.js';
+import { getDayStatusForUsers } from './leaveDayStatus.service.js';
+import { resolveExpectedWorkingMinutes } from '../attendance/attendanceExpectedMinutes.service.js';
 
 /**
  * Cross-module batch helpers built on the single centralized classifier
@@ -80,6 +82,8 @@ export async function getExpectedMinutesByUser({ workspaceId, users, startDate, 
   const tz = timezone || await resolveTimezone(workspaceId);
   const departmentIds = Array.from(new Set(users.map((u) => u.departmentId).filter(Boolean).map(String)));
   const context = await buildCalendarContext({ timezone: tz, departmentIds });
+  const leaveByUser = users.length ? await getDayStatusForUsers({ workspaceId, userIds: users.map((u) => u.userId),
+    startDate, endDate, visibility: 'approved_only' }) : {};
 
   const result = new Map();
   for (const { userId, departmentId } of users) {
@@ -88,12 +92,19 @@ export async function getExpectedMinutesByUser({ workspaceId, users, startDate, 
     let workingDayCount = 0;
     for (const date of eachCalendarDate(startDate, endDate, tz)) {
       const classified = classifyDateWithContext(context, date, departmentId);
+      const dateKey = instantToDateOnlyKey(date, tz);
+      const approvedLeave = leaveByUser[String(userId)]?.[dateKey];
+      const leave = approvedLeave?.status === 'ON_LEAVE' ? {
+        presenceFractionCap: approvedLeave.dayType === 'FULL_DAY' ? 0 : approvedLeave.dayType.startsWith('HALF_DAY') ? 0.5 : 1,
+        shortLeaveWindow: approvedLeave.dayType === 'SHORT_LEAVE' ? { durationMinutes: approvedLeave.shortLeaveDurationMinutes } : null
+      } : null;
+      const expectedMinutes = resolveExpectedWorkingMinutes({ calendar: classified, leave });
       dailyBreakdown.push({
-        dateKey: instantToDateOnlyKey(date, tz), expectedMinutes: classified.expectedMinutes,
-        isWorkingDay: classified.isWorkingDay, dayType: classified.dayType
+        dateKey, expectedMinutes,
+        isWorkingDay: expectedMinutes > 0, dayType: classified.dayType
       });
-      totalExpectedMinutes += classified.expectedMinutes;
-      if (classified.isWorkingDay) workingDayCount++;
+      totalExpectedMinutes += expectedMinutes;
+      if (expectedMinutes > 0) workingDayCount++;
     }
     result.set(String(userId), { totalExpectedMinutes, workingDayCount, dailyBreakdown });
   }

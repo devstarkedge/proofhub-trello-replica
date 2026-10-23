@@ -47,5 +47,7 @@ export function resolveExpectedWorkingMinutes({ workMode, officeHours, calendar,
   // A half-day-leave day halves the expectation, mirroring the same
   // presenceFractionCap===0.5 signal attendanceStatusResolver.service.js
   // already uses for duration tiering (spec §10-11).
-  return leave?.presenceFractionCap === 0.5 ? Math.round(minutes / 2) : Math.round(minutes);
+  const fraction = leave?.presenceFractionCap ?? 1;
+  const shortMinutes = leave?.shortLeaveWindow?.durationMinutes || 0;
+  return Math.max(0, Math.round(minutes * fraction - shortMinutes));
 }
