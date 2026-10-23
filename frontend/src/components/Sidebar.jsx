@@ -1,5 +1,5 @@
 import { useContext, useState, useEffect } from 'react';
-import { Home, Users, Settings, UserCheck, Bell, CalendarClock, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, X, DollarSign, Zap, TrendingUp, ShieldCheck, CalendarDays, Fingerprint } from 'lucide-react';
+import { Home, Users, Settings, UserCheck, Bell, CalendarClock, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, X, DollarSign, Zap, TrendingUp, ShieldCheck, CalendarDays, Fingerprint, Timer } from 'lucide-react';
 import { NavLink, useLocation, matchPath } from 'react-router-dom';
 import { Dialog } from 'radix-ui';
 import SidebarTooltip from './SidebarTooltip';
@@ -29,6 +29,7 @@ const iconColors = {
   '/leave': { color: '#f97316', bg: 'rgba(249, 115, 22, 0.12)' }, // Orange - Leave
   '/leave/my': { color: '#f97316', bg: 'rgba(249, 115, 22, 0.12)' }, // Orange - Leave (Employee default)
   '/attendance': { color: '#0ea5e9', bg: 'rgba(14, 165, 233, 0.12)' }, // Sky - Attendance
+  '/time-tracking': { color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' }, // Blue - Time Tracking
 };
 
 const Sidebar = ({ isMobile = false, collapsed = false, onToggleCollapse, onClose }) => {
@@ -96,7 +97,7 @@ const Sidebar = ({ isMobile = false, collapsed = false, onToggleCollapse, onClos
           ? regularizationPendingCount
           : null,
       },
-      { path: '/time-tracking', icon: Fingerprint, label: 'Time Tracking' },
+      { path: '/time-tracking', icon: Timer, label: 'Time Tracking' },
     ];
 
     // If no user yet, return base
