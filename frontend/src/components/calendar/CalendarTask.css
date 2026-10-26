@@ -437,3 +437,66 @@
         transform: translateY(0) scale(1);
     }
 }
+
+/* ==========================================================================
+   FullCalendar Dark Mode & Theme Adaptation
+   ========================================================================== */
+:root[data-theme="dark"] .fc {
+    --fc-border-color: #374151;
+    --fc-today-bg-color: color-mix(in srgb, var(--color-primary) 15%, transparent);
+}
+
+:root[data-theme="dark"] .fc .fc-toolbar {
+    background: linear-gradient(135deg, #111827 0%, #1f2937 100%);
+    border: 1px solid #374151;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+:root[data-theme="dark"] .fc .fc-scrollgrid {
+    background: #1f2937;
+    border: 1px solid #374151;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+}
+
+:root[data-theme="dark"] .fc .fc-scrollgrid-section-body > * {
+    border-color: #374151;
+}
+
+:root[data-theme="dark"] .fc .fc-col-header {
+    background: #111827;
+}
+
+:root[data-theme="dark"] .fc .fc-col-header-cell-cushion {
+    color: #e5e7eb;
+}
+
+:root[data-theme="dark"] .fc .fc-daygrid-day-number {
+    color: #9ca3af;
+}
+
+:root[data-theme="dark"] .fc .fc-daygrid-day.fc-day-today {
+    background-color: color-mix(in srgb, var(--color-primary) 12%, transparent);
+}
+
+:root[data-theme="dark"] .fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
+    color: var(--color-primary);
+    font-weight: 700;
+}
+
+:root[data-theme="dark"] .fc td,
+:root[data-theme="dark"] .fc th {
+    border-color: #374151 !important;
+}
+
+:root[data-theme="dark"] .fc .fc-day-other {
+    background: rgba(17, 24, 39, 0.5);
+}
+
+:root[data-theme="dark"] .fc .fc-day-other .fc-daygrid-day-number {
+    color: #4b5563;
+}
+
+:root[data-theme="dark"] .fc .fc-button-primary.fc-button-active {
+    background: var(--color-primary);
+    color: #ffffff;
+}

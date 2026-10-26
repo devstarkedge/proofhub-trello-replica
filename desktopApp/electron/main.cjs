@@ -1,10 +1,23 @@
-const { app, BrowserWindow, dialog, Menu, shell } = require('electron');
+const { app, BrowserWindow, dialog, Menu, shell, nativeTheme, ipcMain } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { readBackendURL } = require('./config.cjs');
 const { startDesktopServer } = require('./server.cjs');
 const { installDesktopNotifications } = require('./notifications.cjs');
 const { installDesktopTracking } = require('./tracking.cjs');
+
+ipcMain.on('desktop-theme:set', (_event, mode) => {
+  try {
+    if (nativeTheme) {
+      nativeTheme.themeSource = mode === 'auto' ? 'system' : (mode === 'dark' ? 'dark' : 'light');
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setBackgroundColor(mode === 'dark' ? '#111827' : '#ffffff');
+    }
+  } catch (e) {
+    // Graceful error ignore
+  }
+});
 
 app.setName('FlowTask');
 if (process.platform === 'win32') app.setAppUserModelId('com.flowtask.desktop');

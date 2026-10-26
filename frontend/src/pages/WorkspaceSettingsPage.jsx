@@ -35,7 +35,7 @@ const WorkspaceSettingsPage = () => {
     deactivateWorkspace, transferOwnership, workspaces,
     uploadWorkspaceIcon, removeWorkspaceIcon,
   } = useContext(WorkspaceContext);
-  const { effectiveMode } = useThemeStore();
+  const effectiveMode = useThemeStore((state) => state.effectiveMode);
   const isDarkMode = effectiveMode === 'dark';
 
   const [members, setMembers] = useState([]);

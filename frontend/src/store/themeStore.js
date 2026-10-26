@@ -9,12 +9,13 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
 // Theme schema version for migrations
-const THEME_SCHEMA_VERSION = 1;
+const THEME_SCHEMA_VERSION = 2;
 
 // Default theme settings
 const DEFAULT_THEME = {
   appearance: 'light', // 'light' | 'dark' | 'auto'
   themeColor: 'blue',  // 'blue' | 'purple' | 'emerald' | 'rose' | 'amber' | 'cyan' | 'indigo' | 'slate'
+  density: 'comfortable', // 'comfortable' | 'compact'
   version: THEME_SCHEMA_VERSION,
 };
 
@@ -37,6 +38,32 @@ export const APPEARANCE_MODES = [
   { id: 'auto', name: 'Auto', icon: 'laptop' },
 ];
 
+// Display density options
+export const DENSITY_MODES = [
+  { id: 'comfortable', name: 'Comfortable', description: 'Standard spacing & readability' },
+  { id: 'compact', name: 'Compact', description: 'High data density for power users' },
+];
+
+// Cross-tab synchronization channel
+let syncChannel = null;
+if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+  try {
+    syncChannel = new BroadcastChannel('flowtask_theme_sync');
+  } catch (e) {
+    // Graceful fallback for environments blocking BroadcastChannel
+  }
+}
+
+export const broadcastThemeUpdate = (payload) => {
+  if (syncChannel) {
+    try {
+      syncChannel.postMessage(payload);
+    } catch (e) {
+      // Ignore broadcast errors
+    }
+  }
+};
+
 /**
  * Compute effective theme mode based on settings and system/time
  */
@@ -58,34 +85,91 @@ const computeEffectiveMode = (appearance) => {
 };
 
 /**
- * Apply theme to document
+ * Executes a state change with a circular ripple reveal using the View Transitions API
  */
-const applyThemeToDOM = (effectiveMode, themeColor, enableTransition = true) => {
+const transitionWithRipple = (updateFn, originCoordinates = null) => {
+  if (typeof document === 'undefined') {
+    updateFn();
+    return;
+  }
+
+  const prefersReducedMotion = typeof window !== 'undefined' && 
+    window.matchMedia && 
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  if (!document.startViewTransition || prefersReducedMotion) {
+    updateFn();
+    return;
+  }
+
+  const x = originCoordinates?.x ?? (window.innerWidth / 2);
+  const y = originCoordinates?.y ?? (window.innerHeight / 2);
+  const endRadius = Math.hypot(
+    Math.max(x, window.innerWidth - x),
+    Math.max(y, window.innerHeight - y)
+  );
+
+  const transition = document.startViewTransition(updateFn);
+
+  transition.ready.then(() => {
+    document.documentElement.animate(
+      {
+        clipPath: [
+          `circle(0px at ${x}px ${y}px)`,
+          `circle(${endRadius}px at ${x}px ${y}px)`
+        ],
+      },
+      {
+        duration: 380,
+        easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+        pseudoElement: '::view-transition-new(root)',
+      }
+    );
+  }).catch(() => {
+    // Graceful fallback
+  });
+};
+
+/**
+ * Apply theme to document with zero-latency updates, density, and optional GPU View Transitions
+ */
+export const applyThemeToDOM = (
+  effectiveMode,
+  themeColor,
+  withViewTransition = false,
+  originCoordinates = null,
+  density = 'comfortable'
+) => {
   if (typeof document === 'undefined') return;
 
   const root = document.documentElement;
-  
-  // Add transition class for smooth theme switch
-  if (enableTransition) {
-    root.classList.add('theme-transitioning');
-  }
 
-  // Set theme attributes
-  root.setAttribute('data-theme', effectiveMode);
-  root.setAttribute('data-color', themeColor);
+  const updateDOM = () => {
+    root.setAttribute('data-theme', effectiveMode);
+    root.setAttribute('data-color', themeColor);
+    root.setAttribute('data-density', density || 'comfortable');
+    root.style.colorScheme = effectiveMode;
 
-  // Also add class for Tailwind dark mode support
-  if (effectiveMode === 'dark') {
-    root.classList.add('dark');
+    if (effectiveMode === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+
+    // Enterprise Desktop App Native Titlebar & Theme Sync
+    if (typeof window !== 'undefined' && window.flowtaskDesktop?.setNativeTheme) {
+      try {
+        window.flowtaskDesktop.setNativeTheme(effectiveMode);
+      } catch (e) {
+        // Ignore native bridge errors
+      }
+    }
+  };
+
+  if (withViewTransition) {
+    transitionWithRipple(updateDOM, originCoordinates);
   } else {
-    root.classList.remove('dark');
-  }
-
-  // Remove transition class after animation completes
-  if (enableTransition) {
-    setTimeout(() => {
-      root.classList.remove('theme-transitioning');
-    }, 300);
+    updateDOM();
   }
 };
 
@@ -123,6 +207,7 @@ const useThemeStore = create(
       // State
       appearance: DEFAULT_THEME.appearance,
       themeColor: DEFAULT_THEME.themeColor,
+      density: DEFAULT_THEME.density,
       effectiveMode: 'light',
       version: THEME_SCHEMA_VERSION,
 
@@ -130,8 +215,10 @@ const useThemeStore = create(
       isPreviewMode: false,
       previewAppearance: null,
       previewThemeColor: null,
+      previewDensity: null,
       savedAppearance: null,
       savedThemeColor: null,
+      savedDensity: null,
 
       // Actions
       
@@ -139,76 +226,142 @@ const useThemeStore = create(
        * Initialize theme on app load
        */
       initializeTheme: () => {
-        const { appearance, themeColor } = get();
+        const { appearance, themeColor, density } = get();
         const effectiveMode = computeEffectiveMode(appearance);
         
         set({ effectiveMode });
-        applyThemeToDOM(effectiveMode, themeColor, false);
+        applyThemeToDOM(effectiveMode, themeColor, false, null, density);
+      },
+
+      /**
+       * Quick toggle between light and dark mode with circular ripple animation
+       */
+      toggleMode: (originCoordinates = null) => {
+        const { appearance, effectiveMode, themeColor, density } = get();
+        const nextMode = (appearance === 'dark' || (appearance === 'auto' && effectiveMode === 'dark')) ? 'light' : 'dark';
+        
+        set({ appearance: nextMode, effectiveMode: nextMode });
+        applyThemeToDOM(nextMode, themeColor, true, originCoordinates, density);
+        broadcastThemeUpdate({ appearance: nextMode, themeColor, density });
       },
 
       /**
        * Set appearance mode
        */
-      setAppearance: (newAppearance) => {
-        const { themeColor, isPreviewMode } = get();
+      setAppearance: (newAppearance, withTransition = false, originCoordinates = null) => {
+        const { themeColor, density, isPreviewMode } = get();
         const effectiveMode = computeEffectiveMode(newAppearance);
 
         if (isPreviewMode) {
           set({ previewAppearance: newAppearance });
-          applyThemeToDOM(effectiveMode, themeColor);
+          applyThemeToDOM(effectiveMode, themeColor, false, null, density);
         } else {
           set({ appearance: newAppearance, effectiveMode });
-          applyThemeToDOM(effectiveMode, themeColor);
+          applyThemeToDOM(effectiveMode, themeColor, withTransition, originCoordinates, density);
+          broadcastThemeUpdate({ appearance: newAppearance, themeColor, density });
         }
       },
 
       /**
        * Set theme color
        */
-      setThemeColor: (newColor) => {
-        const { appearance, isPreviewMode, previewAppearance } = get();
+      setThemeColor: (newColor, withTransition = false, originCoordinates = null) => {
+        const { appearance, density, isPreviewMode, previewAppearance } = get();
         const currentAppearance = isPreviewMode && previewAppearance ? previewAppearance : appearance;
         const effectiveMode = computeEffectiveMode(currentAppearance);
 
         if (isPreviewMode) {
           set({ previewThemeColor: newColor });
-          applyThemeToDOM(effectiveMode, newColor);
+          applyThemeToDOM(effectiveMode, newColor, false, null, density);
         } else {
           set({ themeColor: newColor });
-          applyThemeToDOM(effectiveMode, newColor);
+          applyThemeToDOM(effectiveMode, newColor, withTransition, originCoordinates, density);
+          broadcastThemeUpdate({ appearance, themeColor: newColor, density });
         }
+      },
+
+      /**
+       * Set display density (Comfortable vs Compact)
+       */
+      setDensity: (newDensity) => {
+        const { appearance, themeColor, isPreviewMode } = get();
+        const effectiveMode = computeEffectiveMode(appearance);
+
+        if (isPreviewMode) {
+          set({ previewDensity: newDensity });
+          applyThemeToDOM(effectiveMode, themeColor, false, null, newDensity);
+        } else {
+          set({ density: newDensity });
+          applyThemeToDOM(effectiveMode, themeColor, false, null, newDensity);
+          broadcastThemeUpdate({ appearance, themeColor, density: newDensity });
+        }
+      },
+
+      /**
+       * Synchronize state from another browser tab
+       */
+      syncFromRemoteTab: (remoteState) => {
+        if (!remoteState) return;
+        const current = get();
+        const nextAppearance = remoteState.appearance ?? current.appearance;
+        const nextColor = remoteState.themeColor ?? current.themeColor;
+        const nextDensity = remoteState.density ?? current.density;
+        const effectiveMode = computeEffectiveMode(nextAppearance);
+
+        set({
+          appearance: nextAppearance,
+          themeColor: nextColor,
+          density: nextDensity,
+          effectiveMode,
+        });
+
+        applyThemeToDOM(effectiveMode, nextColor, false, null, nextDensity);
       },
 
       /**
        * Enter preview mode (for settings modal)
        */
       enterPreviewMode: () => {
-        const { appearance, themeColor } = get();
+        const { appearance, themeColor, density } = get();
         set({
           isPreviewMode: true,
           savedAppearance: appearance,
           savedThemeColor: themeColor,
+          savedDensity: density,
           previewAppearance: appearance,
           previewThemeColor: themeColor,
+          previewDensity: density,
         });
       },
 
       /**
        * Apply preview and exit preview mode
        */
-      applyPreview: () => {
-        const { previewAppearance, previewThemeColor } = get();
-        const effectiveMode = computeEffectiveMode(previewAppearance || 'light');
+      applyPreview: (withTransition = true, originCoordinates = null) => {
+        const { 
+          previewAppearance, previewThemeColor, previewDensity,
+          appearance, themeColor, density 
+        } = get();
+        const finalAppearance = previewAppearance || appearance;
+        const finalColor = previewThemeColor || themeColor;
+        const finalDensity = previewDensity || density;
+        const effectiveMode = computeEffectiveMode(finalAppearance);
+
+        applyThemeToDOM(effectiveMode, finalColor, withTransition, originCoordinates, finalDensity);
+        broadcastThemeUpdate({ appearance: finalAppearance, themeColor: finalColor, density: finalDensity });
 
         set({
-          appearance: previewAppearance,
-          themeColor: previewThemeColor,
+          appearance: finalAppearance,
+          themeColor: finalColor,
+          density: finalDensity,
           effectiveMode,
           isPreviewMode: false,
           previewAppearance: null,
           previewThemeColor: null,
+          previewDensity: null,
           savedAppearance: null,
           savedThemeColor: null,
+          savedDensity: null,
         });
       },
 
@@ -216,18 +369,23 @@ const useThemeStore = create(
        * Cancel preview and revert to saved
        */
       cancelPreview: () => {
-        const { savedAppearance, savedThemeColor } = get();
-        const effectiveMode = computeEffectiveMode(savedAppearance || 'light');
+        const { savedAppearance, savedThemeColor, savedDensity, appearance, themeColor, density } = get();
+        const revertAppearance = savedAppearance || appearance;
+        const revertColor = savedThemeColor || themeColor;
+        const revertDensity = savedDensity || density;
+        const effectiveMode = computeEffectiveMode(revertAppearance);
 
-        // Revert DOM
-        applyThemeToDOM(effectiveMode, savedThemeColor || 'blue');
+        // Revert DOM instantly
+        applyThemeToDOM(effectiveMode, revertColor, false, null, revertDensity);
 
         set({
           isPreviewMode: false,
           previewAppearance: null,
           previewThemeColor: null,
+          previewDensity: null,
           savedAppearance: null,
           savedThemeColor: null,
+          savedDensity: null,
         });
       },
 
@@ -236,28 +394,37 @@ const useThemeStore = create(
        */
       resetToDefault: () => {
         const effectiveMode = computeEffectiveMode(DEFAULT_THEME.appearance);
+        applyThemeToDOM(effectiveMode, DEFAULT_THEME.themeColor, true, null, DEFAULT_THEME.density);
+        broadcastThemeUpdate({
+          appearance: DEFAULT_THEME.appearance,
+          themeColor: DEFAULT_THEME.themeColor,
+          density: DEFAULT_THEME.density,
+        });
 
         set({
           appearance: DEFAULT_THEME.appearance,
           themeColor: DEFAULT_THEME.themeColor,
+          density: DEFAULT_THEME.density,
           effectiveMode,
           isPreviewMode: false,
           previewAppearance: null,
           previewThemeColor: null,
+          previewDensity: null,
+          savedAppearance: null,
+          savedThemeColor: null,
+          savedDensity: null,
         });
-
-        applyThemeToDOM(effectiveMode, DEFAULT_THEME.themeColor);
       },
 
       /**
        * Update effective mode (called when system preference changes)
        */
       updateEffectiveMode: () => {
-        const { appearance, themeColor } = get();
+        const { appearance, themeColor, density } = get();
         const effectiveMode = computeEffectiveMode(appearance);
         
         set({ effectiveMode });
-        applyThemeToDOM(effectiveMode, themeColor);
+        applyThemeToDOM(effectiveMode, themeColor, false, null, density);
       },
 
       /**
@@ -265,19 +432,20 @@ const useThemeStore = create(
        */
       getCurrentTheme: () => {
         const { 
-          appearance, themeColor, effectiveMode,
-          isPreviewMode, previewAppearance, previewThemeColor 
+          appearance, themeColor, density, effectiveMode,
+          isPreviewMode, previewAppearance, previewThemeColor, previewDensity 
         } = get();
 
         if (isPreviewMode) {
           return {
             appearance: previewAppearance || appearance,
             themeColor: previewThemeColor || themeColor,
+            density: previewDensity || density,
             effectiveMode: computeEffectiveMode(previewAppearance || appearance),
           };
         }
 
-        return { appearance, themeColor, effectiveMode };
+        return { appearance, themeColor, density, effectiveMode };
       },
     }),
     {
@@ -288,6 +456,7 @@ const useThemeStore = create(
       partialize: (state) => ({
         appearance: state.appearance,
         themeColor: state.themeColor,
+        density: state.density,
         version: state.version,
       }),
     }

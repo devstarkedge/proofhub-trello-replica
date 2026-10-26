@@ -48,7 +48,7 @@ const DeleteConfirmationModal = lazy(() => import('../components/TeamManagement/
 const TeamManagement = () => {
   const { user } = useContext(AuthContext);
   const { currentWorkspace } = useContext(WorkspaceContext);
-  const { effectiveMode } = useThemeStore();
+  const effectiveMode = useThemeStore((state) => state.effectiveMode);
   const isDarkMode = effectiveMode === 'dark';
   const {
     departments,

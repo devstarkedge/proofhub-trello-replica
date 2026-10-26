@@ -9,8 +9,8 @@
 
 import { useEffect, useCallback, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Sun, Moon, Monitor, Check, RotateCcw, Sparkles, Palette } from 'lucide-react';
-import useThemeStore, { THEME_COLORS, APPEARANCE_MODES } from '../store/themeStore';
+import { X, Sun, Moon, Monitor, Check, RotateCcw, Sparkles, Palette, Layers } from 'lucide-react';
+import useThemeStore, { THEME_COLORS, APPEARANCE_MODES, DENSITY_MODES } from '../store/themeStore';
 
 // Mode icon colors for visual distinction
 const modeColors = {
@@ -24,12 +24,15 @@ const AppearanceModal = ({ isOpen, onClose }) => {
   const {
     appearance,
     themeColor,
+    density,
     effectiveMode,
     isPreviewMode,
     previewAppearance,
     previewThemeColor,
+    previewDensity,
     setAppearance,
     setThemeColor,
+    setDensity,
     enterPreviewMode,
     applyPreview,
     cancelPreview,
@@ -46,6 +49,9 @@ const AppearanceModal = ({ isOpen, onClose }) => {
   const currentThemeColor = isPreviewMode 
     ? (previewThemeColor ?? themeColor) 
     : themeColor;
+  const currentDensity = isPreviewMode
+    ? (previewDensity ?? density)
+    : (density || 'comfortable');
 
   // Enter preview mode when modal opens
   useEffect(() => {
@@ -62,7 +68,7 @@ const AppearanceModal = ({ isOpen, onClose }) => {
 
   // Handle apply
   const handleApply = useCallback(() => {
-    applyPreview();
+    applyPreview(true);
     onClose();
   }, [applyPreview, onClose]);
 
@@ -371,6 +377,61 @@ const AppearanceModal = ({ isOpen, onClose }) => {
                             }}
                           >
                             {color.name}
+                          </span>
+                        </motion.button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Display Density Section */}
+                <div>
+                  <div className="flex items-center gap-2 mb-4">
+                    <Layers size={16} style={{ color: 'var(--color-primary)' }} />
+                    <label 
+                      className="text-sm font-semibold uppercase tracking-wider"
+                      style={{ color: 'var(--color-text-muted)' }}
+                    >
+                      Interface Density
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {DENSITY_MODES.map((d) => {
+                      const isSelected = currentDensity === d.id;
+                      return (
+                        <motion.button
+                          key={d.id}
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={() => setDensity(d.id)}
+                          className="relative flex flex-col text-left p-3.5 rounded-xl border-2 transition-all duration-200"
+                          style={{
+                            borderColor: isSelected ? 'var(--color-primary)' : 'var(--color-border-default)',
+                            backgroundColor: isSelected ? 'var(--color-primary-subtle)' : 'var(--color-bg-subtle)',
+                          }}
+                        >
+                          <div className="flex items-center justify-between w-full mb-1">
+                            <span 
+                              className="text-sm font-semibold"
+                              style={{ color: isSelected ? 'var(--color-primary)' : 'var(--color-text-primary)' }}
+                            >
+                              {d.name}
+                            </span>
+                            {isSelected && (
+                              <div 
+                                className="w-5 h-5 rounded-full flex items-center justify-center"
+                                style={{ background: 'var(--color-primary)', color: '#fff' }}
+                              >
+                                <Check size={12} strokeWidth={3} />
+                              </div>
+                            )}
+                          </div>
+                          <span 
+                            className="text-xs"
+                            style={{ color: 'var(--color-text-muted)' }}
+                          >
+                            {d.description}
                           </span>
                         </motion.button>
                       );

@@ -1,11 +1,84 @@
 :root, .analytics-shell {
-  --an-ink: #152238;
-  --an-muted: #68758a;
-  --an-line: #e6eaf0;
-  --an-card: #ffffff;
-  --an-bg: #f5f7fb;
-  --an-blue: #2563eb;
-  --an-blue-soft: #eaf1ff;
+  --an-ink: var(--color-text-primary, #152238);
+  --an-muted: var(--color-text-muted, #68758a);
+  --an-line: var(--color-border-default, #e6eaf0);
+  --an-card: var(--color-card-bg, #ffffff);
+  --an-bg: var(--color-bg-base, #f5f7fb);
+  --an-blue: var(--color-primary, #2563eb);
+  --an-blue-soft: var(--color-primary-subtle, #eaf1ff);
+}
+
+:root[data-theme="dark"] .analytics-shell {
+  --an-ink: #f3f4f6;
+  --an-muted: #9ca3af;
+  --an-line: #374151;
+  --an-card: #1f2937;
+  --an-bg: #111827;
+  --an-blue: var(--color-primary);
+  --an-blue-soft: var(--color-primary-subtle);
+}
+
+:root[data-theme="dark"] .analytics-filter-bar {
+  background: rgba(31, 41, 55, 0.92);
+  border-color: #374151;
+}
+
+:root[data-theme="dark"] .analytics-select,
+:root[data-theme="dark"] .analytics-date {
+  background: #111827;
+  color: #f3f4f6;
+  border-color: #374151;
+}
+
+:root[data-theme="dark"] .analytics-tabs {
+  background: #111827;
+}
+
+:root[data-theme="dark"] .analytics-tab {
+  color: #9ca3af;
+}
+
+:root[data-theme="dark"] .analytics-tab.active {
+  background: #1f2937;
+  color: var(--color-primary);
+}
+
+:root[data-theme="dark"] .analytics-kpi-value {
+  color: #f9fafb;
+}
+
+:root[data-theme="dark"] .analytics-panel-title {
+  color: #f9fafb;
+}
+
+:root[data-theme="dark"] .analytics-table th {
+  border-color: #374151;
+  color: #9ca3af;
+}
+
+:root[data-theme="dark"] .analytics-table td {
+  border-color: #374151;
+  color: #d1d5db;
+}
+
+:root[data-theme="dark"] .analytics-table-name {
+  color: #f9fafb;
+}
+
+:root[data-theme="dark"] .analytics-table tbody tr:hover {
+  background: #111827;
+}
+
+:root[data-theme="dark"] .analytics-task-card,
+:root[data-theme="dark"] .analytics-drawer,
+:root[data-theme="dark"] .analytics-detail-item-button {
+  background: #1f2937;
+  border-color: #374151;
+  color: #f3f4f6;
+}
+
+:root[data-theme="dark"] .analytics-task-title {
+  color: #f9fafb;
 }
 
 .analytics-shell {

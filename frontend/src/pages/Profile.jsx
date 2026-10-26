@@ -15,7 +15,7 @@ const AvatarUploadModal = lazy(() => import('../components/AvatarUploadModal'));
 
 const Profile = () => {
   const { user, setUser } = useContext(AuthContext);
-  const { effectiveMode } = useThemeStore();
+  const effectiveMode = useThemeStore((state) => state.effectiveMode);
   const isDarkMode = effectiveMode === 'dark';
   const { avatar, remove: removeAvatar, removing } = useAvatar();
   

@@ -14,7 +14,7 @@ import { getDefaultLeaveRouteForRole } from '../utils/leaveAccess';
 
 // Icon color configuration for each nav item
 const iconColors = {
-  '/': { color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' }, // Blue - Home
+  '/': { color: 'var(--color-primary)', bg: 'var(--color-primary-subtle)' }, // Theme Primary - Home
   '/my-shortcuts': { color: '#06b6d4', bg: 'rgba(6, 182, 212, 0.12)' }, // Cyan - My Shortcuts
   '/announcements': { color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.12)' }, // Amber - Announcements
   '/reminders': { color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' }, // Emerald - Reminders
@@ -29,7 +29,7 @@ const iconColors = {
   '/leave': { color: '#f97316', bg: 'rgba(249, 115, 22, 0.12)' }, // Orange - Leave
   '/leave/my': { color: '#f97316', bg: 'rgba(249, 115, 22, 0.12)' }, // Orange - Leave (Employee default)
   '/attendance': { color: '#0ea5e9', bg: 'rgba(14, 165, 233, 0.12)' }, // Sky - Attendance
-  '/time-tracking': { color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' }, // Blue - Time Tracking
+  '/time-tracking': { color: 'var(--color-primary)', bg: 'var(--color-primary-subtle)' }, // Theme Primary - Time Tracking
 };
 
 const Sidebar = ({ isMobile = false, collapsed = false, onToggleCollapse, onClose }) => {

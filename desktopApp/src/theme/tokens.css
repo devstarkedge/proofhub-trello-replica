@@ -348,8 +348,8 @@
   --color-primary: var(--color-primary-500);
   --color-primary-hover: var(--color-primary-400);
   --color-primary-active: var(--color-primary-300);
-  --color-primary-subtle: rgba(59, 130, 246, 0.15);
-  --color-primary-subtle-hover: rgba(59, 130, 246, 0.25);
+  --color-primary-subtle: color-mix(in srgb, var(--color-primary) 16%, transparent);
+  --color-primary-subtle-hover: color-mix(in srgb, var(--color-primary) 26%, transparent);
 
   /* === SEMANTIC COLORS === */
   /* Success */
@@ -393,7 +393,7 @@
   --color-sidebar-bg: var(--gray-900);
   --color-sidebar-border: var(--gray-800);
   --color-sidebar-item-hover: var(--gray-800);
-  --color-sidebar-item-active: rgba(59, 130, 246, 0.15);
+  --color-sidebar-item-active: color-mix(in srgb, var(--color-primary) 18%, transparent);
 
   /* Header */
   --color-header-bg: var(--gray-900);
@@ -426,21 +426,65 @@
 }
 
 /* ============================================
-   THEME TRANSITIONS
+   THEME TRANSITIONS (Optimized - Zero Freeze / Lag)
    ============================================ */
 
-/* Smooth theme transition class - applied during transitions */
-.theme-transitioning,
-.theme-transitioning *,
-.theme-transitioning *::before,
-.theme-transitioning *::after {
+/* Root surface transition for smooth mode switches without DOM re-layout lag */
+html,
+body {
   transition: 
-    background-color var(--motion-duration-normal) var(--motion-easing),
-    border-color var(--motion-duration-normal) var(--motion-easing),
-    color var(--motion-duration-fast) var(--motion-easing),
-    fill var(--motion-duration-fast) var(--motion-easing),
-    stroke var(--motion-duration-fast) var(--motion-easing),
-    box-shadow var(--motion-duration-normal) var(--motion-easing) !important;
+    background-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* GPU-accelerated View Transitions API (Circular Ripple Reveal & Cross-fade) */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  z-index: 9999;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
+  }
+}
+
+/* ============================================
+   UI DENSITY TOKENS (Comfortable vs Compact)
+   ============================================ */
+html[data-density="compact"] {
+  --space-card-padding: 0.75rem;
+  --table-cell-padding-y: 0.375rem;
+  --table-cell-padding-x: 0.75rem;
+}
+
+html[data-density="comfortable"] {
+  --space-card-padding: 1.25rem;
+  --table-cell-padding-y: 0.75rem;
+  --table-cell-padding-x: 1rem;
+}
+
+/* High Contrast Mode for WCAG 2.1 AA Compliance */
+@media (prefers-contrast: more) {
+  :root {
+    --color-border-default: #0f172a;
+    --color-border-emphasis: #000000;
+  }
+  :root[data-theme="dark"] {
+    --color-border-default: #e2e8f0;
+    --color-border-emphasis: #ffffff;
+    --color-text-secondary: #f8fafc;
+  }
 }
 
 /* ============================================

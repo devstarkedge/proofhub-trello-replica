@@ -52,7 +52,7 @@ const FEATURES = [
  * Premium Slack-inspired design with navigation, hero, features, and footer.
  */
 const LandingPage = () => {
-  const { effectiveMode } = useThemeStore();
+  const effectiveMode = useThemeStore((state) => state.effectiveMode);
   const isDark = effectiveMode === 'dark';
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);

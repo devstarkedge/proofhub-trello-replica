@@ -28,7 +28,7 @@ const ProjectCard = ({
 }) => {
   const navigate = useNavigate();
   const { user } = useContext(AuthContext);
-  const { themeColor } = useThemeStore();
+  const themeColor = useThemeStore((state) => state.themeColor);
   const [showMenu, setShowMenu] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   

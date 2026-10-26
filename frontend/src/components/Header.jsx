@@ -15,16 +15,16 @@ const TabApprovalModal = lazy(() => import('./Sales/TabApprovalModal'));
 
 // Icon color configuration for navigation items
 const navIconColors = {
-  '/': { color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' }, // Blue - Board
+  '/': { color: 'var(--color-primary)', bg: 'var(--color-primary-subtle)' }, // Theme Primary - Board
   '/list-view': { color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' }, // Purple - List
   '/calendar': { color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' }, // Emerald - Calendar
-  '/analytics': { color: 'var(--color-primary)', bg: 'rgba(245, 158, 11, 0.12)' }, // Amber - Analytics
+  '/analytics': { color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.12)' }, // Amber - Analytics
 };
 
 // User menu icon colors
 const menuIconColors = {
-  profile: { color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)' },
-  appearance: { color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' },
+  profile: { color: 'var(--color-primary)', bg: 'var(--color-primary-subtle)' },
+  appearance: { color: 'var(--color-primary)', bg: 'var(--color-primary-subtle)' },
   settings: { color: '#6366f1', bg: 'rgba(99, 102, 241, 0.12)' },
   billing: { color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' },
   help: { color: '#06b6d4', bg: 'rgba(6, 182, 212, 0.12)' },

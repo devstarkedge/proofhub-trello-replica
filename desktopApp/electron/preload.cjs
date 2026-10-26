@@ -31,5 +31,6 @@ contextBridge.exposeInMainWorld('flowtaskDesktop', Object.freeze({
       return () => ipcRenderer.removeListener('desktop-notifications:click', listener);
     },
   }),
+  setNativeTheme: mode => ipcRenderer.send('desktop-theme:set', mode),
 }));
 ipcRenderer.on('desktop-notifications:resume', () => window.dispatchEvent(new Event('desktop-resume')));

@@ -2,6 +2,23 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+@theme {
+  --color-primary: var(--color-primary);
+  --color-primary-hover: var(--color-primary-hover);
+  --color-primary-active: var(--color-primary-active);
+  --color-primary-subtle: var(--color-primary-subtle);
+  --color-primary-subtle-hover: var(--color-primary-subtle-hover);
+  --color-surface: var(--color-bg-base);
+  --color-surface-subtle: var(--color-bg-subtle);
+  --color-surface-muted: var(--color-bg-muted);
+  --color-surface-emphasis: var(--color-bg-emphasis);
+  --color-border-theme: var(--color-border-default);
+  --color-border-subtle: var(--color-border-subtle);
+  --color-text-main: var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-muted: var(--color-text-muted);
+}
+
 /* ============================================
    GLOBAL THEME BASE STYLES
    ============================================ */
@@ -2673,13 +2690,13 @@ input:-webkit-autofill::first-line {
 }
 
 /* ==========================================================================
-   GLOBAL BUTTON CONTRAST & THEMING (Light & Dark Modes)
-   Ensures primary/blue buttons always render clear, readable white text across
-   the entire application, modules (Time Tracking, Attendance, Leave, etc.),
-   and inside dialogs/popovers/modals.
+   GLOBAL BUTTON & THEME ACCENT CONTRAST (Light & Dark Modes)
+   Dynamically binds primary / blue buttons and accents to the active theme color
+   (Blue, Purple, Emerald, Rose, Amber, Cyan, Indigo, Slate) across both
+   light and dark appearances, ensuring enterprise-grade consistency.
    ========================================================================== */
 
-/* Primary / Blue Button Base Styles */
+/* Primary / Theme Button Base Styles */
 button.bg-primary,
 button.bg-blue-600,
 button.bg-blue-500,
@@ -2687,57 +2704,52 @@ button.bg-blue-700,
 button[class*="bg-blue-600"],
 button[class*="bg-primary"],
 .btn-primary {
-  color: #ffffff !important;
+  color: var(--color-text-on-primary, #ffffff) !important;
 }
 
-/* Ensure children (spans, icons, text nodes) of blue/primary buttons stay white */
+/* Ensure children (spans, icons, text nodes) of theme buttons stay readable white */
 button.bg-primary:not(:disabled) span,
+button.bg-primary:not(:disabled) svg,
 button.bg-blue-600:not(:disabled) span,
+button.bg-blue-600:not(:disabled) svg,
 button.bg-blue-500:not(:disabled) span,
-button.bg-blue-700:not(:disabled) span,
+button.bg-blue-500:not(:disabled) svg,
 button[class*="bg-blue-600"]:not(:disabled) span,
+button[class*="bg-blue-600"]:not(:disabled) svg,
 button[class*="bg-primary"]:not(:disabled) span,
+button[class*="bg-primary"]:not(:disabled) svg,
 button[class*="text-white"]:not(:disabled) span,
-.btn-primary:not(:disabled) span {
-  color: #ffffff !important;
+button[class*="text-white"]:not(:disabled) svg,
+.btn-primary:not(:disabled) span,
+.btn-primary:not(:disabled) svg {
+  color: var(--color-text-on-primary, #ffffff) !important;
 }
 
-/* Light mode primary button overrides */
-:root:not([data-theme="dark"]) button.bg-blue-600:not(:disabled),
-:root:not([data-theme="dark"]) button.bg-primary:not(:disabled),
-:root:not([data-theme="dark"]) button[class*="bg-blue-600"]:not(:disabled),
-:root:not([data-theme="dark"]) button[class*="bg-primary"]:not(:disabled),
-:root:not([data-theme="dark"]) .btn-primary:not(:disabled) {
-  background-color: #2563eb !important;
-  color: #ffffff !important;
+/* Theme Adaptive Button Backgrounds (Both Light & Dark) */
+button.bg-blue-600:not(:disabled),
+button.bg-primary:not(:disabled),
+button[class*="bg-blue-600"]:not(:disabled),
+button[class*="bg-primary"]:not(:disabled),
+.btn-primary:not(:disabled) {
+  background-color: var(--color-primary) !important;
+  color: var(--color-text-on-primary, #ffffff) !important;
 }
 
-:root:not([data-theme="dark"]) button.bg-blue-600:not(:disabled):hover,
-:root:not([data-theme="dark"]) button.bg-primary:not(:disabled):hover,
-:root:not([data-theme="dark"]) button[class*="bg-blue-600"]:not(:disabled):hover,
-:root:not([data-theme="dark"]) button[class*="bg-primary"]:not(:disabled):hover,
-:root:not([data-theme="dark"]) .btn-primary:not(:disabled):hover {
-  background-color: #1d4ed8 !important;
-  color: #ffffff !important;
+button.bg-blue-600:not(:disabled):hover,
+button.bg-primary:not(:disabled):hover,
+button[class*="bg-blue-600"]:not(:disabled):hover,
+button[class*="bg-primary"]:not(:disabled):hover,
+.btn-primary:not(:disabled):hover {
+  background-color: var(--color-primary-hover) !important;
+  color: var(--color-text-on-primary, #ffffff) !important;
 }
 
-/* Dark mode primary button overrides */
-:root[data-theme="dark"] button.bg-blue-600:not(:disabled),
-:root[data-theme="dark"] button.bg-primary:not(:disabled),
-:root[data-theme="dark"] button[class*="bg-blue-600"]:not(:disabled),
-:root[data-theme="dark"] button[class*="bg-primary"]:not(:disabled),
-:root[data-theme="dark"] .btn-primary:not(:disabled) {
-  background-color: #2563eb !important;
-  color: #ffffff !important;
-}
-
-:root[data-theme="dark"] button.bg-blue-600:not(:disabled):hover,
-:root[data-theme="dark"] button.bg-primary:not(:disabled):hover,
-:root[data-theme="dark"] button[class*="bg-blue-600"]:not(:disabled):hover,
-:root[data-theme="dark"] button[class*="bg-primary"]:not(:disabled):hover,
-:root[data-theme="dark"] .btn-primary:not(:disabled):hover {
-  background-color: #3b82f6 !important;
-  color: #ffffff !important;
+button.bg-blue-600:not(:disabled):active,
+button.bg-primary:not(:disabled):active,
+button[class*="bg-blue-600"]:not(:disabled):active,
+button[class*="bg-primary"]:not(:disabled):active,
+.btn-primary:not(:disabled):active {
+  background-color: var(--color-primary-active) !important;
 }
 
 /* Disabled buttons contrast */
@@ -2747,4 +2759,154 @@ button[class*="bg-blue-600"]:disabled,
 button[class*="bg-primary"]:disabled {
   opacity: 0.55 !important;
   cursor: not-allowed !important;
+}
+
+/* ==========================================================================
+   GLOBAL THEME COLOR ACCENT ADAPTATION (Light & Dark Modes)
+   Enables all 8 theme colors across components using primary color classes
+   ========================================================================== */
+:root[data-color] .text-blue-600,
+:root[data-color] .text-blue-700,
+:root[data-color] .text-indigo-600,
+:root[data-color] .text-indigo-700 {
+  color: var(--color-primary) !important;
+}
+
+:root[data-color] .text-blue-500,
+:root[data-color] .text-indigo-500 {
+  color: var(--color-primary) !important;
+}
+
+:root[data-color] .bg-blue-600,
+:root[data-color] .bg-indigo-600 {
+  background-color: var(--color-primary) !important;
+}
+
+:root[data-color] .hover\:bg-blue-700:hover,
+:root[data-color] .hover\:bg-indigo-700:hover {
+  background-color: var(--color-primary-hover) !important;
+}
+
+:root[data-color] .bg-blue-50,
+:root[data-color] .bg-indigo-50 {
+  background-color: var(--color-primary-subtle) !important;
+}
+
+:root[data-color] .bg-blue-100,
+:root[data-color] .bg-indigo-100 {
+  background-color: var(--color-primary-subtle-hover) !important;
+}
+
+:root[data-color] .hover\:bg-blue-50:hover,
+:root[data-color] .hover\:bg-indigo-50:hover {
+  background-color: var(--color-primary-subtle) !important;
+}
+
+:root[data-color] .hover\:bg-blue-100:hover,
+:root[data-color] .hover\:bg-indigo-100:hover {
+  background-color: var(--color-primary-subtle-hover) !important;
+}
+
+:root[data-color] .border-blue-500,
+:root[data-color] .border-indigo-500,
+:root[data-color] .border-blue-600,
+:root[data-color] .border-indigo-600 {
+  border-color: var(--color-primary) !important;
+}
+
+:root[data-color] .border-blue-200,
+:root[data-color] .border-indigo-200 {
+  border-color: color-mix(in srgb, var(--color-primary) 30%, transparent) !important;
+}
+
+:root[data-color] .focus\:ring-blue-500:focus,
+:root[data-color] .focus\:ring-indigo-500:focus,
+:root[data-color] .focus\:border-blue-500:focus,
+:root[data-color] .focus\:border-indigo-500:focus,
+:root[data-color] .ring-blue-500,
+:root[data-color] .ring-indigo-500 {
+  --tw-ring-color: var(--color-primary) !important;
+  border-color: var(--color-primary) !important;
+}
+
+/* ==========================================================================
+   REACT-DATEPICKER DARK MODE & THEME ADAPTATION
+   ========================================================================== */
+:root[data-theme="dark"] .react-datepicker {
+  background-color: var(--color-bg-base, #1f2937) !important;
+  border-color: var(--color-border-default, #374151) !important;
+  color: var(--color-text-primary, #f9fafb) !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4) !important;
+}
+
+:root[data-theme="dark"] .react-datepicker__header {
+  background-color: var(--color-bg-subtle, #111827) !important;
+  border-color: var(--color-border-default, #374151) !important;
+}
+
+:root[data-theme="dark"] .react-datepicker__current-month,
+:root[data-theme="dark"] .react-datepicker-time__header,
+:root[data-theme="dark"] .react-datepicker-year-header {
+  color: var(--color-text-primary, #f9fafb) !important;
+}
+
+:root[data-theme="dark"] .react-datepicker__day-name,
+:root[data-theme="dark"] .react-datepicker__day {
+  color: var(--color-text-secondary, #d1d5db) !important;
+}
+
+:root[data-theme="dark"] .react-datepicker__day:hover {
+  background-color: var(--color-bg-muted, #374151) !important;
+  color: var(--color-text-primary, #ffffff) !important;
+}
+
+:root[data-theme="dark"] .react-datepicker__day--disabled {
+  color: var(--color-text-muted, #6b7280) !important;
+}
+
+:root[data-color] .react-datepicker__day--selected,
+:root[data-color] .react-datepicker__day--keyboard-selected {
+  background-color: var(--color-primary) !important;
+  color: var(--color-text-on-primary, #ffffff) !important;
+}
+
+:root[data-color] .react-datepicker__day--today {
+  color: var(--color-primary) !important;
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   UI DENSITY STYLES (Compact Mode)
+   Tightens padding and row heights for high data density in enterprise views
+   ========================================================================== */
+html[data-density="compact"] table th {
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+  font-size: 11px !important;
+}
+
+html[data-density="compact"] table td {
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+  font-size: 12px !important;
+}
+
+html[data-density="compact"] .sidebar-nav-item {
+  min-height: 38px !important;
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+}
+
+html[data-density="compact"] .analytics-content {
+  padding-top: 16px !important;
+  padding-bottom: 32px !important;
+}
+
+html[data-density="compact"] .analytics-panel {
+  padding: 14px !important;
+}
+
+html[data-density="compact"] .analytics-kpi {
+  min-height: 118px !important;
+  padding: 12px !important;
 }
