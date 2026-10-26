@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import config from '../config/index.js';
-import { getReadyConnection, reportRedisError, workspaceKey } from '../queues/connection.js';
+import { getReadyConnection, reportRedisError, workspaceKey, withTimeout } from '../queues/connection.js';
 
 const hash = value => createHash('sha256').update(String(value)).digest('hex');
 const INCREMENT_WINDOW = `
@@ -16,10 +16,12 @@ export const rateLimiter = (options = {}) => {
     message = 'Too many requests, please try again later',
     keyFn = req => req.ip || req.connection?.remoteAddress,
     workspaceFn = req => req.workspaceId || 'public',
+    allowReadFallback = false,
   } = options;
   const policy = hash([windowMs, maxRequests, message, String(keyFn)].join('|'));
-  // One local store per factory, never a production fallback.
-  const store = config.redis.enabled ? null : new Map();
+  // Only explicitly opted-in authenticated reads can use a bounded local
+  // limiter during a Redis outage. Auth/public routes and writes fail closed.
+  const store = !config.redis.enabled || allowReadFallback ? new Map() : null;
   if (store) {
     setInterval(() => {
       for (const [key, entry] of store) if (Date.now() >= entry.resetTime) store.delete(key);
@@ -33,16 +35,24 @@ export const rateLimiter = (options = {}) => {
       const route = [req.baseUrl || '', req.route ? `${req.method}:${req.route.path}` : 'router'].join(':');
       const key = workspaceKey(workspace, 'rate-limit', hash([policy, route, identity].join('|')));
       try {
-        [count, remaining] = await getReadyConnection().eval(INCREMENT_WINDOW, 1, key, windowMs);
+        const operation = getReadyConnection().eval(INCREMENT_WINDOW, 1, key, windowMs);
+        [count, remaining] = await (allowReadFallback ? withTimeout(operation, 250, 'Tracking read limiter') : operation);
       } catch (error) {
         reportRedisError('rate-limit', error);
-        res.setHeader('Retry-After', '5');
-        return res.status(503).json({ success: false, message: 'Request limiting is temporarily unavailable; retry later' });
+        if (!allowReadFallback || !['GET', 'HEAD'].includes(req.method) || !req.user || !req.workspaceId) {
+          res.setHeader('Retry-After', '5');
+          return res.status(503).json({ success: false, message: 'Request limiting is temporarily unavailable; retry later' });
+        }
       }
-    } else {
+    }
+    if (count === undefined) {
       const key = JSON.stringify([workspace, identity]);
       let entry = store.get(key);
       if (!entry || Date.now() >= entry.resetTime) {
+        if (allowReadFallback && store.size >= 10000 && !store.has(key)) {
+          res.setHeader('Retry-After', '5');
+          return res.status(503).json({ success: false, message: 'Request limiting is temporarily unavailable; retry later' });
+        }
         entry = { count: 0, resetTime: Date.now() + windowMs };
         store.set(key, entry);
       }

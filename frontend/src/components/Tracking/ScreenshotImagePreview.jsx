@@ -10,7 +10,7 @@ export default function ScreenshotImagePreview({ attachment, zoom, rotation, onR
   useEffect(() => {
     onResolved(image.url ? { _id: attachment._id, url: image.url } : null);
   }, [onResolved, attachment._id, image.url]);
-  if (image.error) return <div className="text-gray-400 text-center"><ImageOff className="mx-auto mb-2" /><p>{image.error}</p></div>;
+  if (image.error && !image.url) return <div className="text-gray-400 text-center"><ImageOff className="mx-auto mb-2" /><p>{image.error}</p>{image.canRetry && <button type="button" className="underline mt-2" onClick={() => image.retry()}>Retry screenshot</button>}</div>;
   if (!image.url) return <Loader className="w-8 h-8 text-white animate-spin" />;
   return <img src={image.url} alt={screenshotDisplayName(attachment)} title={screenshotDisplayName(attachment)}
     className="max-w-full max-h-full object-contain transition-all duration-200"

@@ -8,6 +8,20 @@ export const screenshotImageKey = (scope, record) => [
 ];
 const isImage = query => query.queryKey[0] === 'tracking-private' && query.queryKey[2] === 'image';
 const abortError = () => new DOMException('Screenshot access changed', 'AbortError');
+export const transientScreenshotError = error => error?.name !== 'AbortError' &&
+  ![401, 403, 404, 410].includes(error?.response?.status) &&
+  (!error?.response?.status || [408, 425, 429].includes(error.response.status) || error.response.status >= 500);
+
+// A transport or decoder may ignore abort. Always settle the shared query and
+// free its queue slot even in that case.
+function abortable(operation, signal) {
+  return new Promise((resolve, reject) => {
+    const cancel = () => reject(signal.reason || abortError());
+    if (signal.aborted) return cancel();
+    signal.addEventListener('abort', cancel, { once: true });
+    Promise.resolve().then(operation).then(resolve, reject).finally(() => signal.removeEventListener('abort', cancel));
+  });
+}
 
 export function createScreenshotCache(client, {
   loadBlob, decode = async (url, signal) => {
@@ -20,7 +34,7 @@ export function createScreenshotCache(client, {
   createUrl = blob => URL.createObjectURL(blob),
   revokeUrl = url => URL.revokeObjectURL(url),
   maxBytes = 96 * 1024 * 1024, maxEntries = 160, concurrency = 4,
-  cacheTime = SCREENSHOT_CACHE_TIME
+  cacheTime = SCREENSHOT_CACHE_TIME, requestTimeoutMs = 25000
 }) {
   let generation = 0, active = 0, trimming = false;
   const pending = new Map(), waiting = [];
@@ -90,7 +104,9 @@ export function createScreenshotCache(client, {
       return {
         queryKey, staleTime: query => query.state.data
           ? Math.max(0, query.state.data.authorizedUntil - query.state.dataUpdatedAt) : 0,
-        gcTime: cacheTime, retry: false, structuralSharing: false,
+        gcTime: cacheTime, retry: (count, error) => count < 2 && transientScreenshotError(error),
+        retryDelay: attempt => Math.min(1000 * 2 ** attempt, 4000),
+        retryOnMount: false, refetchOnReconnect: false, networkMode: 'always', structuralSharing: false,
         refetchOnWindowFocus: false,
         // Intentionally do not consume Query's observer AbortSignal: a modal
         // closing (including StrictMode replay) must not cancel a shared load.
@@ -99,7 +115,7 @@ export function createScreenshotCache(client, {
           const query = cache.find({ queryKey, exact: true });
           const controller = new AbortController(), epoch = generation;
           pending.set(query.queryHash, controller);
-          let url, acquired = false;
+          let url, acquired = false, timer;
           const releasePending = () => { if (url) { revokeUrl(url); url = undefined; } };
           controller.signal.addEventListener('abort', releasePending, { once: true });
           try {
@@ -107,9 +123,10 @@ export function createScreenshotCache(client, {
             else active++;
             acquired = true;
             if (controller.signal.aborted || epoch !== generation) throw abortError();
+            timer = setTimeout(() => controller.abort(Object.assign(new Error('Screenshot loading timed out. Retry to load it again.'), { code: 'SCREENSHOT_TIMEOUT' })), requestTimeoutMs);
             if (record?.expiresAt && +new Date(record.expiresAt) <= Date.now()) throw new Error('Screenshot expired');
             const previous = query.state.data;
-            const response = await loadBlob(record._id, 'canonical', controller.signal, { etag: previous?.etag });
+            const response = await abortable(() => loadBlob(record._id, 'canonical', controller.signal, { etag: previous?.etag }), controller.signal);
             if (controller.signal.aborted || epoch !== generation) throw abortError();
             // Blob-only adapters remain supported for tests and older clients.
             const result = response instanceof Blob ? { blob: response } : response;
@@ -124,14 +141,18 @@ export function createScreenshotCache(client, {
             const blob = result.blob;
             if (!blob?.size) throw new Error('Screenshot response is empty');
             url = createUrl(blob);
-            const image = await decode(url, controller.signal);
+            const image = await abortable(() => decode(url, controller.signal), controller.signal);
             if (controller.signal.aborted || epoch !== generation) { image?.removeAttribute?.('src'); throw abortError(); }
-            return { url, image, decoded: true, authorizedUntil, etag: result.etag,
-              memoryBytes: blob.size + (image.naturalWidth || record.width || 0) * (image.naturalHeight || record.height || 0) * 4 };
+            // Keep compressed bytes via the object URL, not a second full-size
+            // decoded Image per screenshot. The browser manages display decode
+            // memory; retaining those Images exhausted the budget on a few rows.
+            image?.removeAttribute?.('src');
+            return { url, decoded: true, authorizedUntil, etag: result.etag, memoryBytes: blob.size };
           } catch (error) {
             releasePending();
             throw error;
           } finally {
+            clearTimeout(timer);
             if (pending.get(query.queryHash) === controller) pending.delete(query.queryHash);
             controller.signal.removeEventListener('abort', releasePending);
             if (acquired) { const next = waiting.shift(); if (next) next(); else active--; }

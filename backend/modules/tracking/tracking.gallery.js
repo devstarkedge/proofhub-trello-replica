@@ -7,6 +7,7 @@ import {readPrivateScreenshot,missingStorageObject} from './tracking.storage.js'
 import {readLegacyScreenshot} from './tracking.legacyStorage.js';
 import {screenshotContentPolicy} from './tracking.contentPolicy.js';
 import {resolveScreenshotIdentity,SCREENSHOT_IDENTITY_SELECT} from './tracking.screenshotIdentity.js';
+import {cachedTrackingRead,trackingAccessFingerprint} from './tracking.readCache.js';
 const id=v=>String(v?._id||v||'');
 const alive=()=>({$or:[{expiresAt:null},{expiresAt:{$gt:new Date()}}]});
 export const contextTitle=s=>s.attributedTaskTitle?`${s.attributedProjectName} / ${s.attributedTaskTitle}`:s.agenda?`${s.agendaTitle} — ${s.description}`:`${s.projectName||'Project'} / ${s.taskTitle||'Individual'}`;
@@ -27,6 +28,7 @@ export async function gallery(workspaceId,userId,query){
   const visibility=await readVisibilityScope(ctx),scope=visibility.history(session?.user);
   await authorizeRecord(ctx,session?{...session,departmentIdsAtStart:scope??session.departmentIdsAtStart}:null,'tracking.view_screenshots');
   segmentFilter(query);const segments=session.segments.filter(s=>matchesSegment(s,query));
+  return cachedTrackingRead({workspaceId,viewerId:userId,kind:'gallery',query:{...query,revision:session.revision},access:trackingAccessFingerprint(ctx,visibility),ttlMs:60000},async()=>{
   const intervalFilter=segments.length?{$or:segments.map(s=>({startedAt:{$lt:s.endedAt||new Date()},endedAt:{$gt:s.startedAt}}))}:{_id:{$in:[]}};
   const history=scope===null?{}:{departmentIdsAtCapture:{$in:scope}};
   // Only query matching interval IDs when work-context filters are active.
@@ -41,6 +43,7 @@ export async function gallery(workspaceId,userId,query){
   const page=records.slice(0,20),intervals=await ActivityInterval.find({workspaceId,_id:{$in:page.map(s=>s.interval)},...history,...alive()}).select('_id startedAt endedAt coverage activityBasis inputEligibleSeconds inputActiveSeconds mouseCount keyboardCount activeSeconds idleSeconds timeBasis').lean();
   const byId=new Map(intervals.map(i=>[id(i),i])),last=page.at(-1);
   return {workspaceId,sessionId:session._id,screenshots:page.filter(s=>byId.has(id(s.interval))).map(s=>compact(s,byId.get(id(s.interval)),session)),nextCursor:records.length>20?Buffer.from(JSON.stringify({at:last.capturedAt,id:last._id})).toString('base64url'):null};
+  });
 }
 export async function authorizedScreenshot(workspaceId,userId,screenshotId,{ready=false,includeInterval=false}={}){
   const tenant=new mongoose.Types.ObjectId(String(workspaceId)),key=new mongoose.Types.ObjectId(objectId(screenshotId));
@@ -57,9 +60,12 @@ export async function authorizedScreenshot(workspaceId,userId,screenshotId,{read
 }
 export async function screenshotDetails(workspaceId,userId,screenshotId){
   const {s,session,interval}=await authorizedScreenshot(workspaceId,userId,screenshotId,{includeInterval:true});
+  // Record authorization remains live even when its public projection is cached.
+  return cachedTrackingRead({workspaceId,viewerId:userId,kind:'details',query:{screenshotId,checksum:s.checksum,status:s.status,sessionRevision:session.revision},access:'authorized-record',ttlMs:60000},async()=>{
   return {workspaceId,...compact(s,interval,session),originalWidth:s.originalWidth||s.width,originalHeight:s.originalHeight||s.height,quality:s.quality,format:s.format,compressionStrategy:s.compressionStrategy,policyRevision:s.policyRevision,uploadedAt:s.uploadedAt,expiresAt:s.expiresAt,
     thumbnail:{source:'canonical',bytes:s.bytes,width:s.width,height:s.height,quality:s.quality,status:s.status},
     minuteActivityAvailable:false};
+  });
 }
 export async function screenshotContent(workspaceId,userId,screenshotId,options={}){
   const {s}=await authorizedScreenshot(workspaceId,userId,screenshotId,{ready:true});

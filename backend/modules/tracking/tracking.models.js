@@ -1,11 +1,13 @@
 import mongoose from 'mongoose';
 import workspaceScopePlugin from '../workspaces/workspaceScopePlugin.js';
+import { trackingReadCachePlugin } from './tracking.readCache.js';
 
 const oid = (ref, required = false) => ({ type: mongoose.Schema.Types.ObjectId, ref, required });
 const tenant = { workspaceId: oid('Workspace', true) };
 function model(name, fields, indexes = [], options = {}) {
   const schema = new mongoose.Schema({ ...tenant, ...fields }, { timestamps: true, ...options });
   schema.plugin(workspaceScopePlugin);
+  if (['WorkSession', 'ActivityInterval', 'TrackingScreenshot', 'TrackingPolicy'].includes(name)) schema.plugin(trackingReadCachePlugin);
   if (options.immutableAudit) {
     schema.pre('save',function(){if(!this.isNew)throw new Error('Assignment audit is immutable');});
     schema.pre(['findOneAndUpdate','updateOne','updateMany','replaceOne','findOneAndReplace','deleteOne','deleteMany','findOneAndDelete'],function(){throw new Error('Assignment audit is immutable');});

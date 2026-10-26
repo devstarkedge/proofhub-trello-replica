@@ -82,7 +82,7 @@ export default function ScreenshotDetailsModal({
   const activity = details?.activity;
   const displayName = screenshotDisplayName(details || screenshot || screenshotId);
 
-  const { url: imageUrl, loading: imageLoading, error: imageError } = useScreenshotImage(
+  const { url: imageUrl, loading: imageLoading, error: imageError, retry: retryImage, canRetry } = useScreenshotImage(
     details || screenshot, 'original'
   );
 
@@ -193,6 +193,7 @@ export default function ScreenshotDetailsModal({
                   <p className="font-medium text-gray-700 dark:text-gray-300">
                     {imageError || 'Screenshot image unavailable'}
                   </p>
+                  {canRetry && <button type="button" className="underline" onClick={event => { event.stopPropagation(); retryImage(); }}>Retry screenshot</button>}
                 </div>
               )}
             </div>

@@ -18,12 +18,20 @@ import {readVisibilityScope} from './tracking.visibility.js';
 import {updateSettings,requireTrackingAdmin,listAgendas,createAgenda} from './tracking.settings.js';
 import {dashboard} from './tracking.dashboard.js';
 import {readTrackingReports,readTrackingTimeline,readTrackingReportPreviews} from './tracking.reportRead.js';
+import {observeTrackingRead} from './tracking.readCache.js';
 
 const router = express.Router();
 router.use(protect);
-router.use(rateLimiter({ windowMs: 60000, maxRequests: 180, keyFn: req => `${req.workspaceId}:${req.user.id}`, message: 'Too many tracking requests; retry shortly.' }));
+router.use(rateLimiter({ windowMs: 60000, maxRequests: 180, allowReadFallback: true, keyFn: req => `${req.workspaceId}:${req.user.id}`, message: 'Too many tracking requests; retry shortly.' }));
 const actor = req => ({ workspaceId: req.workspaceId, userId: req.user.id });
 const send = (res, data) => res.json({ success: true, data });
+const sendCached = async (res, load) => {
+  const {data,metrics,durationMs} = await observeTrackingRead(load);
+  const status = metrics.hit ? 'hit' : metrics.coalesced ? 'coalesced' : metrics.miss ? 'miss' : 'bypass';
+  res.set({'Cache-Control':'private, no-store','X-Tracking-Cache':status,
+    'Server-Timing':`tracking-read;dur=${durationMs.toFixed(1)}, tracking-cache;desc="${status}"`});
+  send(res,data);
+};
 const audit = (req, action, targetType, targetId, after = null) => recordAuditLog({
   actor: req.user, action, targetType, targetId, resourceLabel: 'Work tracking', summary: action.replaceAll('_', ' '),
   before: null, after, category: 'attendance_management', meta: { workspaceId: req.workspaceId }
@@ -128,15 +136,10 @@ router.post('/devices/:deviceId/screenshots/:screenshotId/complete', asyncHandle
 router.post('/devices/:deviceId/screenshots/:screenshotId/retry',asyncHandler(async(req,res)=>send(res,await retryScreenshot({...actor(req),...req.params}))));
 
 router.get('/reports', asyncHandler(async (req,res) => {
-  res.setHeader('Cache-Control','private, no-store');
-  const started=performance.now();
-  const result=await readTrackingReports(req.workspaceId,req.user.id,req.query);
-  res.setHeader('Server-Timing',`tracking-report;dur=${(performance.now()-started).toFixed(1)}`);
-  send(res,result);
+  await sendCached(res,()=>readTrackingReports(req.workspaceId,req.user.id,req.query));
 }));
 router.get('/reports/previews',asyncHandler(async(req,res)=>{
-  res.setHeader('Cache-Control','private, no-store');
-  send(res,await readTrackingReportPreviews(req.workspaceId,req.user.id,req.query));
+  await sendCached(res,()=>readTrackingReportPreviews(req.workspaceId,req.user.id,req.query));
 }));
 router.get('/sessions/:sessionId/history',asyncHandler(async(req,res)=>{
   const ctx=await contextFor(req.workspaceId,req.user.id),session=await WorkSession.findById(objectId(req.params.sessionId)).select('-operations -audit').lean();
@@ -146,14 +149,13 @@ router.get('/sessions/:sessionId/history',asyncHandler(async(req,res)=>{
   send(res,{events:row.audit.slice(0,50),nextOffset:row.audit.length>50?offset+50:null});
 }));
 router.get('/sessions/:sessionId/timeline', asyncHandler(async (req,res) => {
-  res.setHeader('Cache-Control','private, no-store');
-  send(res,await readTrackingTimeline(req.workspaceId,req.user.id,req.params.sessionId,req.query));
+  await sendCached(res,()=>readTrackingTimeline(req.workspaceId,req.user.id,req.params.sessionId,req.query));
 }));
 router.get('/storage-health',asyncHandler(async(req,res)=>{
   await requireTrackingAdmin(req.workspaceId,req.user.id);
   send(res,await storageHealth());
 }));
-router.get('/screenshots',asyncHandler(async(req,res)=>send(res,await gallery(req.workspaceId,req.user.id,req.query))));
+router.get('/screenshots',asyncHandler(async(req,res)=>sendCached(res,()=>gallery(req.workspaceId,req.user.id,req.query))));
 router.get('/screenshots/:screenshotId/details',asyncHandler(async(req,res)=>{
   const result=await screenshotDetails(req.workspaceId,req.user.id,req.params.screenshotId);
   await audit(req,'TRACKING_SCREENSHOT_VIEWED','TrackingScreenshot',req.params.screenshotId,{kind:'details'});

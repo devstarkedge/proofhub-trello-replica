@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { invalidateTrackingReads } from './tracking.readCache.js';
 import { randomUUID,createHash,timingSafeEqual } from 'node:crypto';
 import { TrackingDevice, WorkSession, ActivityInterval, TrackingScreenshot,TrackingCaptureLease,TrackingCaptureAnchor,TrackingPolicy } from './tracking.models.js';
 import { contextFor, policyFor, fail, digest, objectId, reconcileSession, authorizeRecord } from './tracking.service.js';
@@ -211,6 +212,7 @@ async function saveInterval({ workspaceId, userId, deviceId, payload }) {
       screenshotAvailable: payload.screenshotAvailable, expiresAt: capturePolicy.retentionDays===null?null:new Date(+endedAt + capturePolicy.retentionDays * 86400000)
     }], { session: dbSession });
   }); } finally { await dbSession.endSession(); }
+  await invalidateTrackingReads(workspaceId);
   return saved;
 }
 export async function prepareScreenshot({ workspaceId, userId, deviceId, intervalId, image }) {

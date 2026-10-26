@@ -17,11 +17,11 @@ export function serviceUnavailable(service = 'Redis') {
 
 // Driver messages/stacks may contain credentials. Log only fixed labels and safe codes.
 export function reportRedisError(role, error) {
-  if (!config.redis.enabled) return;
+  if (!config.redis.enabled && !config.redis.cacheEnabled) return;
   const code = /^[A-Z0-9_]{1,40}$/.test(error?.code || '') ? error.code : 'REDIS_UNAVAILABLE';
   if (errors.has(role) && Date.now() - errors.get(role) < config.redis.errorLogIntervalMs) return;
   errors.set(role, Date.now());
-  logger.error('Production Redis service unavailable', { role, code });
+  logger.error('Redis service unavailable', { role, code });
 }
 
 export async function withTimeout(operation, timeoutMs, service = 'Redis') {
@@ -50,7 +50,7 @@ function track(client, role) {
 }
 
 function createClient(role, overrides = {}) {
-  if (!config.redis.enabled) return null;
+  if (!config.redis.enabled && !config.redis.cacheEnabled) return null;
   if (closing) throw serviceUnavailable();
   return track(new ManagedRedis(config.redis.url, {
     lazyConnect: true, enableReadyCheck: true,
@@ -65,7 +65,7 @@ function createClient(role, overrides = {}) {
 }
 
 export function getSharedConnection() {
-  if (!config.redis.enabled) return null;
+  if (!config.redis.enabled && !config.redis.cacheEnabled) return null;
   if (!shared) shared = createClient('commands');
   return shared;
 }
@@ -79,14 +79,14 @@ export function getReadyConnection() {
   return client;
 }
 
-export async function connectRedis() {
-  if (!config.redis.enabled) return null;
+export async function connectRedis({ cacheOnly = false } = {}) {
+  if (!config.redis.enabled && !(cacheOnly && config.redis.cacheEnabled)) return null;
   if (connecting) return connecting;
   const client = getSharedConnection();
   if (client.status === 'ready') return client;
   connecting = (async () => {
     try {
-      const ready = client.status === 'wait' ? client.connect() : new Promise((resolve, reject) => {
+      const ready = ['wait', 'end'].includes(client.status) ? client.connect() : new Promise((resolve, reject) => {
         const cleanup = () => { client.off('ready', onReady); client.off('end', onEnd); };
         const onReady = () => { cleanup(); resolve(); };
         const onEnd = () => { cleanup(); reject(serviceUnavailable()); };
@@ -106,7 +106,7 @@ export async function connectRedis() {
 }
 
 export function createSubscriberConnection() {
-  return createClient('socket-subscriber', { commandTimeout: undefined, enableOfflineQueue: true });
+  return config.redis.enabled ? createClient('socket-subscriber', { commandTimeout: undefined, enableOfflineQueue: true }) : null;
 }
 
 export async function closeRedisClient(client) {

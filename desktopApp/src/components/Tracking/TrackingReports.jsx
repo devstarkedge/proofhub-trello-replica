@@ -33,7 +33,7 @@ const workTitle = s => s.attributedTaskTitle
 
 // Single lazy-loaded timeline thumbnail card with compact activity indicator
 const TimelineThumbnail = memo(function TimelineThumbnail({ screenshot, timezone, onClick, onPreview }) {
-  const { node, url, error } = useScreenshotImage(screenshot, 'thumbnail', true);
+  const { node, url, error, retry, canRetry } = useScreenshotImage(screenshot, 'thumbnail', true);
 
   const activityPercent = screenshot.activityPercent;
   const timeFormatted = screenshot.capturedAt
@@ -62,6 +62,7 @@ const TimelineThumbnail = memo(function TimelineThumbnail({ screenshot, timezone
           <div className="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 text-[9px] p-1 text-center">
             <ImageOff size={14} />
             <span className="mt-0.5 truncate max-w-[90px]">{error || screenshot.uploadStatus || 'Unavailable'}</span>
+            {canRetry && <button type="button" className="underline mt-0.5" onClick={event => { event.stopPropagation(); retry(); }}>Retry</button>}
           </div>
         ) : (
           <Loader2 className="animate-spin text-gray-400" size={16} />

@@ -15,7 +15,7 @@ const DocumentViewerModal = lazy(() => import('../DocumentViewerModal'));
 const cardStyle = { backgroundColor: 'var(--color-card-bg)', borderColor: 'var(--color-border-default)' };
 
 const CaptureCard = memo(function CaptureCard({ capture, timezone, onSelect, onPreview }) {
-  const { node, url, error, retry } = useScreenshotImage(capture, 'thumbnail', true);
+  const { node, url, error, retry, canRetry } = useScreenshotImage(capture, 'thumbnail', true);
   const displayName = screenshotDisplayName(capture);
 
   const rate = capture.activityPercent;
@@ -69,7 +69,7 @@ const CaptureCard = memo(function CaptureCard({ capture, timezone, onSelect, onP
       </div>
       <div className="p-2">
         <div>
-          {error && capture.status === 'READY' && (
+          {canRetry && capture.status === 'READY' && (
             <button
               type="button"
               className="text-xs text-blue-500 underline mb-1"

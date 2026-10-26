@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { invalidateTrackingReads } from './tracking.readCache.js';
 import { randomUUID, createHash } from 'node:crypto';
 import Board from '../../models/Board.js';
 import Card from '../../models/Card.js';
@@ -108,6 +109,7 @@ function pushAudit(session, type, at, actor, detail = '') {
   session.audit.push({ id: randomUUID(), type, at, actor, detail });
 }
 export async function emitChanged(session,{strict=false}={}) {
+  await invalidateTrackingReads(session.workspaceId);
   if (!session) return;
   try { emitToUser(session.user, 'tracking:changed', { workspaceId: session.workspaceId, userId:session.user, sessionId: session._id, revision: session.revision, status:session.status,endedAt:session.endedAt }, session.workspaceId); } catch(error) { if(strict)throw error; }
   // Reuse personal workspace rooms; report updates never broadcast private
@@ -364,6 +366,7 @@ export async function changeWork({ workspaceId, userId, action, selection, opera
   }); } finally { await dbSession.endSession(); }
   // The initiating employee/agent gets a small committed invalidation now.
   // Workspace observers and retries use the transactional outbox.
+  await invalidateTrackingReads(workspaceId);
   try{emitToUser(userId,'tracking:changed',{workspaceId,userId,sessionId:result._id,revision:result.revision,status:result.status,endedAt:result.endedAt},workspaceId);}catch{/* durable retry */}
   return result;
 }

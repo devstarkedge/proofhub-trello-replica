@@ -13,6 +13,7 @@ import {dashboardReadPipeline} from './tracking.dashboardRead.js';
 import {segmentFilter,matchesSegment} from './tracking.dashboard.js';
 import {summarize,coverageGaps} from './tracking.timeline.js';
 import {resolveScreenshotIdentity,SCREENSHOT_IDENTITY_SELECT,timelineScreenshot} from './tracking.screenshotIdentity.js';
+import {cachedTrackingRead,trackingAccessFingerprint} from './tracking.readCache.js';
 const id=v=>String(v?._id||v||'');
 const oid=v=>new mongoose.Types.ObjectId(id(v));
 
@@ -27,6 +28,7 @@ export async function readTrackingReports(workspaceId,viewerId,query){
   if(team==='true'&&!can(ctx,'tracking.view_reports'))fail('Team report permission required',403);
   const scope=await readVisibilityScope(ctx);
   if((userId||team!=='true')&&!scope.canOwner(userId||viewerId))fail('Record not found',404);
+  return cachedTrackingRead({workspaceId,viewerId,kind:'reports',query,access:trackingAccessFingerprint(ctx,scope),ttlMs:15000},async()=>{
   const owners=team==='true'&&!userId?scope.members.filter(m=>scope.canOwner(m.user)).map(m=>m.user):[userId||viewerId];
   const now=new Date(),bounds={workspaceId:oid(workspaceId),...(fromDate||toDate?{workDateKey:{...(fromDate?{$gte:fromDate}:{}),...(toDate?{$lte:toDate}:{})}}:{}),...(cursor?{_id:{$lt:oid(cursor)}}:{})};
   const pipeline=dashboardReadPipeline({workspaceId,ctx,scope,owners,bounds,query,dates:{start:new Date(0),end:now},now,policy,attendanceDetails:true});
@@ -47,6 +49,7 @@ export async function readTrackingReports(workspaceId,viewerId,query){
     const preview=previews.get(id(session))||{records:[],totalCount:0},previewsLoaded=query.summaryOnly!=='true';
     return {...session,userName:_subject?.[0]?.name||'Former member',totals:summarize(session,now),attendance:{status:attendance?.status,day:_day?.[0],checkInAt:attendance?.checkInAt,checkOutAt:attendance?.checkOutAt,measuredOfficeSeconds:officeEnd?Math.max(0,(+officeEnd-+attendance.checkInAt)/1000):null},previewsLoaded,latestScreenshots:preview.records,totalScreenshots:previewsLoaded?preview.totalCount:null};
   })};
+  });
 }
 
 // Separate enrichment: work-day rows never wait for screenshot counts/previews.
@@ -54,12 +57,14 @@ export async function readTrackingReportPreviews(workspaceId,viewerId,query){
   const ids=String(query.sessionIds||'').split(',').filter(Boolean);
   if(!ids.length||ids.length>20)fail('Choose between 1 and 20 work sessions');
   ids.forEach(objectId);segmentFilter(query);
-  const [ctx,sessions]=await Promise.all([contextFor(workspaceId,viewerId,{readOnly:true}),WorkSession.find({workspaceId,_id:{$in:ids}}).select('_id workspaceId user segments departmentIdsAtStart').lean()]);
+  const [ctx,sessions]=await Promise.all([contextFor(workspaceId,viewerId,{readOnly:true}),WorkSession.find({workspaceId,_id:{$in:ids}}).select('_id workspaceId user segments departmentIdsAtStart revision').lean()]);
   const scope=await readVisibilityScope(ctx);await scope.markMixed(sessions);
   if(sessions.length!==new Set(ids).size||sessions.some(session=>!scope.canRecord(session)))fail('Record not found',404);
+  return cachedTrackingRead({workspaceId,viewerId,kind:'previews',query:{...query,revisions:sessions.map(s=>[id(s),s.revision])},access:trackingAccessFingerprint(ctx,scope),ttlMs:60000},async()=>{
   const selected=sessions.map(session=>({...session,segments:session.segments.filter(segment=>matchesSegment(segment,query))}));
   const previews=await readReportPreviews(workspaceId,selected,ctx,scope,query,new Date());
   return {workspaceId,sessions:selected.map(session=>({_id:session._id,previewsLoaded:true,latestScreenshots:previews.get(id(session))?.records||[],totalScreenshots:previews.get(id(session))?.totalCount||0}))};
+  });
 }
 
 async function readReportPreviews(workspaceId,sessions,ctx,scope,query,now){
@@ -95,6 +100,7 @@ export async function readTrackingTimeline(workspaceId,viewerId,sessionId,query)
   const history=scope===null?{}:{departmentIdsAtCapture:{$in:scope}};
   const before = query.before ? new Date(query.before) : null;
   if (before && !Number.isFinite(+before)) fail('Invalid timeline cursor');
+  return cachedTrackingRead({workspaceId,viewerId,kind:'timeline',query:{...query,sessionId,revision:session.revision},access:trackingAccessFingerprint(ctx,visibility),ttlMs:30000},async()=>{
   const validExpiry={$or:[{expiresAt:null},{expiresAt:{$gt:new Date()}}]};
   const cutoff=new Date(0);
   const [intervals,allCoverage,evidenceMap] = await Promise.all([
@@ -112,4 +118,5 @@ export async function readTrackingTimeline(workspaceId,viewerId,sessionId,query)
   const contexts=intervals.map(interval=>({...interval,contexts:session.segments.filter(s=>+new Date(s.startedAt)<+new Date(interval.endedAt)&&(!s.endedAt||+new Date(s.endedAt)>+new Date(interval.startedAt))).map(s=>({segmentId:s._id,title:s.attributedTaskTitle?`${s.attributedProjectName} / ${s.attributedTaskTitle}`:s.agenda?`${s.agendaTitle} — ${s.description}`:`${s.projectName} / ${s.taskTitle||'Individual'}`,origin:s.agenda?`${s.agendaTitle} — ${s.description}`:null,task:s.attributedTask||s.task,attributedAt:s.attributedAt}))}));
   const evidence=evidenceMap.get(id(session.user))||summarizeEvidence([]);
   return { intervals:contexts, screenshots, evidence, coverageGaps:coverageGaps(segments,allCoverage), nextBefore: intervals.length === 20 ? intervals.at(-1).endedAt : null };
+  });
 }

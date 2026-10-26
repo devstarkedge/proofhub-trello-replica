@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { screenshotCache } from '../../services/screenshotCache';
+import { transientScreenshotError } from '../../../../shared/screenshotCache.mjs';
 import useTrackingScope from './useTrackingScope';
 
 export default function useScreenshotImage(record, _variant, lazy = false) {
@@ -32,11 +33,11 @@ export default function useScreenshotImage(record, _variant, lazy = false) {
   }, [manager, record?._id, record?.expiresAt]);
   const query = useQuery({
     ...manager.images.options(scope, record),
-    enabled: Boolean(record?._id && record.status === 'READY' && visible && !expired && !manager.blocked)
+    enabled: cached => Boolean(record?._id && record.status === 'READY' && visible && !expired && !manager.blocked && cached.state.status !== 'error')
   });
   const { refetch } = query;
   useEffect(() => {
-    if (!query.data?.authorizedUntil || !visible || expired || manager.blocked) return;
+    if (!query.data?.authorizedUntil || !visible || expired || manager.blocked || query.isError) return;
     let timer;
     const validate = () => {
       const remaining = query.data.authorizedUntil - Date.now();
@@ -45,11 +46,15 @@ export default function useScreenshotImage(record, _variant, lazy = false) {
     };
     validate();
     return () => clearTimeout(timer);
-  }, [query.data?.authorizedUntil, visible, expired, manager.blocked, refetch]);
+  }, [query.data?.authorizedUntil, query.isError, visible, expired, manager.blocked, refetch]);
   const error = manager.blocked ? 'Screenshot access changed. Reconnect or sign in again.'
-    : expired ? 'Screenshot expired' : query.error?.response?.status === 410 ? 'Deleted from storage' : query.error?.message || '';
+    : expired ? 'Screenshot expired' : record && record.status !== 'READY' ? record.uploadStatus || 'Screenshot unavailable'
+    : query.error?.response?.status === 410 ? 'Deleted from storage' : query.error?.message || '';
   // Visibility gates new requests, never an already decoded cache hit. Disabled
   // offscreen consumers remain eligible for the cache's memory eviction.
   const authorized = query.data?.authorizedUntil > Date.now();
-  return { node, url: error || record?.status !== 'READY' || !authorized ? '' : query.data?.url || '', loading: query.isFetching, error, retry: query.refetch };
+  const denied = manager.blocked || expired || [401, 403, 404, 410].includes(query.error?.response?.status);
+  return { node, url: denied || record?.status !== 'READY' || !authorized ? '' : query.data?.url || '',
+    loading: query.isFetching || query.fetchStatus === 'paused', error,
+    canRetry: Boolean(query.error && transientScreenshotError(query.error) && !manager.blocked && !expired), retry: query.refetch };
 }
