@@ -34,6 +34,7 @@ import { recoverSlackDigestSchedules } from '../schedulers/slackDigestScheduler.
 import { recoverCardDueDateSchedules } from '../schedulers/cardDueDateScheduler.js';
 import { recoverLeaveApprovalReminderSchedules } from '../schedulers/leaveReminderScheduler.js';
 import logger from '../utils/logger.js';
+import { startHubSpotWorker, getHubSpotWorker, recoverHubSpotWork } from '../workers/hubspotWorker.js';
 
 let _initialized = false;
 let _accepting = false;
@@ -91,6 +92,7 @@ export async function initQueues() {
       _accepting = true;
       // Both backends run the same processors, concurrency limits and schedules.
       const workers = [
+        startHubSpotWorker(),
         startEmailWorker(), startNotificationWorker(), startActivityWorker(),
         startAnnouncementWorker(), startCleanupWorker(), startRecurringTaskWorker(),
         startSlackWorker(), startLeaveWorker(), startChatWebhookWorker(), startSalesAlertWorker(),
@@ -101,6 +103,7 @@ export async function initQueues() {
       await registerLeaveMaintenanceJobs();
       await registerAttendanceMaintenanceJobs();
       const recovery = await Promise.allSettled([
+        recoverHubSpotWork(),
         recoverAnnouncementSchedules(), recoverRecurringSchedules(), recoverReminderSchedules(),
         recoverSlackBatchSchedules(), recoverSlackDigestSchedules(), recoverCardDueDateSchedules(),
         recoverLeaveApprovalReminderSchedules(),
@@ -125,6 +128,7 @@ export function isQueueActive() {
 export async function shutdownQueues() {
   _accepting = false;
   const workers = [
+    getHubSpotWorker(),
     getEmailWorker(), getNotificationWorker(), getActivityWorker(), getAnnouncementWorker(),
     getCleanupWorker(), getRecurringTaskWorker(), getSalesAlertWorker(),
     getChatWebhookWorker(), getSlackWorker(), getLeaveWorker(),

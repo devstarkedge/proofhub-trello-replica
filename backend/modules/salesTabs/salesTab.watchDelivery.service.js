@@ -15,6 +15,7 @@
  * removed from workspace), never the state at detection time.
  */
 import SalesTab from './salesTab.model.js';
+import Workspace from '../../models/Workspace.js';
 import SalesRow from '../../models/SalesRow.js';
 import SalesTabAlertEvent from './salesTabAlertEvent.model.js';
 import { buildSalesQuery } from '../../controllers/salesController.js';
@@ -110,6 +111,8 @@ export async function deliverAlertEvents(events) {
       for (const event of groupEvents) await markSkipped(event, 'TAB_DELETED');
       continue;
     }
+    const workspace = await Workspace.findById(tab.workspaceId).select('settings.modules.salesEnabled').lean();
+    if (!workspace || workspace.settings?.modules?.salesEnabled === false) continue;
     if (!tab.isWatchTab) {
       for (const event of groupEvents) await markSkipped(event, 'WATCH_DISABLED');
       continue;

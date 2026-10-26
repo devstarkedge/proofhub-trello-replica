@@ -66,6 +66,8 @@ import NoWorkspacePage from "./pages/NoWorkspacePage";
 import InvitePage from "./pages/InvitePage";
 import TimeTrackingPage from "./pages/TimeTrackingPage";
 import WorkspaceSettingsPage from "./pages/WorkspaceSettingsPage";
+import WorkspaceConfigsPage from "./pages/WorkspaceConfigsPage";
+import WorkspaceModuleGate from "./components/Workspace/WorkspaceModuleGate";
 import CreateWorkspacePublicPage from './pages/CreateWorkspacePublicPage';
 import ContactSalesPage from './pages/ContactSalesPage';
 
@@ -134,6 +136,7 @@ function App() {
                 <Route path="/my-shortcuts" element={<MyShortcutsPage />} />
                 <Route path="/time-tracking" element={<TimeTrackingPage />} />
                 <Route path="/workspace-settings" element={<WorkspaceSettingsPage />} />
+                <Route path="/workspace-settings/configs" element={<WorkspaceConfigsPage />} />
                 <Route path="/workflow/:deptId/:projectId" element={<ProjectWorkspaceGate><WorkFlow /></ProjectWorkspaceGate>} />
                 <Route path="/workflow/:deptId/:projectId/:taskId" element={<ProjectWorkspaceGate><WorkFlow /></ProjectWorkspaceGate>} />
                 <Route path="/workflow/:deptId/:projectId/trash" element={<ProjectTrash />} />
@@ -143,7 +146,7 @@ function App() {
                     /leave/settings is role-gated, matching how the backend
                     treats self-service as structural rather than
                     permission-gated (see modules/leave/leaveAuthorization.service.js). */}
-                <Route path="/leave" element={<LeaveLayout />}>
+                <Route path="/leave" element={<WorkspaceModuleGate module="leave"><LeaveLayout /></WorkspaceModuleGate>}>
                   <Route index element={<LeaveDashboardPage />} />
                   <Route path="my" element={<MyLeavePage />} />
                   <Route path="approvals" element={<ApprovalQueuePage />} />
@@ -175,7 +178,7 @@ function App() {
                     /attendance/settings is role-gated, matching Leave's
                     own split (self-service is structural, not permission-
                     gated — see modules/attendance/attendanceEligibility.service.js). */}
-                <Route path="/attendance" element={<AttendanceLayout />}>
+                <Route path="/attendance" element={<WorkspaceModuleGate module="attendance"><AttendanceLayout /></WorkspaceModuleGate>}>
                   <Route index element={<Navigate to="my" replace />} />
                   <Route path="my" element={<MyAttendancePage />} />
                   <Route
@@ -224,7 +227,7 @@ function App() {
                   }
                 />
 
-                <Route path="/sales" element={<SalesPage />} />
+                <Route path="/sales" element={<WorkspaceModuleGate module="sales"><SalesPage /></WorkspaceModuleGate>} />
 
                 <Route
                   path="/admin/settings"
@@ -294,7 +297,7 @@ function App() {
                   path="/pm-sheet"
                   element={
                     <PrivateRoute requiredRole={["Manager", "Admin"]}>
-                      <PMSheetLayout />
+                      <WorkspaceModuleGate module="finance"><PMSheetLayout /></WorkspaceModuleGate>
                     </PrivateRoute>
                   }
                 >
@@ -309,7 +312,7 @@ function App() {
                   path="/finance"
                   element={
                     <FinanceRouteGuard>
-                      <FinanceLayout />
+                      <WorkspaceModuleGate module="finance"><FinanceLayout /></WorkspaceModuleGate>
                     </FinanceRouteGuard>
                   }
                 >

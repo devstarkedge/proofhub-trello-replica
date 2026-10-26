@@ -7,6 +7,7 @@
 import SalesTab from './salesTab.model.js';
 import SalesTabWatchState from './salesTabWatchState.model.js';
 import SalesTabAlertEvent from './salesTabAlertEvent.model.js';
+import Workspace from '../../models/Workspace.js';
 import { enqueueSalesTabReconcile } from '../../queues/index.js';
 
 const MAX_TABS_PER_USER = 10;
@@ -245,7 +246,9 @@ export async function incrementUnread(tabId, count = 1) {
  * Get all active watch tabs (approved and watch-enabled).
  */
 export async function getActiveWatchTabs() {
+  const disabledWorkspaces = await Workspace.find({ 'settings.modules.salesEnabled': false }).select('_id').lean();
   return SalesTab.find({
+    workspaceId: { $nin: disabledWorkspaces.map(workspace => workspace._id) },
     isWatchTab: true,
     approvalStatus: 'approved',
     alertRules: { $exists: true, $ne: [] },

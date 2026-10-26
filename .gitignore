@@ -10,6 +10,7 @@ tests/
 reports/
 *.md
 !backend/REDIS_AUDIT.md
+backend/modules/hubspot/README.md
 !backend/tests/
 backend/tests/*
 !backend/tests/tracking/

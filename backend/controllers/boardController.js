@@ -826,7 +826,7 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
   const updateBody = { ...req.body };
   // Only ordinary field patches are supported. Mongo operators/dotted paths
   // must not bypass validation of the effective project or change tenant scope.
-  if (Object.keys(updateBody).some(key => key.startsWith('$') || key.includes('.') || ['workspaceId', '_id'].includes(key))) {
+  if (Object.keys(updateBody).some(key => key.startsWith('$') || key.includes('.') || ['workspaceId', '_id', 'hubspotSync'].includes(key))) {
     return next(new ErrorResponse('Invalid project update fields', 400));
   }
   if (Object.hasOwn(updateBody, 'projectType') && !['Hired Client', 'Inhouse'].includes(updateBody.projectType)) {

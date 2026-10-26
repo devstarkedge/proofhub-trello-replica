@@ -64,6 +64,10 @@ import trackingRoutes from './modules/tracking/tracking.routes.js';
 import { startTrackingMaintenance, stopTrackingMaintenance } from './modules/tracking/tracking.maintenance.js';
 import projectOptionsRoutes from './routes/projectOptions.js';
 import workspaceRoutes from './routes/workspaces.js';
+import workspaceConfigsRoutes from './modules/hubspot/routes.js';
+import workspaceModulesRoutes from './modules/hubspot/moduleRoutes.js';
+import { protect } from './middleware/authMiddleware.js';
+import { requireModule } from './modules/hubspot/workspaceModules.js';
 import workspaceMemberRoutes from './routes/workspaceMembers.js';
 import invitationRoutes from './routes/invitations.js';
 import accessControlRoutes from './routes/accessControl.js';
@@ -206,18 +210,20 @@ app.use('/api/versions', versionsRoutes);
 app.use('/api/projects', projectsRoutes);
 app.use('/api/slack', slackRoutes);
 app.use('/api/team-analytics', teamAnalyticsRoutes);
-app.use('/api/pm-sheet', pmSheetRoutes);
+app.use('/api/pm-sheet', protect, requireModule('finance'), pmSheetRoutes);
 app.use('/api/calendar', calendarRoutes);
-app.use('/api/finance', financeRoutes);
+app.use('/api/finance', protect, requireModule('finance'), financeRoutes);
 app.use('/api/my-shortcuts', myShortcutsRoutes);
-app.use('/api/sales', salesRoutes);
-app.use('/api/sales-permissions', salesPermissionsRoutes);
-app.use('/api/sales-tabs', salesTabRoutes);
+app.use('/api/sales', protect, requireModule('sales'), salesRoutes);
+app.use('/api/sales-permissions', protect, requireModule('sales'), salesPermissionsRoutes);
+app.use('/api/sales-tabs', protect, requireModule('sales'), salesTabRoutes);
 app.use('/api/leave', leaveRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/tracking', trackingRoutes);
 app.use('/api/project-options', projectOptionsRoutes);
 app.use('/api/workspaces', workspaceRoutes);
+app.use('/api/workspace-configs', workspaceConfigsRoutes);
+app.use('/api/workspace-modules', workspaceModulesRoutes);
 // Second router at the same prefix — the centralized Invite Member system's
 // new endpoints, kept separable from the legacy ones above (see
 // routes/workspaceMembers.js).

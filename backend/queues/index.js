@@ -8,6 +8,7 @@
  */
 import { Queue } from './runtime.js';
 import chatWebhookQueue from './chatWebhookQueue.js';
+import { hubspotQueue } from './hubspotQueue.js';
 import config from '../config/index.js';
 
 const defaultJobOptions = {
@@ -156,6 +157,7 @@ export function enqueueSalesTabReconcile(tabId, opts = {}) {
 // ─── Export all queues for health checks / shutdown ───────────────────────────
 
 export const allQueues = [
+  hubspotQueue,
   chatWebhookQueue,
   emailQueue,
   notificationQueue,

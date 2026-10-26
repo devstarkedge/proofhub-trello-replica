@@ -30,7 +30,7 @@ const ICON_MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB — a logo, not a photo
 // @access  Private
 export const getMyWorkspaces = asyncHandler(async (req, res) => {
   const memberships = await WorkspaceMembership.find({ user: req.user.id, status: 'active' })
-    .populate('workspace', 'name slug isActive icon type')
+    .populate('workspace', 'name slug isActive icon type owner')
     .lean();
 
   const activeMemberships = memberships.filter((m) => m.workspace && m.workspace.isActive);
@@ -53,6 +53,7 @@ export const getMyWorkspaces = asyncHandler(async (req, res) => {
       slug: m.workspace.slug,
       type: m.workspace.type,
       role: m.role,
+      isOwner: String(m.workspace.owner) === String(req.user.id),
       icon: m.workspace.icon || null,
       isActive: String(m.workspace._id) === String(req.workspaceId),
       planSlug,
@@ -279,7 +280,7 @@ export const getWorkspace = asyncHandler(async (req, res, next) => {
 
   res.status(200).json({
     success: true,
-    data: { ...membership.workspace, role: membership.role, planSlug, planName, memberLimit, chatEnabled }
+    data: { ...membership.workspace, role: membership.role, isOwner: String(membership.workspace.owner) === String(req.user.id), planSlug, planName, memberLimit, chatEnabled }
   });
 });
 
@@ -808,7 +809,7 @@ export const switchWorkspace = asyncHandler(async (req, res, next) => {
     workspace: req.params.id,
     user: req.user.id,
     status: 'active'
-  }).populate('workspace', 'name slug icon type').lean();
+  }).populate('workspace', 'name slug icon type owner').lean();
 
   if (!membership || !membership.workspace) {
     return next(new ErrorResponse('You are not a member of this workspace', 403));
@@ -823,7 +824,7 @@ export const switchWorkspace = asyncHandler(async (req, res, next) => {
   res.status(200).json({
     success: true,
     data: {
-      workspace: membership.workspace,
+      workspace: { ...membership.workspace, role: membership.role, isOwner: String(membership.workspace.owner) === String(req.user.id) },
       membership: {
         role: membership.role,
         roleId: membership.roleId,

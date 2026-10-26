@@ -1,4 +1,6 @@
 import express from 'express';
+import { protect } from '../../middleware/authMiddleware.js';
+import { requireModule } from '../hubspot/workspaceModules.js';
 import setupRoutes from './leaveSetup.routes.js';
 import policyRoutes from './leavePolicy.routes.js';
 import calendarRoutes from './leaveCalendar.routes.js';
@@ -17,6 +19,7 @@ import adjustmentRoutes from './leaveAdjustment.routes.js';
 const router = express.Router();
 
 router.use('/', setupRoutes);
+router.use(protect, requireModule('leave'));
 router.use('/', policyRoutes);
 router.use('/', calendarRoutes);
 router.use('/', requestRoutes);

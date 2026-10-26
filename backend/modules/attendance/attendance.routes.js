@@ -1,4 +1,6 @@
 import express from 'express';
+import { protect } from '../../middleware/authMiddleware.js';
+import { requireModule } from '../hubspot/workspaceModules.js';
 import setupRoutes from './attendanceSetup.routes.js';
 import selfRoutes from './attendanceSelf.routes.js';
 import policyRoutes from './attendancePolicy.routes.js';
@@ -19,6 +21,7 @@ import viewRoutes from './attendanceView.routes.js';
 const router = express.Router();
 
 router.use('/', setupRoutes);
+router.use(protect, requireModule('attendance'));
 router.use('/', selfRoutes);
 router.use('/', policyRoutes);
 router.use('/', shiftRoutes);

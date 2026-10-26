@@ -1,7 +1,7 @@
 import asyncHandler from '../../middleware/asyncHandler.js';
 import Workspace from '../../models/Workspace.js';
 import { hasResourceAction } from '../permissions/permissionEngine.js';
-import { setupLeaveModule } from './leaveSetup.service.js';
+import { updateModuleSettings } from '../hubspot/workspaceModules.js';
 import { recordAuditLog } from '../permissions/auditLogService.js';
 
 export const getSetupStatus = asyncHandler(async (req, res) => {
@@ -11,7 +11,8 @@ export const getSetupStatus = asyncHandler(async (req, res) => {
 });
 
 export const setup = asyncHandler(async (req, res) => {
-  const result = await setupLeaveModule({ workspaceId: req.workspaceId, actorId: req.user.id });
+  await updateModuleSettings(req.workspaceId, req.user.id, { leave: true });
+  const result = { leaveModuleEnabled: true };
   await recordAuditLog({
     actor: req.user, action: 'LEAVE_MODULE_SETUP', targetType: 'Workspace', targetId: req.workspaceId,
     resourceLabel: 'Leave Module Setup', summary: `${req.user.name} enabled the Leave module for this workspace`,

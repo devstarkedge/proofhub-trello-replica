@@ -52,6 +52,10 @@ const workspaceSchema = new mongoose.Schema({
   // behavior explicit `?? false` would give.
   attendanceModuleEnabled: { type: Boolean, default: false },
   settings: {
+    modules: {
+      salesEnabled: { type: Boolean, default: true },
+      financeEnabled: { type: Boolean, default: true },
+    },
     access: {
       defaultProjectVisibility: { type: String, enum: ['private', 'department', 'workspace'], default: 'department' },
       guestsEnabled: { type: Boolean, default: false }

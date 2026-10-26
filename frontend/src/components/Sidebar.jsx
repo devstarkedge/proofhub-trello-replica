@@ -11,6 +11,7 @@ import useJoinRequestsLive from '../hooks/useJoinRequestsLive';
 import useRegularizationApprovalLive from '../hooks/useRegularizationApprovalLive';
 import useLeavePendingLive from '../hooks/useLeavePendingLive';
 import { getDefaultLeaveRouteForRole } from '../utils/leaveAccess';
+import useWorkspaceModules from '../hooks/useWorkspaceModules';
 
 // Icon color configuration for each nav item
 const iconColors = {
@@ -44,6 +45,7 @@ const Sidebar = ({ isMobile = false, collapsed = false, onToggleCollapse, onClos
   // permission endpoint directly.
   const { can, isAdmin: isAccessControlAdmin, canManageAccessControl } = useAccessControl();
   const salesVisible = can('sales', 'view');
+  const { data: workspaceModules } = useWorkspaceModules();
   const financeVisible = can('finance', 'view');
   const accessControlVisible = isAccessControlAdmin || canManageAccessControl;
   // Centralized Invite Member system's Approval Dashboard — permission
@@ -104,17 +106,17 @@ const Sidebar = ({ isMobile = false, collapsed = false, onToggleCollapse, onClos
     if (!user) return baseItems;
 
     // Start with base and conditionally add other items
-    const items = [...baseItems];
+    const items = baseItems.filter(item => (!item.path.startsWith('/leave') || workspaceModules?.leave) && (!item.path.startsWith('/attendance') || workspaceModules?.attendance));
 
     // Finance - Admin always, other users only when explicitly granted
-    if (userRole === 'admin' || financeVisible) {
+    if (workspaceModules?.finance && (userRole === 'admin' || financeVisible)) {
       // items.push({ path: '/pm-sheet', icon: FileSpreadsheet, label: 'PM Sheet', hasChildren: true });
       items.push({ path: '/finance', icon: DollarSign, label: 'Finance' });
     }
     
     // Sales visible only for admin or explicitly granted users
     if (userRole === 'admin') {
-      items.push({ path: '/sales', icon: TrendingUp, label: 'Sales' });
+      if (workspaceModules?.sales) items.push({ path: '/sales', icon: TrendingUp, label: 'Sales' });
       items.push({ path: '/reminders', icon: CalendarClock, label: 'Client Reminders' });
       items.push({ path: '/teams', icon: Users, label: 'Teams' });
       items.push({
@@ -125,7 +127,7 @@ const Sidebar = ({ isMobile = false, collapsed = false, onToggleCollapse, onClos
       });
       items.push({ path: '/admin/settings', icon: Settings, label: 'Admin Settings' });
     } else if (userRole === 'hr') {
-      if (salesVisible) {
+      if (salesVisible && workspaceModules?.sales) {
         items.push({ path: '/sales', icon: TrendingUp, label: 'Sales' });
       }
       items.push({ path: '/teams', icon: Users, label: 'Teams' });
@@ -136,12 +138,12 @@ const Sidebar = ({ isMobile = false, collapsed = false, onToggleCollapse, onClos
         badge: (joinRequestsVisible && joinRequestsPendingCount > 0) ? joinRequestsPendingCount : null,
       });
     } else if (userRole === 'manager') {
-      if (salesVisible) {
+      if (salesVisible && workspaceModules?.sales) {
         items.push({ path: '/sales', icon: TrendingUp, label: 'Sales' });
       }
       items.push({ path: '/reminders', icon: CalendarClock, label: 'Client Reminders' });
       items.push({ path: '/teams', icon: Users, label: 'Teams' });
-    } else if (salesVisible) {
+    } else if (salesVisible && workspaceModules?.sales) {
       // Non-admin user explicitly granted sales access — only show Sales link
       items.push({ path: '/sales', icon: TrendingUp, label: 'Sales' });
     }

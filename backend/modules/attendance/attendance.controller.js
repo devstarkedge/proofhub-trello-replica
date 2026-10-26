@@ -3,7 +3,7 @@ import asyncHandler from '../../middleware/asyncHandler.js';
 import Workspace from '../../models/Workspace.js';
 import { recordAuditLog } from '../permissions/auditLogService.js';
 import { getTodayStatus, checkIn, checkOut } from './attendance.service.js';
-import { setupAttendanceModule } from './attendanceSetup.service.js';
+import { updateModuleSettings } from '../hubspot/workspaceModules.js';
 import {policyFor,changeWork} from '../tracking/tracking.service.js';
 import {WorkSession} from '../tracking/tracking.models.js';
 
@@ -23,7 +23,8 @@ async function loadWorkspace(req) {
 }
 
 export const setup = asyncHandler(async (req, res) => {
-  const result = await setupAttendanceModule({ workspaceId: req.workspaceId });
+  await updateModuleSettings(req.workspaceId, req.user.id, { attendance: true });
+  const result = { attendanceModuleEnabled: true };
   await recordAuditLog({
     actor: req.user, action: 'ATTENDANCE_MODULE_SETUP', targetType: 'Workspace', targetId: req.workspaceId,
     resourceLabel: 'Attendance Module Setup', summary: `${req.user.name} enabled the Attendance module for this workspace`,

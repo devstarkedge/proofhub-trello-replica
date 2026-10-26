@@ -15,6 +15,7 @@ import Avatar from '../components/Avatar';
 import WorkspaceSetupBanner from '../components/Workspace/WorkspaceSetupBanner';
 import TrackingPolicySettings from '../components/Tracking/TrackingPolicySettings';
 import WorkspacePlanSettings from '../components/Workspace/WorkspacePlanSettings';
+import WorkspaceSettingsTabs from '../components/Workspace/WorkspaceSettingsTabs';
 import PermissionGate from '../components/PermissionGate';
 import InviteMemberModal from '../components/Workspace/InviteMemberModal/InviteMemberModal';
 import ManageInvitationsModal from '../components/Workspace/ManageInvitationsModal/ManageInvitationsModal';
@@ -301,6 +302,7 @@ const WorkspaceSettingsPage = () => {
           )}
         </motion.div>
 
+        <WorkspaceSettingsTabs />
         <WorkspaceSetupBanner variant="full" />
 
         {/* Plan & Billing is sensitive plan-management data — server-side
