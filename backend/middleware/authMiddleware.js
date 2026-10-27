@@ -146,6 +146,16 @@ export const protect = async (req, res, next) => {
         writeCache(authCache, userCacheKey, userObj);
       }
 
+      if (userObj.tokenVersion !== undefined && decoded.tokenVersion !== undefined) {
+        if (decoded.tokenVersion !== userObj.tokenVersion) {
+          invalidateAuthCache(userId);
+          return res.status(401).json({
+            success: false,
+            message: 'Session invalidated. Please log in again.'
+          });
+        }
+      }
+
       if (!userObj.isActive) {
         // Evict deactivated users from cache
         if (userCacheKey) authCache.delete(userCacheKey);

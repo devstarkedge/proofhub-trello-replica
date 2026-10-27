@@ -140,7 +140,25 @@ app.use('/api/chat-integration/inbound', express.json({ verify: captureRawBody }
 
 app.use(express.json({ limit: config.http.bodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: config.http.bodyLimit }));
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// Security Headers middleware
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  if (config.isProd) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
+
+app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
+  setHeaders(res) {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+  }
+}));
 
 // ─── Frontend Static Assets ───────────────────────────────────────────────────
 // Serve compiled frontend assets. Hashed filenames (/assets/*.js, /assets/*.css)

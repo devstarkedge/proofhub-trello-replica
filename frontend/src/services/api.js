@@ -38,17 +38,23 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (!navigator.onLine && error.config && !error.config.skipOfflineQueue) {
-      // Store the failed request for later retry
-      await addMutation({
-        url: error.config.url,
-        method: error.config.method,
-        headers: error.config.headers,
-        body: error.config.data,
-        timestamp: Date.now(),
-      });
-      // Return a resolved promise to prevent the error from propagating
-      return Promise.resolve({ data: { offline: true } });
+    const method = (error.config?.method || '').toLowerCase();
+    const isMutation = ['post', 'put', 'patch', 'delete'].includes(method);
+
+    // Only queue state-modifying requests; let read queries reject so UI handles error states
+    if (!navigator.onLine && error.config && !error.config.skipOfflineQueue && isMutation) {
+      try {
+        await addMutation({
+          url: error.config.url,
+          method: error.config.method,
+          headers: error.config.headers,
+          body: error.config.data,
+          timestamp: Date.now(),
+        });
+        return Promise.resolve({ data: { offline: true, queued: true, success: true } });
+      } catch (queueErr) {
+        console.error('Failed to queue offline mutation:', queueErr);
+      }
     }
     return Promise.reject(error);
   }

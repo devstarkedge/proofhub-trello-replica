@@ -9,6 +9,7 @@ import Team from '../models/Team.js';
 import '../models/Notification.js';
 import Role from '../models/Role.js';
 import asyncHandler from '../middleware/asyncHandler.js';
+import { invalidateAuthCache } from '../middleware/authMiddleware.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { sendEmail, sendPasswordResetEmail } from '../utils/email.js';
 import notificationService from '../utils/notificationService.js';
@@ -368,7 +369,7 @@ export const login = asyncHandler(async (req, res, next) => {
   const user = await User.findOne({ email }).select('+password');
 
   if (!user) {
-    return next(new ErrorResponse('No account found with this email address. Please check your email or register for a new account.', 401));
+    return next(new ErrorResponse('Invalid credentials', 401));
   }
 
   // Check if user is active

@@ -2,7 +2,16 @@ import mongoose from 'mongoose';
 import crypto from 'crypto';
 
 // Encryption helpers for secure token storage
-const ENCRYPTION_KEY = process.env.SLACK_TOKEN_ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
+const getEncryptionKey = () => {
+  if (process.env.SLACK_TOKEN_ENCRYPTION_KEY) {
+    return process.env.SLACK_TOKEN_ENCRYPTION_KEY;
+  }
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('CRITICAL: SLACK_TOKEN_ENCRYPTION_KEY is required in production environment.');
+  }
+  return crypto.createHash('sha256').update(process.env.JWT_SECRET || 'flowtask-slack-encryption-dev-seed').digest('hex');
+};
+const ENCRYPTION_KEY = getEncryptionKey();
 const IV_LENGTH = 16;
 
 function encrypt(text) {

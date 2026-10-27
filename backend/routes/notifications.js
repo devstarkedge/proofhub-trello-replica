@@ -21,7 +21,7 @@ import { protect } from '../middleware/authMiddleware.js';
 const router = express.Router();
 
 // Public route for subscription - No protect middleware
-router.post('/subscribe', rateLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 5 }), subscribeToFeature);
+router.post('/subscribe', protect, rateLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 5 }), subscribeToFeature);
 
 // Get notifications with pagination & filters
 router.get('/', protect, getNotifications);

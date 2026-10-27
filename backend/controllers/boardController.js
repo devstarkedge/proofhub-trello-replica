@@ -1,4 +1,5 @@
 import Board from "../models/Board.js";
+import { canUserAccessBoard as canUserAccessBoardUnified } from "../utils/boardAccess.js";
 import { normalizeClientDetails, validateProjectClient } from '../../shared/projectClient.mjs';
 import List from "../models/List.js";
 import Card from "../models/Card.js";
@@ -406,6 +407,10 @@ export const getWorkflowData = asyncHandler(async (req, res, next) => {
  * 8. User is assigned to any card, subtask, or nano-subtask in this board
  */
 export async function canUserAccessBoard(board, user, accessFacts = null) {
+  return canUserAccessBoardUnified(board, user, accessFacts);
+}
+
+async function _legacyCanUserAccessBoard(board, user, accessFacts = null) {
   if (!board || !user) return false;
 
   // 1. Admin or capability VIEW_ALL_PROJECTS
@@ -1164,8 +1169,28 @@ export const deleteBoard = asyncHandler(async (req, res, next) => {
   // Delete all comments for cards in this project
   await Comment.deleteMany({ card: { $in: cardIds } });
 
-  // Delete all attachments for cards in this project
-  await Attachment.deleteMany({ card: { $in: cardIds } });
+  // Purge project cover image from Cloudinary
+  if (board.coverImage?.publicId && typeof deleteProjectCover === 'function') {
+    deleteProjectCover(board.coverImage.publicId).catch(err => console.error('Error purging board cover:', err));
+  }
+
+  // Find and purge all project and card attachments from Cloudinary
+  try {
+    if (typeof Attachment.find === 'function') {
+      const attachmentsToPurge = await Attachment.find({
+        $or: [{ card: { $in: cardIds } }, { board: board._id }]
+      }).select('cloudinaryPublicId').lean();
+      const publicIds = (attachmentsToPurge || []).map(a => a.cloudinaryPublicId).filter(Boolean);
+      if (publicIds.length > 0 && typeof deleteMultipleFromCloudinary === 'function') {
+        deleteMultipleFromCloudinary(publicIds).catch(err => console.error('Error purging board attachments:', err));
+      }
+    }
+  } catch (purgeErr) {
+    console.error('Error finding attachments for Cloudinary cleanup:', purgeErr);
+  }
+
+  // Delete all attachments (both card-level and project-level)
+  await Attachment.deleteMany({ $or: [{ card: { $in: cardIds } }, { board: board._id }] });
 
   // Delete all recurring tasks for cards in this project
   await RecurringTask.deleteMany({ card: { $in: cardIds } });

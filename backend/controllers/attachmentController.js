@@ -6,6 +6,7 @@ import SubtaskNano from '../models/SubtaskNano.js';
 import Activity from '../models/Activity.js';
 import Board from '../models/Board.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
+import { canUserAccessBoard } from '../utils/boardAccess.js';
 import { emitToBoard } from '../realtime/index.js';
 import { chatHooks } from '../utils/chatHooks.js';
 import { uploadToCloudinary, getFileTypeCategory, getCloudinaryResourceType, getThumbnailUrl, getOptimizedUrl } from '../utils/cloudinary.js';
@@ -639,6 +640,17 @@ export const deleteAttachment = asyncHandler(async (req, res) => {
 
   if (!attachment || attachment.isDeleted) {
     throw new ErrorResponse('Attachment not found', 404);
+  }
+
+  const hasBoardAccess = await canUserAccessBoard(attachment.board, req.user);
+  if (!hasBoardAccess) {
+    throw new ErrorResponse('Not authorized to access this project resource', 403);
+  }
+
+  const isUploader = String(attachment.uploadedBy) === String(req.user.id);
+  const isAdminOrManager = ['admin', 'manager'].includes(req.user.role);
+  if (!isUploader && !isAdminOrManager) {
+    throw new ErrorResponse('Not authorized to delete this attachment', 403);
   }
 
   const wasCover = attachment.isCover;

@@ -4,6 +4,7 @@ import { MessageSquare, Loader, ChevronRight, History, Edit3, Trash2, MoreHorizo
 import RichTextEditor from "../RichTextEditor";
 import AuthContext from "../../context/AuthContext";
 import versionService from "../../services/versionService";
+import sanitizeHtml from "../../utils/sanitizeHtml";
 
 import DeletePopup from "../ui/DeletePopup";
 import Avatar from "../Avatar";
@@ -175,7 +176,7 @@ const CommentItem = memo(({
           <div 
             ref={contentRef}
             className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none comment-content [&_img]:cursor-pointer [&_img]:hover:opacity-90 [&_img]:transition-opacity" 
-            dangerouslySetInnerHTML={{ __html: comment.htmlContent || comment.text }} 
+            dangerouslySetInnerHTML={{ __html: sanitizeHtml(comment.htmlContent || comment.text) }} 
           />
         </div>
       </div>

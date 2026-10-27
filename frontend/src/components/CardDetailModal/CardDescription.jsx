@@ -3,6 +3,7 @@ import { AlignLeft, ChevronRight, History, Loader2 } from "lucide-react";
 import RichTextEditor from "../RichTextEditor";
 import { motion, AnimatePresence } from "framer-motion";
 import versionService from "../../services/versionService";
+import sanitizeHtml from "../../utils/sanitizeHtml";
 
 // Lazy load modals for performance
 const VersionHistoryModal = lazy(() => import("../VersionHistoryModal"));
@@ -224,7 +225,7 @@ const CardDescription = memo(({
                   ref={collapsedContentRef}
                   className="prose prose-sm max-w-none text-gray-800 line-clamp-2 overflow-hidden description-collapsed [&_img]:cursor-pointer [&_img]:hover:opacity-90"
                 >
-                  <div dangerouslySetInnerHTML={{ __html: description }} />
+                  <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(description) }} />
                 </div>
               ) : (
                 <p className="text-gray-500">Add a more detailed description...</p>

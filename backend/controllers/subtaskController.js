@@ -23,6 +23,7 @@ import notificationService from '../utils/notificationService.js';
 import { emitTimeEntryDiffs, emitTimeEntryWebhook } from '../utils/chatTimeTracking.js';
 import { processTimeEntriesWithOwnership } from '../utils/timeEntryUtils.js';
 import { emitFinanceDataRefresh } from '../realtime/index.js';
+import { canUserAccessBoard } from '../utils/boardAccess.js';
 
 const basePopulate = [
   { path: 'assignees', select: 'name email avatar department', populate: { path: 'department', select: 'name' } },
@@ -499,6 +500,11 @@ export const deleteSubtask = asyncHandler(async (req, res, next) => {
   const subtask = await Subtask.findById(req.params.id);
   if (!subtask) {
     return next(new ErrorResponse('Subtask not found', 404));
+  }
+
+  const hasAccess = await canUserAccessBoard(subtask.board, req.user);
+  if (!hasAccess) {
+    return next(new ErrorResponse('Not authorized to access this project resource', 403));
   }
 
   // Clean up related nanos

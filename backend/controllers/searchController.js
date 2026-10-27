@@ -5,6 +5,7 @@ import Board from "../models/Board.js";
 import User from "../models/User.js";
 import "../models/Department.js";
 import asyncHandler from "../middleware/asyncHandler.js";
+import { ErrorResponse } from "../middleware/errorHandler.js";
 
 // @desc    Global search
 // @route   GET /api/search
@@ -25,15 +26,36 @@ export const globalSearch = asyncHandler(async (req, res, next) => {
   const memberIds = await WorkspaceMembership.distinct('user', membershipFilter);
   let results = {};
 
-  // Search cards
+  // Resolve boards accessible to current user
+  const boardAccessFilter = req.user.role === 'admin'
+    ? {}
+    : {
+        $or: [
+          { owner: req.user.id },
+          { members: req.user.id },
+          { visibility: "public" },
+          ...(req.user.allowedProjects?.length ? [{ _id: { $in: req.user.allowedProjects } }] : [])
+        ]
+      };
+
+  const accessibleBoards = await Board.find(boardAccessFilter).select('_id').lean();
+  const accessibleBoardIds = accessibleBoards.map(b => b._id);
+
+  // Search cards (filtered to accessible boards only)
   if (!type || type === "cards") {
-    const cards = await Card.find({
-      $or: [
-        { title: searchRegex },
-        { description: searchRegex },
-        { labels: searchRegex },
-      ],
-    })
+    const cardQuery = {
+      $and: [
+        {
+          $or: [
+            { title: searchRegex },
+            { description: searchRegex },
+          ]
+        },
+        req.user.role === 'admin' ? {} : { board: { $in: accessibleBoardIds } }
+      ]
+    };
+
+    const cards = await Card.find(cardQuery)
       .populate("assignees", "name email avatar")
       .populate("list", "title")
       .populate("board", "name")
@@ -42,16 +64,16 @@ export const globalSearch = asyncHandler(async (req, res, next) => {
     results.cards = cards;
   }
 
-  // Search boards
+  // Search boards (fixing duplicate $or key bug using $and)
   if (!type || type === "boards") {
-    const boards = await Board.find({
-      $or: [{ name: searchRegex }, { description: searchRegex }],
-      $or: [
-        { owner: req.user.id },
-        { members: req.user.id },
-        { visibility: "public" },
-      ],
-    })
+    const boardQuery = {
+      $and: [
+        { $or: [{ name: searchRegex }, { description: searchRegex }] },
+        boardAccessFilter
+      ]
+    };
+
+    const boards = await Board.find(boardQuery)
       .populate("owner", "name email avatar")
       .limit(20);
 
@@ -104,8 +126,29 @@ export const searchCards = asyncHandler(async (req, res, next) => {
     query.$or = [{ title: searchRegex }, { description: searchRegex }];
   }
 
-  // Filters
-  if (board) query.board = board;
+  // Access control: Ensure user can only search in accessible boards
+  const accessibleBoards = await Board.find(
+    req.user.role === 'admin'
+      ? {}
+      : {
+          $or: [
+            { owner: req.user.id },
+            { members: req.user.id },
+            { visibility: "public" },
+            ...(req.user.allowedProjects?.length ? [{ _id: { $in: req.user.allowedProjects } }] : [])
+          ]
+        }
+  ).select('_id').lean();
+  const accessibleBoardIds = accessibleBoards.map(b => b._id.toString());
+
+  if (board) {
+    if (req.user.role !== 'admin' && !accessibleBoardIds.includes(board.toString())) {
+      return next(new ErrorResponse("Not authorized to search in this project", 403));
+    }
+    query.board = board;
+  } else if (req.user.role !== 'admin') {
+    query.board = { $in: accessibleBoardIds };
+  }
   if (assignee) query.assignees = { $in: [assignee] };
   if (priority) query.priority = priority;
   if (status) query.status = status;

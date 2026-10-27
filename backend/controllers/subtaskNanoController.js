@@ -13,6 +13,7 @@ import { emitTimeEntryDiffs, emitTimeEntryWebhook } from '../utils/chatTimeTrack
 import { processTimeEntriesWithOwnership } from '../utils/timeEntryUtils.js';
 import { emitFinanceDataRefresh } from '../realtime/index.js';
 import { chatHooks } from '../utils/chatHooks.js';
+import { canUserAccessBoard } from '../utils/boardAccess.js';
 
 const populateConfig = [
   { path: 'assignees', select: 'name email avatar department', populate: { path: 'department', select: 'name' } },
@@ -465,6 +466,11 @@ export const deleteNano = asyncHandler(async (req, res, next) => {
   const nano = await SubtaskNano.findById(req.params.id);
   if (!nano) {
     return next(new ErrorResponse('Subtask-Nano not found', 404));
+  }
+
+  const hasAccess = await canUserAccessBoard(nano.board, req.user);
+  if (!hasAccess) {
+    return next(new ErrorResponse('Not authorized to access this project resource', 403));
   }
 
   const nanoTitle = nano.title;

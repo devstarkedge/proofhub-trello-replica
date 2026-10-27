@@ -1,67 +1,62 @@
-// Simple client-side sanitizer that strips scripts/styles and disables interactive elements
-export default function sanitizeHtml(dirtyHtml) {
-  if (!dirtyHtml) return '';
+import DOMPurify from 'dompurify';
 
-  // Create a container to parse the HTML
-  const container = document.createElement('div');
-  container.innerHTML = dirtyHtml;
+/**
+ * Universal HTML Sanitizer using DOMPurify
+ * Defends against XSS (Stored & Reflected) while preserving rich text formatting,
+ * TipTap editor output, mentions, and safe embedded images.
+ */
 
-  // Remove dangerous elements
-  const removeSelectors = ['script', 'style', 'link', 'iframe', 'object', 'embed'];
-  removeSelectors.forEach(sel => {
-    const nodes = container.querySelectorAll(sel);
-    nodes.forEach(n => n.remove());
-  });
-
-  // Walk all elements and sanitize attributes
-  const walker = document.createTreeWalker(container, NodeFilter.SHOW_ELEMENT, null, false);
-  const toProcess = [];
-  while (walker.nextNode()) toProcess.push(walker.currentNode);
-
-  toProcess.forEach(el => {
-    // Remove inline event handlers
-    [...el.attributes].forEach(attr => {
-      if (/^on/i.test(attr.name)) el.removeAttribute(attr.name);
-    });
-
-    // Remove inline styles to avoid layout breakage
-    if (el.hasAttribute('style')) el.removeAttribute('style');
-
-    // Disable interactive elements so preview is read-only
-    const tag = el.tagName.toLowerCase();
-    if (tag === 'input' || tag === 'button' || tag === 'textarea' || tag === 'select' || tag === 'option') {
-      try {
-        el.setAttribute('disabled', 'true');
-        el.setAttribute('aria-disabled', 'true');
-        // For inputs/textarea preserve value by making them read-only if possible
-        if (tag === 'input' || tag === 'textarea') el.setAttribute('readonly', 'true');
-      } catch (e) {
-        // ignore
+// Configure DOMPurify hooks once
+if (typeof window !== 'undefined' && DOMPurify.isSupported) {
+  // Ensure external links always open in a new tab with security attributes
+  DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+    if (node.tagName === 'A') {
+      const href = node.getAttribute('href');
+      if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
+        node.setAttribute('target', '_blank');
+        node.setAttribute('rel', 'noopener noreferrer');
       }
     }
-
-    // For anchors, remove href to prevent navigation
-    if (tag === 'a') {
-      el.removeAttribute('href');
-      el.removeAttribute('target');
-      el.setAttribute('role', 'text');
-    }
-
-    // Ensure images are constrained
-    if (tag === 'img') {
-      el.style.maxWidth = '100%';
-      el.style.height = 'auto';
-      el.setAttribute('loading', 'lazy');
+    // Constrain inline images
+    if (node.tagName === 'IMG') {
+      node.style.maxWidth = '100%';
+      node.style.height = 'auto';
+      if (!node.getAttribute('loading')) {
+        node.setAttribute('loading', 'lazy');
+      }
     }
   });
+}
 
-  // Wrap sanitized content in a predictable container with reset styles
-  const wrapper = document.createElement('div');
-  wrapper.className = 'version-preview sanitized-content';
-  wrapper.style.wordBreak = 'break-word';
-  wrapper.style.maxWidth = '100%';
-  wrapper.style.boxSizing = 'border-box';
-  wrapper.innerHTML = container.innerHTML;
+export default function sanitizeHtml(dirtyHtml, options = {}) {
+  if (!dirtyHtml || typeof dirtyHtml !== 'string') return '';
 
-  return wrapper.innerHTML;
+  if (typeof window === 'undefined' || !DOMPurify.isSupported) {
+    // Basic fallback for non-DOM environments
+    return dirtyHtml
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+      .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+      .replace(/\s+on\w+\s*=\s*(?:'[^']*'|"[^"]*"|[^\s>]+)/gi, '');
+  }
+
+  const defaultOptions = {
+    ALLOWED_TAGS: [
+      'p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'strike',
+      'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+      'ul', 'ol', 'li',
+      'blockquote', 'code', 'pre',
+      'a', 'img', 'span', 'div',
+      'table', 'thead', 'tbody', 'tr', 'th', 'td',
+      'hr'
+    ],
+    ALLOWED_ATTR: [
+      'href', 'target', 'rel', 'src', 'alt', 'title', 'class', 'style',
+      'width', 'height', 'data-type', 'data-id', 'data-label', 'data-username'
+    ],
+    ALLOWED_URI_REGEXP: /^(?:(?:(?:f|ht)tps?|mailto|tel):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+    ...options
+  };
+
+  return DOMPurify.sanitize(dirtyHtml, defaultOptions);
 }

@@ -15,6 +15,7 @@ import notificationService from '../utils/notificationService.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { slackHooks } from '../utils/slackHooks.js';
 import { chatHooks } from '../utils/chatHooks.js';
+import { sanitizeHtml } from '../utils/sanitizeHtml.js';
 
 // Helper to get context details from card, subtask, or nano
 const getContextDetails = async ({ cardId, subtaskId, nanoId }) => {
@@ -113,7 +114,7 @@ export const createComment = asyncHandler(async (req, res) => {
 
   const comment = new Comment({
     text: plain || (req.body.text || ''),
-    htmlContent: htmlContent || req.body.text || '',
+    htmlContent: sanitizeHtml(htmlContent || req.body.text || ''),
     user: req.user.id,
     card: cardId,
     subtask: subtaskId,
@@ -613,7 +614,7 @@ export const updateComment = asyncHandler(async (req, res) => {
   });
 
   if (htmlContent) {
-    comment.htmlContent = htmlContent;
+    comment.htmlContent = sanitizeHtml(htmlContent);
     comment.text = (htmlContent || '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
   } else if (text) {
     comment.text = text;

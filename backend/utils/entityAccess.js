@@ -1,4 +1,5 @@
 import { getActiveWorkspaceId } from '../modules/workspaces/workspaceContext.js';
+import { canUserAccessBoard } from './boardAccess.js';
 /**
  * Small, focused entity-access check for notification fan-out (currently
  * used by @mention resolution — notificationService.js#processMentions —
@@ -41,26 +42,8 @@ async function userCanAccessBoard({ userId, boardId }) {
     .lean();
   if (!membership) return false;
 
-  let hasAccess =
-    board.owner?.toString() === userId.toString() ||
-    board.members?.some((m) => m?.toString() === userId.toString()) ||
-    board.visibility === 'public' ||
-    membership.role === 'admin';
+  return canUserAccessBoard(board, { _id: userId, id: userId, role: membership.role, allowedProjects: membership.allowedProjects || [] });
 
-  const isEmployee = userHasCapability({ role: membership.role }, CAPABILITIES.FORCE_ASSIGNMENT_SCOPE);
-  const accessType = isEmployee ? 'assigned_tasks' : (membership.accessType || 'full_department');
-
-  if (!hasAccess && accessType === 'assigned_tasks') {
-    const assignedBoardIds = await getAssignmentBasedBoardIds(userId);
-    hasAccess = assignedBoardIds.some((id) => id.toString() === boardId.toString());
-  }
-
-  if (hasAccess && membership.role !== 'admin' && accessType === 'selected_projects') {
-    const allowed = (membership.allowedProjects || []).map((p) => p.toString());
-    hasAccess = allowed.includes(boardId.toString());
-  }
-
-  return hasAccess;
 }
 
 /**

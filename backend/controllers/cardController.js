@@ -24,6 +24,8 @@ import { emitTimeEntryDiffs, emitTimeEntryWebhook } from "../utils/chatTimeTrack
 import { processTimeEntriesWithOwnership } from "../utils/timeEntryUtils.js";
 import { timeEntryUserPopulate } from "../utils/timeEntryPopulate.js";
 import { emitFinanceDataRefresh } from "../realtime/index.js";
+import { sanitizeHtml } from "../utils/sanitizeHtml.js";
+import { canUserAccessBoard } from "../utils/boardAccess.js";
 
 // In-memory store for undo tokens (move operations) — entries auto-expire after 10 seconds
 const undoTokenStore = new Map();
@@ -146,27 +148,10 @@ export const getCards = asyncHandler(async (req, res, next) => {
     {
       $lookup: {
         from: 'labels',
-        let: { labelIds: { $ifNull: ['$labels', []] } },
-        pipeline: [
-          {
-            $match: {
-              $expr: {
-                $in: [
-                  { $toString: '$_id' },
-                  {
-                    $map: {
-                      input: '$$labelIds',
-                      as: 'lid',
-                      in: { $toString: '$$lid' }
-                    }
-                  }
-                ]
-              }
-            }
-          },
-          { $project: { name: 1, color: 1 } }
-        ],
-        as: 'labels'
+        localField: 'labels',
+        foreignField: '_id',
+        as: 'labels',
+        pipeline: [{ $project: { name: 1, color: 1 } }]
       }
     },
     // Lookup createdBy
@@ -294,27 +279,10 @@ export const getCardsByBoard = asyncHandler(async (req, res, next) => {
     {
       $lookup: {
         from: 'labels',
-        let: { labelIds: { $ifNull: ['$labels', []] } },
-        pipeline: [
-          {
-            $match: {
-              $expr: {
-                $in: [
-                  { $toString: '$_id' },
-                  {
-                    $map: {
-                      input: '$$labelIds',
-                      as: 'lid',
-                      in: { $toString: '$$lid' }
-                    }
-                  }
-                ]
-              }
-            }
-          },
-          { $project: { name: 1, color: 1 } }
-        ],
-        as: 'labels'
+        localField: 'labels',
+        foreignField: '_id',
+        as: 'labels',
+        pipeline: [{ $project: { name: 1, color: 1 } }]
       }
     },
     // Lookup createdBy
@@ -672,27 +640,10 @@ export const getCard = asyncHandler(async (req, res, next) => {
     {
       $lookup: {
         from: 'labels',
-        let: { labelIds: { $ifNull: ['$labels', []] } },
-        pipeline: [
-          {
-            $match: {
-              $expr: {
-                $in: [
-                  { $toString: '$_id' },
-                  {
-                    $map: {
-                      input: '$$labelIds',
-                      as: 'lid',
-                      in: { $toString: '$$lid' }
-                    }
-                  }
-                ]
-              }
-            }
-          },
-          { $project: { name: 1, color: 1 } }
-        ],
-        as: 'labels'
+        localField: 'labels',
+        foreignField: '_id',
+        as: 'labels',
+        pipeline: [{ $project: { name: 1, color: 1 } }]
       }
     },
     // Lookup recurring tasks in same pipeline
@@ -821,14 +772,18 @@ export const getCard = asyncHandler(async (req, res, next) => {
   ];
 
   const results = await Card.aggregate(pipeline);
-  
   if (!results || results.length === 0) {
     return next(new ErrorResponse("Card not found", 404));
   }
-
-  res.status(200).json({
+  const cardData = results[0];
+  const boardId = cardData.board?._id || cardData.board;
+  const hasAccess = await canUserAccessBoard(boardId, req.user);
+  if (!hasAccess) {
+    return next(new ErrorResponse("Not authorized to access this card", 403));
+  }
+  return res.status(200).json({
     success: true,
-    data: results[0],
+    data: cardData,
   });
 });
 
@@ -836,6 +791,7 @@ export const getCard = asyncHandler(async (req, res, next) => {
 // @route   POST /api/cards
 // @access  Private
 export const createCard = asyncHandler(async (req, res, next) => {
+  if (req.body.description) req.body.description = sanitizeHtml(req.body.description);
   const {
     title,
     description,
@@ -973,10 +929,16 @@ export const createCard = asyncHandler(async (req, res, next) => {
 export const updateCard = asyncHandler(async (req, res, next) => {
   const { strictUpdate, TASK_UPDATE_FIELDS } = await import('../utils/strictUpdate.js');
   req.body = strictUpdate(req.body, TASK_UPDATE_FIELDS);
+  if (req.body.description !== undefined) req.body.description = sanitizeHtml(req.body.description);
   let card = await Card.findById(req.params.id);
 
   if (!card) {
     return next(new ErrorResponse("Card not found", 404));
+  }
+
+  const hasAccess = await canUserAccessBoard(card.board, req.user);
+  if (!hasAccess) {
+    return next(new ErrorResponse("Not authorized to update this card", 403));
   }
 
   const originalBoardId = card.board;
@@ -1569,10 +1531,22 @@ export const moveCard = asyncHandler(async (req, res, next) => {
   const sourceListTitle = card.list.title;
   const oldPosition = card.position;
   
+  // Authorization check
+  const hasAccess = await canUserAccessBoard(card.board, req.user);
+  if (!hasAccess) {
+    return next(new ErrorResponse("Not authorized to move this card", 403));
+  }
+
   // Get the destination list to update status
   const destinationList = await List.findById(destinationListId);
   if (!destinationList) {
     return next(new ErrorResponse("Destination list not found", 404));
+  }
+
+  // Prevent cross-project hierarchy corruption
+  const currentBoardId = (card.board._id || card.board).toString();
+  if (destinationList.board.toString() !== currentBoardId) {
+    return next(new ErrorResponse("Destination list belongs to another project. Please use the cross-project move endpoint.", 400));
   }
 
   // Store old status for notifications
@@ -1725,6 +1699,10 @@ export const deleteCard = asyncHandler(async (req, res, next) => {
   }
 
   const boardId = card.board;
+  const hasAccess = await canUserAccessBoard(boardId, req.user);
+  if (!hasAccess) {
+    return next(new ErrorResponse("Not authorized to delete this card", 403));
+  }
 
   // Send notifications before deletion
   await notificationService.notifyTaskDeleted(card, req.user.id);
@@ -1752,6 +1730,12 @@ export const deleteCard = asyncHandler(async (req, res, next) => {
     }
   });
 
+  await Promise.all([
+    Subtask.deleteMany({ card: card._id }),
+    SubtaskNano.deleteMany({ task: card._id }),
+    Comment.deleteMany({ card: card._id }),
+    Attachment.deleteMany({ card: card._id })
+  ]);
   await Card.findByIdAndDelete(card._id);
 
   cancelDueDateJobs(card._id).catch(console.error);
@@ -1970,27 +1954,10 @@ export const getArchivedCards = asyncHandler(async (req, res, next) => {
     {
       $lookup: {
         from: 'labels',
-        let: { labelIds: { $ifNull: ['$labels', []] } },
-        pipeline: [
-          {
-            $match: {
-              $expr: {
-                $in: [
-                  { $toString: '$_id' },
-                  {
-                    $map: {
-                      input: '$$labelIds',
-                      as: 'lid',
-                      in: { $toString: '$$lid' }
-                    }
-                  }
-                ]
-              }
-            }
-          },
-          { $project: { name: 1, color: 1 } }
-        ],
-        as: 'labels'
+        localField: 'labels',
+        foreignField: '_id',
+        as: 'labels',
+        pipeline: [{ $project: { name: 1, color: 1 } }]
       }
     },
     // Lookup coverImage from attachments

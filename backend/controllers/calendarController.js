@@ -1,3 +1,4 @@
+import { DateTime } from 'luxon';
 import Card from "../models/Card.js";
 import List from "../models/List.js";
 import Board from "../models/Board.js";
@@ -22,16 +23,52 @@ export const getCalendarTasks = asyncHandler(async (req, res) => {
     });
   }
 
-  const startDate = new Date(start);
-  const endDate = new Date(end);
-  
-  // Set end date to end of day
-  endDate.setHours(23, 59, 59, 999);
+  // Parse dates with timezone awareness to prevent date boundary skewing
+  const tz = req.headers['x-timezone'] || 'UTC';
+  const parsedStart = DateTime.fromISO(start, { zone: tz });
+  const parsedEnd = DateTime.fromISO(end, { zone: tz });
+  const startDate = parsedStart.isValid ? parsedStart.startOf('day').toJSDate() : new Date(start);
+  const endDate = parsedEnd.isValid ? parsedEnd.endOf('day').toJSDate() : (() => {
+    const d = new Date(end);
+    d.setHours(23, 59, 59, 999);
+    return d;
+  })();
 
-  // Build department filter based on user access
+  // Resolve boards accessible to current user
+  const accessibleBoards = await Board.find(
+    user.role === 'admin'
+      ? {}
+      : {
+          $or: [
+            { owner: user._id },
+            { members: user._id },
+            { visibility: 'public' },
+            ...(user.allowedProjects?.length ? [{ _id: { $in: user.allowedProjects } }] : [])
+          ]
+        }
+  ).select('_id').lean();
+  const accessibleBoardIds = accessibleBoards.map(b => b._id);
+
+  // Build department filter based on verified user access
   let departmentMatch = {};
   if (departmentId && departmentId !== 'all') {
-    departmentMatch = { 'boardInfo.department': new mongoose.Types.ObjectId(departmentId) };
+    if (user.role !== 'admin') {
+      const hasDeptAccess = await Department.exists({
+        _id: departmentId,
+        $or: [{ managers: user._id }, { members: user._id }],
+        isActive: true
+      });
+      if (!hasDeptAccess) {
+        return res.status(403).json({
+          success: false,
+          message: "Not authorized to access calendar for this department"
+        });
+      }
+    }
+    departmentMatch = {
+      'boardInfo.department': new mongoose.Types.ObjectId(departmentId),
+      ...(user.role === 'admin' ? {} : { 'boardInfo._id': { $in: accessibleBoardIds } })
+    };
   } else {
     // Get departments user has access to
     const userDepartments = await Department.find({
@@ -42,7 +79,10 @@ export const getCalendarTasks = asyncHandler(async (req, res) => {
       isActive: true
     }).select('_id');
     const departmentIds = userDepartments.map(d => d._id);
-    departmentMatch = { 'boardInfo.department': { $in: departmentIds } };
+    departmentMatch = {
+      'boardInfo.department': { $in: departmentIds },
+      ...(user.role === 'admin' ? {} : { 'boardInfo._id': { $in: accessibleBoardIds } })
+    };
   }
 
   // Aggregation pipeline for calendar tasks
