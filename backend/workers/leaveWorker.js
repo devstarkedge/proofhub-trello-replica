@@ -40,6 +40,7 @@ async function loadPendingApprovalContext(approvalId, workspaceId) {
 const JOB_HANDLERS = {
   async 'leave-event-delivery'() {
     await processAllLeaveEvents();
+    return { delivered: true };
   },
   async 'leave-monthly-accrual'(_job) {
     const results = await runMonthlyAccrualForAllWorkspaces();
@@ -105,7 +106,13 @@ export function startLeaveWorker() {
   );
 
   leaveWorker.on('completed', (job, result) => {
-    if (config.isDev) console.log(`[Worker:Leave] ${job.name}:${job.id} completed:`, result);
+    if (config.isDev) {
+      if (result !== undefined) {
+        console.log(`[Worker:Leave] ${job.name}:${job.id} completed:`, result);
+      } else {
+        console.log(`[Worker:Leave] ${job.name}:${job.id} completed`);
+      }
+    }
   });
   leaveWorker.on('failed', (job, err) => {
     console.error(`[Worker:Leave] ${job?.name}:${job?.id} failed:`, err.message);

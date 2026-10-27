@@ -177,7 +177,6 @@ function AgentStatus({ user }) {
   const agent = summarizeDesktopDevices(user.devices, user.session?._id);
   const isConnected = agent.connected;
   const isOffline = !agent.connected && user.devices?.length > 0;
-  const screenshotIssue = user.devices?.find(d => d.screenshotIssue)?.screenshotIssue;
 
   return (
     <div className="space-y-1 min-w-[130px] max-w-[220px]">
@@ -203,12 +202,6 @@ function AgentStatus({ user }) {
       {user.trackingStatus === 'RUNNING' && agent.needsAttention && (
         <p className="text-[11px] font-medium text-rose-600 dark:text-rose-400 flex items-center gap-1">
           <AlertCircle size={11} /> Attention Required
-        </p>
-      )}
-
-      {screenshotIssue && (
-        <p className="text-[11px] text-amber-600 dark:text-amber-400 leading-tight">
-          {screenshotIssue}
         </p>
       )}
 

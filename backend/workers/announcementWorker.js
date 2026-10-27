@@ -11,9 +11,12 @@ import { emitAnnouncementEvent } from '../services/announcementEvents.js';
  *   broadcast-announcement  — broadcast a single scheduled announcement
  *   archive-announcement    — archive a single expired announcement
  */
+import mongoose from 'mongoose';
 import { Worker } from '../queues/runtime.js';
 import { getWorkerConnection } from '../queues/connection.js';
 import Announcement from '../models/Announcement.js';
+import Workspace from '../models/Workspace.js';
+import WorkspaceMembership from '../models/WorkspaceMembership.js';
 import '../models/User.js';
 import '../models/Notification.js';
 import { getIO } from '../realtime/index.js';
@@ -22,6 +25,54 @@ import '../schedulers/announcementScheduler.js';
 import '../config/index.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 import { persistAnnouncementBroadcastState } from '../services/announcementBroadcastState.js';
+import { getDefaultWorkspaceId } from '../modules/permissions/workspaceService.js';
+
+async function resolveEffectiveWorkspaceId(announcement, fallbackWorkspaceId) {
+  if (announcement.workspaceId) {
+    return announcement.workspaceId.toString?.() || announcement.workspaceId;
+  }
+  if (fallbackWorkspaceId) {
+    return fallbackWorkspaceId.toString?.() || fallbackWorkspaceId;
+  }
+
+  // Attempt resolution from creator's active membership
+  if (announcement.createdBy) {
+    try {
+      const creatorId = announcement.createdBy._id || announcement.createdBy;
+      const membership = await WorkspaceMembership.findOne({ user: creatorId })
+        .sort({ createdAt: 1 })
+        .select('workspace')
+        .lean();
+      if (membership?.workspace) {
+        return membership.workspace.toString();
+      }
+    } catch {
+      // ignore and continue
+    }
+  }
+
+  // Attempt resolution from default workspace
+  try {
+    const defaultWorkspaceId = await getDefaultWorkspaceId();
+    if (defaultWorkspaceId) {
+      return defaultWorkspaceId.toString();
+    }
+  } catch {
+    // ignore and continue
+  }
+
+  // Fallback to any workspace in database
+  try {
+    const anyWorkspace = await Workspace.findOne().select('_id').lean();
+    if (anyWorkspace?._id) {
+      return anyWorkspace._id.toString();
+    }
+  } catch {
+    // ignore
+  }
+
+  return null;
+}
 
 const JOB_HANDLERS = {
   /**
@@ -29,7 +80,7 @@ const JOB_HANDLERS = {
    * Idempotent: skips if already broadcasted.
    */
   async 'broadcast-announcement'(job) {
-    const { announcementId } = job.data;
+    const { announcementId, workspaceId: jobWorkspaceId } = job.data;
 
     // No workspaceId travels on this job (enqueued by announcementScheduler.js,
     // which only knows the announcementId) — look it up unscoped first.
@@ -47,7 +98,24 @@ const JOB_HANDLERS = {
       return { skipped: true, reason: 'already broadcasted' };
     }
 
-    return workspaceContext.run({ workspaceId: announcement.workspaceId }, () => broadcastAnnouncement(announcement, announcementId));
+    const effectiveWorkspaceId = await resolveEffectiveWorkspaceId(announcement, jobWorkspaceId);
+    if (!effectiveWorkspaceId) {
+      console.warn(`[Worker:Announcement] broadcast:${announcementId} skipped: no workspace found`);
+      return { skipped: true, reason: 'no workspace found' };
+    }
+
+    if (!announcement.workspaceId) {
+      const wsObjectId = effectiveWorkspaceId instanceof mongoose.Types.ObjectId
+        ? effectiveWorkspaceId
+        : new mongoose.Types.ObjectId(effectiveWorkspaceId);
+      await Announcement.collection.updateOne(
+        { _id: announcement._id },
+        { $set: { workspaceId: wsObjectId } }
+      );
+      announcement.workspaceId = wsObjectId;
+    }
+
+    return workspaceContext.run({ workspaceId: effectiveWorkspaceId }, () => broadcastAnnouncement(announcement, announcementId));
   },
 
   /**
@@ -55,7 +123,7 @@ const JOB_HANDLERS = {
    * Idempotent: skips if already archived.
    */
   async 'archive-announcement'(job) {
-    const { announcementId } = job.data;
+    const { announcementId, workspaceId: jobWorkspaceId } = job.data;
 
     const announcement = await workspaceContext.runUnscoped(async () => await Announcement.findById(announcementId));
 
@@ -68,26 +136,52 @@ const JOB_HANDLERS = {
       return { skipped: true, reason: 'already archived' };
     }
 
-    return workspaceContext.run({ workspaceId: announcement.workspaceId }, async () => {
-      announcement.isArchived = true;
-      announcement.archivedAt = new Date();
+    const effectiveWorkspaceId = await resolveEffectiveWorkspaceId(announcement, jobWorkspaceId);
 
-      if (announcement.isPinned) {
-        announcement.isPinned = false;
-        announcement.pinPosition = undefined;
+    const updateFields = {
+      isArchived: true,
+      archivedAt: new Date(),
+      isPinned: false,
+      pinPosition: null,
+      updatedAt: new Date(),
+    };
+
+    if (effectiveWorkspaceId && !announcement.workspaceId) {
+      const wsObjectId = effectiveWorkspaceId instanceof mongoose.Types.ObjectId
+        ? effectiveWorkspaceId
+        : new mongoose.Types.ObjectId(effectiveWorkspaceId);
+      updateFields.workspaceId = wsObjectId;
+      announcement.workspaceId = wsObjectId;
+    }
+
+    announcement.isArchived = true;
+    announcement.archivedAt = updateFields.archivedAt;
+    announcement.isPinned = false;
+    announcement.pinPosition = undefined;
+
+    // Direct collection update ensures legacy documents missing required fields
+    // or triggering schema validation do not fail validation or loop in BullMQ retries
+    await Announcement.collection.updateOne(
+      { _id: announcement._id },
+      { $set: updateFields }
+    );
+
+    if (effectiveWorkspaceId) {
+      try {
+        await workspaceContext.run({ workspaceId: effectiveWorkspaceId }, async () => {
+          await emitAnnouncementEvent(announcement, 'announcement-archived', {
+            announcementId: announcement._id,
+            isArchived: true,
+            reason: 'expired',
+          });
+        });
+      } catch (emitErr) {
+        console.warn(`[Worker:Announcement] Failed to emit archived event for ${announcementId}:`, emitErr.message);
       }
+    }
 
-      await announcement.save();
-
-      await emitAnnouncementEvent(announcement, 'announcement-archived', {
-        announcementId: announcement._id,
-        isArchived: true,
-        reason: 'expired',
-      });
-
-      console.log(`[Worker:Announcement] archive:${announcementId} completed`);
-      return { archived: true };
-    });
+    console.log(`[Worker:Announcement] archive:${announcementId} completed`);
+    return { archived: true };
   },
 };
 

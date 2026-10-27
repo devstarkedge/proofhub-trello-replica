@@ -59,7 +59,10 @@ export async function scheduleAnnouncementBroadcast(announcement) {
 
   await announcementQueue.add(
     'broadcast-announcement',
-    { announcementId: id },
+    {
+      announcementId: id,
+      workspaceId: announcement.workspaceId?.toString?.() || announcement.workspaceId,
+    },
     {
       jobId: broadcastJobId(id),
       delay,
@@ -88,7 +91,10 @@ export async function scheduleAnnouncementArchive(announcement) {
 
   await announcementQueue.add(
     'archive-announcement',
-    { announcementId: id },
+    {
+      announcementId: id,
+      workspaceId: announcement.workspaceId?.toString?.() || announcement.workspaceId,
+    },
     {
       jobId: archiveJobId(id),
       delay,
@@ -163,23 +169,23 @@ export async function recoverAnnouncementSchedules() {
           isScheduled: true,
           scheduleBroadcasted: false,
           scheduledFor: { $gt: now },
-        }).select('_id scheduledFor expiresAt').lean(),
+        }).select('_id scheduledFor expiresAt workspaceId').lean(),
         // 2. Overdue scheduled announcements (scheduledFor already passed, not yet broadcast)
         Announcement.find({
           isScheduled: true,
           scheduleBroadcasted: false,
           scheduledFor: { $lte: now },
-        }).select('_id scheduledFor expiresAt').lean(),
+        }).select('_id scheduledFor expiresAt workspaceId').lean(),
         // 3. Non-archived announcements with future expiry
         Announcement.find({
           isArchived: false,
           expiresAt: { $gt: now },
-        }).select('_id expiresAt').lean(),
+        }).select('_id expiresAt workspaceId').lean(),
         // 4. Expired but not yet archived announcements
         Announcement.find({
           isArchived: false,
           expiresAt: { $lte: now },
-        }).select('_id expiresAt').lean(),
+        }).select('_id expiresAt workspaceId').lean(),
       ]);
     });
 
@@ -192,7 +198,10 @@ export async function recoverAnnouncementSchedules() {
     // Schedule with delay=0 so they fire immediately
     await announcementQueue.add(
       'broadcast-announcement',
-      { announcementId: ann._id.toString() },
+      {
+        announcementId: ann._id.toString(),
+        workspaceId: ann.workspaceId?.toString?.() || ann.workspaceId,
+      },
       {
         jobId: broadcastJobId(ann._id.toString()),
         delay: 0,
@@ -211,7 +220,10 @@ export async function recoverAnnouncementSchedules() {
   for (const ann of overdueArchives) {
     await announcementQueue.add(
       'archive-announcement',
-      { announcementId: ann._id.toString() },
+      {
+        announcementId: ann._id.toString(),
+        workspaceId: ann.workspaceId?.toString?.() || ann.workspaceId,
+      },
       {
         jobId: archiveJobId(ann._id.toString()),
         delay: 0,

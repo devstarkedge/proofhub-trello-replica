@@ -309,7 +309,7 @@ export async function completeScreenshot({ workspaceId, userId, deviceId, screen
 async function finalizeScreenshotRecovery(screenshot){
   if(screenshot.recoveredFrom==='SIZE_QUALITY_CONFLICT')await ActivityInterval.updateOne({_id:screenshot.interval,workspaceId:screenshot.workspaceId,user:screenshot.user},{$set:{screenshotAvailable:true}});
   const unresolved=await TrackingScreenshot.exists({workspaceId:screenshot.workspaceId,device:screenshot.device,status:'FAILED',compressionException:'SIZE_QUALITY_CONFLICT',$or:[{expiresAt:null},{expiresAt:{$gt:new Date()}}]});
-  await TrackingDevice.updateOne({_id:screenshot.device},unresolved?{$set:{screenshotIssue:'Earlier captures await recovery from retained desktop originals. Originals already discarded cannot be restored.'}}:{$unset:{screenshotIssue:1,screenshotIssueAt:1}});
+  await TrackingDevice.updateOne({_id:screenshot.device},{$unset:{screenshotIssue:1,screenshotIssueAt:1}});
 }
 export async function retryScreenshot({workspaceId,userId,deviceId,screenshotId}){
   await contextFor(workspaceId,userId,{includeProjects:false});await ownedDevice(workspaceId,userId,deviceId);
