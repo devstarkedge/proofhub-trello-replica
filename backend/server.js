@@ -153,12 +153,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
-  setHeaders(res) {
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
-  }
-}));
+// All file uploads stream directly to Cloudinary (zero local disk storage)
 
 // ─── Frontend Static Assets ───────────────────────────────────────────────────
 // Serve compiled frontend assets. Hashed filenames (/assets/*.js, /assets/*.css)
