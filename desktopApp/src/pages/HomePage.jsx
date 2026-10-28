@@ -19,6 +19,7 @@ import WorkspaceContext from '../context/WorkspaceContext';
 import { PROJECT_SORT_OPTIONS, orderDepartments, promoteDepartments, sortProjects } from '../../../shared/projectView.mjs';
 import useProjectStore from '../store/projectStore';
 import useProjectSelection from '../hooks/useProjectSelection';
+import useProjectAccess from '../hooks/useProjectAccess';
 import Avatar from '../components/Avatar';
 import { Suspense } from 'react';
 import AddProjectModal from '../components/AddProjectModal';
@@ -60,6 +61,7 @@ const HomePage = () => {
   } = useProjectStore(); // Using the new store
 
   const { user } = useContext(AuthContext);
+  const { canCreate: canAddProject } = useProjectAccess();
   const { currentWorkspace } = useContext(WorkspaceContext);
   const { preferences, updatePreferences, error: preferenceError, retryPreferences, scopeKey } = useWorkspacePreferences();
   const { query: searchQuery, result: searchResult, loading: searchLoading, error: searchError, search, invalidate } = useProjectSearch(departments, scopeKey);
@@ -429,7 +431,6 @@ const HomePage = () => {
     clearSelection();
   }, [scopeKey, clearSelection]);
 
-  const canAddProject = useMemo(() => user?.role === 'admin' || user?.role === 'manager', [user?.role]);
   const canSelectProjects = useMemo(() => user?.role === 'admin' || user?.role === 'manager', [user?.role]);
 
   const handleSelectAllForDepartment = useCallback(() => {

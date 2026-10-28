@@ -19,6 +19,8 @@ import {
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
 import upload, { uploadCoverImageMiddleware } from '../middleware/upload.js';
+import asyncHandler from '../middleware/asyncHandler.js';
+import { requireProjectPermission } from '../services/projectAuthorization.js';
 
 const router = express.Router();
 
@@ -33,7 +35,10 @@ router.get('/:id/workflow-complete', protect, getWorkflowComplete); // Optimized
 router.get('/:id/activity', protect, getProjectActivity);
 router.get('/:id', protect, getBoard);
 
-router.post('/', protect, upload.array('attachments', 10), [
+router.post('/', protect, asyncHandler(async (req, res, next) => {
+  await requireProjectPermission(req, 'project.create');
+  next();
+}), upload.array('attachments', 10), [
   body('name').trim().notEmpty().withMessage('Board name is required'),
   validate
 ], createBoard);

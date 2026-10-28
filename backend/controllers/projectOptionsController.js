@@ -2,6 +2,10 @@ import mongoose from 'mongoose';
 import ProjectDropdownOption from '../models/ProjectDropdownOption.js';
 import Board from '../models/Board.js';
 import { getActiveWorkspaceId } from '../modules/workspaces/workspaceContext.js';
+import { requireProjectPermission } from '../services/projectAuthorization.js';
+
+const OPTION_TYPES = ['projectSource', 'billingType', 'technology'];
+const escapeRegex = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const DEFAULT_OPTIONS = {
   projectSource: [
@@ -60,6 +64,7 @@ const getUsedValues = async (type) => {
   if (type === 'billingType') {
     return Board.distinct('billingCycle', { billingCycle: { $ne: null } });
   }
+  if (type === 'technology') return Board.distinct('technologies');
   return [];
 };
 
@@ -71,17 +76,20 @@ const getUsedValues = async (type) => {
 export const getProjectDropdownOptions = async (req, res) => {
   try {
     const { type } = req.params;
-    if (!['projectSource', 'billingType'].includes(type)) {
+    if (!OPTION_TYPES.includes(type)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid option type'
       });
     }
 
+    if (type === 'technology' && req.user.role === 'employee') {
+      return res.status(403).json({ success: false, message: 'Technology details are restricted' });
+    }
     await ensureDefaults(type, req.user?._id);
 
     const [options, usedValues] = await Promise.all([
-      ProjectDropdownOption.find({ type, isActive: true }).sort({ displayOrder: 1 }).lean(),
+      ProjectDropdownOption.find({ type, isActive: true, ...(type === 'technology' ? { workspaceId: getActiveWorkspaceId() } : {}) }).sort({ displayOrder: 1 }).lean(),
       getUsedValues(type)
     ]);
 
@@ -89,7 +97,7 @@ export const getProjectDropdownOptions = async (req, res) => {
 
     const data = options.map((option) => ({
       ...option,
-      isUsed: usedSet.has(String(option.value)) || usedSet.has(String(option.label))
+      isUsed: usedSet.has(String(option._id)) || usedSet.has(String(option.value)) || usedSet.has(String(option.label))
     }));
 
     res.json({
@@ -116,14 +124,18 @@ export const addProjectDropdownOption = async (req, res) => {
     const { type } = req.params;
     const { value, label } = req.body;
 
-    if (!['projectSource', 'billingType'].includes(type)) {
+    if (!OPTION_TYPES.includes(type)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid option type'
       });
     }
 
-    const normalizedLabel = normalizeLabel(label);
+    if (type === 'technology' || req.user.role === 'employee') await requireProjectPermission(req, 'project.create');
+    if (typeof label !== 'string' || (type === 'technology' && label.trim().length > 100) || (value != null && typeof value !== 'string')) {
+      return res.status(400).json({ success: false, message: 'Option name must be text of up to 100 characters' });
+    }
+    const normalizedLabel = type === 'technology' ? normalizeLabel(label).normalize('NFC') : normalizeLabel(label);
     if (!normalizedLabel) {
       return res.status(400).json({
         success: false,
@@ -131,13 +143,17 @@ export const addProjectDropdownOption = async (req, res) => {
       });
     }
 
-    const normalizedValue = normalizeValue(value) || normalizeSlug(normalizedLabel) || normalizedLabel;
+    // Technology names themselves form the unique key. Slugs lose meaningful
+    // punctuation (C++, C#, .NET); a caller-supplied key must not evade uniqueness.
+    const normalizedValue = type === 'technology' ? normalizedLabel.toLowerCase() : normalizeValue(value) || normalizeSlug(normalizedLabel) || normalizedLabel;
+    const scope = type === 'technology' ? { workspaceId: getActiveWorkspaceId() } : {};
 
     const duplicate = await ProjectDropdownOption.findOne({
       type,
+      ...scope,
       $or: [
         { value: normalizedValue },
-        { label: new RegExp(`^${normalizedLabel}$`, 'i') }
+        { label: new RegExp(`^${escapeRegex(normalizedLabel)}$`, 'i') }
       ]
     });
 
@@ -148,10 +164,11 @@ export const addProjectDropdownOption = async (req, res) => {
       });
     }
 
-    const lastOption = await ProjectDropdownOption.findOne({ type }).sort({ displayOrder: -1 });
+    const lastOption = await ProjectDropdownOption.findOne({ type, ...scope }).sort({ displayOrder: -1 });
     const displayOrder = lastOption ? lastOption.displayOrder + 1 : 0;
 
     const option = await ProjectDropdownOption.create({
+      ...scope,
       type,
       value: normalizedValue,
       label: normalizedLabel,
@@ -166,9 +183,9 @@ export const addProjectDropdownOption = async (req, res) => {
     });
   } catch (error) {
     console.error('Add project dropdown option error:', error);
-    res.status(400).json({
+    res.status(error.code === 11000 ? 409 : error.statusCode || 400).json({
       success: false,
-      message: 'Failed to add option',
+      message: error.code === 11000 ? 'Option already exists' : error.statusCode ? error.message : 'Failed to add option',
       error: error.message
     });
   }
@@ -183,13 +200,15 @@ export const deleteProjectDropdownOption = async (req, res) => {
   try {
     const { type, id } = req.params;
 
-    if (!['projectSource', 'billingType'].includes(type)) {
+    if (!OPTION_TYPES.includes(type)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid option type'
       });
     }
 
+    if (type === 'technology' || req.user.role === 'employee') await requireProjectPermission(req, 'project.create');
+    const scope = type === 'technology' ? { workspaceId: getActiveWorkspaceId() } : {};
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -197,7 +216,7 @@ export const deleteProjectDropdownOption = async (req, res) => {
       });
     }
 
-    const option = await ProjectDropdownOption.findOne({ _id: id, type });
+    const option = await ProjectDropdownOption.findOne({ _id: id, type, ...scope });
     if (!option) {
       return res.status(404).json({
         success: false,
@@ -219,6 +238,8 @@ export const deleteProjectDropdownOption = async (req, res) => {
       isInUse = await Board.exists({ projectSource: { $in: lookupValues } });
     } else if (type === 'billingType') {
       isInUse = await Board.exists({ billingCycle: { $in: lookupValues } });
+    } else if (type === 'technology') {
+      isInUse = await Board.exists({ technologies: option._id });
     }
 
     if (isInUse) {
@@ -228,7 +249,7 @@ export const deleteProjectDropdownOption = async (req, res) => {
       });
     }
 
-    await ProjectDropdownOption.deleteOne({ _id: id, type });
+    await ProjectDropdownOption.deleteOne({ _id: id, type, ...scope });
 
     res.json({
       success: true,
@@ -236,9 +257,9 @@ export const deleteProjectDropdownOption = async (req, res) => {
     });
   } catch (error) {
     console.error('Delete project dropdown option error:', error);
-    res.status(500).json({
+    res.status(error.statusCode || 500).json({
       success: false,
-      message: 'Failed to delete option',
+      message: error.statusCode ? error.message : 'Failed to delete option',
       error: error.message
     });
   }

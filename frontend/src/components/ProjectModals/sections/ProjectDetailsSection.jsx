@@ -4,8 +4,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import FormField from './FormField';
 import ProjectOptionsDropdown from '../../ProjectOptionsDropdown';
 import MilestoneScheduleEditor from '../../MilestoneScheduleEditor';
+import useProjectAccess from '../../../hooks/useProjectAccess';
 
 const ProjectDetailsSection = memo(({
+  projectType = 'Hired Client',
   projectSource,
   upworkId,
   billingCycle,
@@ -18,6 +20,7 @@ const ProjectDetailsSection = memo(({
   projectUrl,
   projectCategory,
   categories,
+  technologies = [],
   errors,
   projectUrlValid,
   handleInputChange,
@@ -29,6 +32,7 @@ const ProjectDetailsSection = memo(({
   handleDeleteCategory,
   handleCreateCategory
 }) => {
+  const { canCreate, isEmployee } = useProjectAccess();
   const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
   const [showAddCategory, setShowAddCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -57,6 +61,7 @@ const ProjectDetailsSection = memo(({
     }
   };
 
+  if (isEmployee) return null;
   return (
     <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200">
       <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
@@ -64,6 +69,7 @@ const ProjectDetailsSection = memo(({
         Project Details
       </h3>
 
+      {projectType !== 'Inhouse' && (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <FormField label="Project Source" icon={Briefcase}>
           <ProjectOptionsDropdown
@@ -221,6 +227,16 @@ const ProjectDetailsSection = memo(({
               </div>
             )}
           </div>
+        </FormField>
+      </div>
+
+      )}
+      <div className={projectType === 'Inhouse' ? '' : 'mt-4'}>
+        <FormField label="Technology" icon={Tag} error={errors?.technologies}>
+          <ProjectOptionsDropdown optionType="technology" value={technologies}
+            onChange={value => handleDropdownChange('technologies', value)}
+            multiple searchable allowManage={canCreate} allowDelete={false}
+            addLabel="Add Technology" placeholder="Select technologies" showLabel={false} theme="blue" />
         </FormField>
       </div>
 

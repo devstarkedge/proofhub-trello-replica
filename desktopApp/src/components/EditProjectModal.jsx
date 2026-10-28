@@ -13,6 +13,7 @@ import {
 import { toast } from "react-toastify";
 import { COUNTRY_CODES, clientDetailsFromForm, splitClientPhone, validateProjectClient } from '../../../shared/projectClient.mjs';
 import Database from '../services/database';
+import useProjectAccess from '../hooks/useProjectAccess';
 import ReminderPanel from './ReminderPanel';
 import ReminderModal from './ReminderModal';
 import AuthContext from '../context/AuthContext';
@@ -56,7 +57,8 @@ const EnterpriseEditProjectModal = React.memo(({
   onClose, 
   project, 
   onProjectUpdated, 
-  departmentManagers = [] 
+  departmentManagers = [],
+  draftScope
 }) => {
   const { user } = useContext(AuthContext);
   const [activeTab, setActiveTab] = useState('details');
@@ -89,6 +91,8 @@ const EnterpriseEditProjectModal = React.memo(({
     clientCountryCode: '',
     clientMobileNumber: '',
     projectCategory: '',
+    technologies: [],
+    marketingContact: false,
     assignees: [],
     estimatedTime: '',
     status: 'planning',
@@ -207,8 +211,8 @@ const EnterpriseEditProjectModal = React.memo(({
   // Draft key for localStorage
   const draftKey = useMemo(() => {
     const id = project?.id || project?._id;
-    return id ? `projectDraft:${id}` : 'projectDraft:unknown';
-  }, [project]);
+    return `projectDraft:${draftScope}:edit:${id || 'unknown'}`;
+  }, [project, draftScope]);
 
   // Tabs configuration
   const tabs = useMemo(() => [
@@ -218,31 +222,13 @@ const EnterpriseEditProjectModal = React.memo(({
     { id: 'activity', label: 'Activity', icon: History, badge: activityLog.length || undefined }
   ], [projectFiles.length, formData.assignees.length, activityLog.length]);
 
-  // Restore draft on open
-  useEffect(() => {
-    if (!isOpen) return;
-    try {
-      const draftRaw = localStorage.getItem(draftKey);
-      if (draftRaw) {
-        const draft = JSON.parse(draftRaw);
-        if (draft?.formData) {
-          setFormData(prev => ({ ...prev, ...draft.formData }));
-          setDraftStatus('Draft restored ✅');
-          setTimeout(() => setDraftStatus(''), 3000);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to restore project draft:', error);
-    }
-  }, [isOpen, draftKey]);
-
   // Keep a ref to formData to avoid re-triggering the auto-save effect on every change
   const formDataRef = useRef(formData);
   formDataRef.current = formData;
 
   // Auto-save draft using interval + ref (avoids re-render cascade on every keystroke)
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !loadedProject?.canEdit) return;
 
     const timer = setInterval(() => {
       try {
@@ -258,15 +244,22 @@ const EnterpriseEditProjectModal = React.memo(({
     }, 5000);
 
     return () => clearInterval(timer);
-  }, [isOpen, draftKey]);
+  }, [isOpen, draftKey, loadedProject?.canEdit]);
 
   // Load project data
   useEffect(() => {
+    let cancelled = false;
     if (isOpen && project) {
       const fetchFullProject = async () => {
         try {
           const response = await Database.getProject(project.id || project._id);
+          if (cancelled) return;
           const fullProject = response.data;
+          if (!fullProject?.canEdit) {
+            toast.error('You do not have permission to edit this project');
+            onClose();
+            return;
+          }
           setLoadedProject(fullProject);
           
           setFormData({
@@ -292,6 +285,8 @@ const EnterpriseEditProjectModal = React.memo(({
             clientEmail: fullProject.clientDetails?.clientEmail || '',
             ...splitClientPhone(fullProject.clientDetails?.clientWhatsappNumber),
             projectCategory: fullProject.projectCategory || '',
+            technologies: (fullProject.technologies || []).map(technology => technology._id || technology),
+            marketingContact: fullProject.clientDetails?.marketingContact === true,
             assignees: fullProject.members?.map(m => typeof m === 'string' ? m : m._id) || [],
             estimatedTime: fullProject.estimatedTime || '',
             status: fullProject.status || 'planning',
@@ -299,6 +294,15 @@ const EnterpriseEditProjectModal = React.memo(({
             visibility: fullProject.visibility || 'public',
             projectType: fullProject.projectType || 'Hired Client'
           });
+          // Restore after loading the server record, so the fetch does not
+          // overwrite autosaved selections or checkbox changes.
+          try {
+            const draft = JSON.parse(localStorage.getItem(draftKey) || 'null');
+            if (draft?.formData) {
+              setFormData(previous => ({ ...previous, ...draft.formData }));
+              setDraftStatus('Draft restored ✅');
+            }
+          } catch (error) { console.error('Failed to restore project draft:', error); }
           
           setCoverImage(fullProject.coverImage || null);
           setCoverImageHistory(fullProject.coverImageHistory || []);
@@ -306,13 +310,15 @@ const EnterpriseEditProjectModal = React.memo(({
           
           // Attachments and activity are now fetched lazily when their tabs are selected
         } catch (error) {
+          if (cancelled) return;
           console.error('Error fetching full project:', error);
           toast.error('Failed to load project details');
         }
       };
       fetchFullProject();
     }
-  }, [isOpen, project]);
+    return () => { cancelled = true; };
+  }, [isOpen, project, draftKey]);
 
   // Track which tabs have had their data fetched
   const fetchedTabsRef = useRef({});
@@ -389,6 +395,7 @@ const EnterpriseEditProjectModal = React.memo(({
         next.clientEmail = '';
         next.clientCountryCode = '';
         next.clientMobileNumber = '';
+        next.marketingContact = false;
       }
       return next;
     });
@@ -475,6 +482,7 @@ const EnterpriseEditProjectModal = React.memo(({
   // Submit handler
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!loadedProject?.canEdit) return;
     const validation = validateForm();
     if (!validation.isValid) {
       const errorMessages = Object.values(validation.errors).filter(Boolean);
@@ -499,6 +507,7 @@ const EnterpriseEditProjectModal = React.memo(({
         startDate: formData.startDate,
         dueDate: formData.dueDate,
         projectCategory: formData.projectCategory,
+        technologies: formData.technologies,
         members: formData.assignees,
         status: formData.status,
         priority: formData.priority,
@@ -586,7 +595,7 @@ const EnterpriseEditProjectModal = React.memo(({
     onClose();
   };
 
-  if (!isOpen || !project) return null;
+  if (!isOpen || !project || !loadedProject?.canEdit) return null;
 
   const drawerWidth = isFullScreen ? 'w-full' : 'w-full max-w-5xl';
 
@@ -942,8 +951,9 @@ const EnterpriseEditProjectModal = React.memo(({
                         )}
 
                         {/* Project Details */}
-                        {formData.projectType !== 'Inhouse' && (
                           <ProjectDetailsSection
+                            projectType={formData.projectType}
+                            technologies={formData.technologies}
                             projectSource={formData.projectSource}
                             upworkId={formData.upworkId}
                             billingCycle={formData.billingCycle}
@@ -982,11 +992,11 @@ const EnterpriseEditProjectModal = React.memo(({
                             handleDeleteCategory={() => {}} // Category deletion in edit usually less critical or handled via API
                             handleCreateCategory={(name, description) => {}} // Add Category form not typically inside Edit Modal
                           />
-                        )}
 
                         {/* Client Information */}
                         {formData.projectType !== 'Inhouse' && (
                           <ClientSection
+                            marketingContact={formData.marketingContact}
                             required={formData.projectType === 'Hired Client'}
                             clientName={formData.clientName}
                             clientEmail={formData.clientEmail}
@@ -1136,4 +1146,7 @@ const EnterpriseEditProjectModal = React.memo(({
 
 EnterpriseEditProjectModal.displayName = 'EnterpriseEditProjectModal';
 
-export default EnterpriseEditProjectModal;
+export default function EditProjectModal(props) {
+  const { canEdit, scopeKey } = useProjectAccess(props.project);
+  return canEdit && props.isOpen ? <EnterpriseEditProjectModal {...props} key={`${scopeKey}:${props.project?._id || props.project?.id}`} draftScope={scopeKey} /> : null;
+}

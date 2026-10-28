@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Eye, FileText, Users, Shield, Info, History, Pencil } from 'lucide-react';
 import Database from '../services/database';
+import useProjectAccess from '../hooks/useProjectAccess';
 import EnterpriseFileUploader from './EnterpriseFileUploader';
 import ActivityTimeline from './ActivityTimeline';
 
@@ -22,6 +23,7 @@ const EnterpriseViewProjectModal = ({ isOpen, onClose, projectId, onEditProject 
   const [activityLoading, setActivityLoading] = useState(false);
   const [filesLoading, setFilesLoading] = useState(false);
   const [error, setError] = useState('');
+  const { canEdit } = useProjectAccess(project);
 
   const tabs = useMemo(() => [
     { id: 'details', label: 'Details', icon: Info },
@@ -96,7 +98,7 @@ const EnterpriseViewProjectModal = ({ isOpen, onClose, projectId, onEditProject 
   if (!isOpen) return null;
 
   const handleEditClick = () => {
-    if (!project || !onEditProject) return;
+    if (!canEdit || !project || !onEditProject) return;
     const departmentId = project?.department?._id || project?.departmentId;
     onEditProject(project, departmentId);
     onClose();
@@ -144,7 +146,7 @@ const EnterpriseViewProjectModal = ({ isOpen, onClose, projectId, onEditProject 
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {onEditProject && project && (
+                  {canEdit && onEditProject && project && (
                     <button
                       onClick={handleEditClick}
                       className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
@@ -259,4 +261,7 @@ const EnterpriseViewProjectModal = ({ isOpen, onClose, projectId, onEditProject 
   );
 };
 
-export default EnterpriseViewProjectModal;
+export default function ViewProjectModal(props) {
+  const { scopeKey } = useProjectAccess();
+  return props.isOpen ? <EnterpriseViewProjectModal {...props} key={`${scopeKey}:${props.projectId}`} /> : null;
+}

@@ -38,6 +38,16 @@ async function context(req) {
 
 export async function requireProjectPermission(req, permission, resource) {
   await principal(req);
+  // Employees may work on assigned tasks, but projects themselves are read-only,
+  // including projects they own and permissions granted through overrides.
+  const projectWrite = permission.startsWith('project.') && permission !== 'project.view';
+  const projectFileWrite = ['attachment.upload', 'attachment.manage'].includes(permission) && (
+    resource?.visibility || resource?.contextType === 'board' ||
+    resource?.board && !resource.taskResource && !resource.card && !resource.subtask && !resource.nanoSubtask && !resource.comment
+  );
+  if (req.user.role === 'employee' && (projectWrite || projectFileWrite)) {
+    throw new ErrorResponse('Employees have read-only project access', 403);
+  }
   if (process.env.AUTHZ_V2 === 'enforce') {
     if (!can(await context(req), permission, permission.startsWith('project.') ? resource?.project || resource : resource)) throw new ErrorResponse('Permission denied', 403);
     return;

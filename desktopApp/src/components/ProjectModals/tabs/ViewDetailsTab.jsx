@@ -1,8 +1,10 @@
 import { memo } from 'react';
 import { FileText, Calendar, Clock, Globe, DollarSign, Mail, Image as ImageIcon } from 'lucide-react';
 import HtmlContent from '../../ui/HtmlContent';
+import useProjectAccess from '../../../hooks/useProjectAccess';
 
 const ViewDetailsTab = memo(({ project }) => {
+  const { isEmployee } = useProjectAccess();
   if (!project) return null;
 
   return (
@@ -35,14 +37,14 @@ const ViewDetailsTab = memo(({ project }) => {
             <label className="text-xs text-gray-500">Visibility</label>
             <p className="text-sm text-gray-900 capitalize">{project.visibility || 'public'}</p>
           </div>
-          <div>
+          {!isEmployee && <div>
             <label className="text-xs text-gray-500">Project Category</label>
             <p className="text-sm text-gray-900">{project.projectCategory || 'Not specified'}</p>
-          </div>
-          <div>
+          </div>}
+          {!isEmployee && <div>
             <label className="text-xs text-gray-500">Estimated Time</label>
             <p className="text-sm text-gray-900">{project.estimatedTime || 'Not specified'}</p>
-          </div>
+          </div>}
           <div>
             <label className="text-xs text-gray-500">Start Date</label>
             <div className="flex items-center gap-2 text-sm text-gray-900">
@@ -74,12 +76,26 @@ const ViewDetailsTab = memo(({ project }) => {
         </div>
       </section>
 
+      {!isEmployee && <>
       <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200">
         <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
           <Globe size={16} className="text-indigo-600" />
-          Project Source & Links
+          Project Details
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs text-gray-500">Technology</label>
+            {(project.technologies || []).some(technology => technology.label) ? (
+              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-2">
+                {project.technologies.filter(technology => technology.label).map(technology => (
+                  <label key={technology._id} className="flex items-center gap-2 text-sm text-gray-900">
+                    <input type="checkbox" checked readOnly disabled className="h-4 w-4 rounded border-gray-300 accent-blue-600" />
+                    <span>{technology.label}</span>
+                  </label>
+                ))}
+              </div>
+            ) : <p className="text-sm text-gray-900">Not specified</p>}
+          </div>
           <div>
             <label className="text-xs text-gray-500">Project Source</label>
             <p className="text-sm text-gray-900">{project.projectSource || 'Direct'}</p>
@@ -186,9 +202,10 @@ const ViewDetailsTab = memo(({ project }) => {
       </section>
 
       <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200">
-        <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
+        <h3 className="text-sm font-bold text-gray-900 mb-4 flex flex-wrap items-center gap-2">
           <Mail size={16} className="text-blue-600" />
           Client Information
+          <span className="ml-auto text-xs font-medium text-gray-700">Marketing Contact: {project.clientDetails?.marketingContact === true ? 'Yes' : 'No'}</span>
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -205,6 +222,7 @@ const ViewDetailsTab = memo(({ project }) => {
           </div>
         </div>
       </section>
+      </>}
     </div>
   );
 });

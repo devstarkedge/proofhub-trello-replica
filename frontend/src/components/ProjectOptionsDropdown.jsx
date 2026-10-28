@@ -12,7 +12,11 @@ const ProjectOptionsDropdown = ({
   placeholder = 'Select...',
   allowManage = false,
   showLabel = true,
-  theme = 'indigo'
+  theme = 'indigo',
+  multiple = false,
+  searchable = false,
+  allowDelete = allowManage,
+  addLabel = 'Add new option'
 }) => {
   const [open, setOpen] = useState(false);
   const [options, setOptions] = useState([]);
@@ -21,14 +25,20 @@ const ProjectOptionsDropdown = ({
   const [newOptionLabel, setNewOptionLabel] = useState('');
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [search, setSearch] = useState('');
+  const [loadError, setLoadError] = useState('');
   const dropdownRef = useRef(null);
+  const latestValue = useRef(value);
+  latestValue.current = value;
 
   const fetchOptions = async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const res = await Database.getProjectDropdownOptions(optionType);
       setOptions(res?.data || []);
     } catch (error) {
+      setLoadError(error.message || 'Failed to fetch options');
       toast.error(error.message || 'Failed to fetch options');
     } finally {
       setLoading(false);
@@ -58,15 +68,24 @@ const ProjectOptionsDropdown = ({
     return options.find((opt) => opt.value === value || opt.label === value);
   }, [options, value]);
 
-  const displayValue = selectedOption?.label || value || placeholder;
-  const hasValue = Boolean(value);
+  const selectedIds = Array.isArray(value) ? value : [];
+  const filteredOptions = options.filter(option => !searchable || option.label.toLowerCase().includes(search.trim().toLowerCase()));
+  const displayValue = multiple
+    ? selectedIds.map(id => options.find(option => option._id === id)?.label || 'Selected technology').join(', ') || placeholder
+    : selectedOption?.label || value || placeholder;
+  const hasValue = multiple ? selectedIds.length > 0 : Boolean(value);
 
   const handleSelect = (option) => {
+    if (multiple) {
+      onChange(selectedIds.includes(option._id) ? selectedIds.filter(id => id !== option._id) : [...selectedIds, option._id]);
+      return;
+    }
     onChange(option.value);
     setOpen(false);
   };
 
   const handleAddOption = async () => {
+    if (!allowManage || saving) return;
     const trimmed = newOptionLabel.trim();
     if (!trimmed) {
       toast.error('Option cannot be empty');
@@ -87,10 +106,11 @@ const ProjectOptionsDropdown = ({
       const created = res?.data;
       if (created) {
         setOptions((prev) => [...prev, created]);
-        onChange(created.value);
+        onChange(multiple ? [...new Set([...(Array.isArray(latestValue.current) ? latestValue.current : []), created._id])] : created.value);
       }
       setIsAdding(false);
       setNewOptionLabel('');
+      setSearch('');
       toast.success('Option added');
     } catch (error) {
       toast.error(error.message || 'Failed to add option');
@@ -158,36 +178,63 @@ const ProjectOptionsDropdown = ({
           type="button"
           onClick={() => setOpen((prev) => !prev)}
           className={`w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 transition-all bg-white flex items-center justify-between ${themeClasses.ring} ${themeClasses.hoverBorder}`}
-          aria-haspopup="listbox"
+          aria-haspopup={multiple ? 'dialog' : 'listbox'}
           aria-expanded={open}
+          aria-label={label || (optionType === 'technology' ? 'Technology' : undefined)}
+          onKeyDown={event => { if (event.key === 'Escape') setOpen(false); }}
         >
-          <span className={hasValue ? 'text-gray-900' : 'text-gray-400'}>{displayValue}</span>
-          <ChevronDown size={16} className={`text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+          <span className={`min-w-0 break-words text-left ${hasValue ? 'text-gray-900' : 'text-gray-400'}`}>{displayValue}</span>
+          <ChevronDown size={16} className={`shrink-0 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
         </button>
 
         {open && (
-          <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-y-auto">
+          <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-y-auto"
+            role={multiple ? 'dialog' : undefined} aria-label={multiple ? label || 'Technology selection' : undefined}>
+            {searchable && (
+              <div className="p-2 border-b border-gray-100">
+                <input type="search" aria-label="Search technologies" placeholder="Search technologies..." value={search}
+                  onChange={event => setSearch(event.target.value)}
+                  onKeyDown={event => { if (event.key === 'Enter') event.preventDefault(); if (event.key === 'Escape') setOpen(false); }}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+            )}
+            {loadError && <div role="alert" className="px-4 py-2 text-sm text-red-600">{loadError} <button type="button" onClick={fetchOptions} className="underline">Retry</button></div>}
+            <div role={multiple ? 'group' : 'listbox'} aria-label={label || 'Options'}>
             {loading ? (
               <div className="px-4 py-3 text-sm text-gray-500 flex items-center gap-2">
                 <Loader size={14} className="animate-spin" /> Loading options...
               </div>
-            ) : options.length === 0 ? (
+            ) : filteredOptions.length === 0 ? (
               <div className="px-4 py-3 text-sm text-gray-500">No options available</div>
             ) : (
-              options.map((option) => {
-                const isSelected = option.value === value || option.label === value;
+              filteredOptions.map((option) => {
+                const isSelected = multiple ? selectedIds.includes(option._id) : option.value === value || option.label === value;
                 return (
                   <div
                     key={option._id}
                     className={`flex items-center justify-between px-4 py-2 text-sm cursor-pointer transition-colors ${
                       isSelected ? `${themeClasses.selectedBg} ${themeClasses.selectedText}` : 'hover:bg-gray-50 text-gray-700'
                     }`}
-                    onClick={() => handleSelect(option)}
-                    role="option"
-                    aria-selected={isSelected}
+                    onClick={multiple ? undefined : () => handleSelect(option)}
+                    role={multiple ? undefined : 'option'}
+                    tabIndex={multiple ? undefined : 0}
+                    onKeyDown={event => {
+                      if (event.target !== event.currentTarget) return;
+                      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); handleSelect(option); }
+                      if (event.key === 'Escape') setOpen(false);
+                    }}
+                    aria-selected={multiple ? undefined : isSelected}
                   >
-                    <span>{option.label}</span>
-                    {allowManage && (
+                    {multiple ? (
+                      <label className="flex flex-1 items-center gap-3 cursor-pointer py-1">
+                        <input type="checkbox" checked={isSelected}
+                          onChange={() => handleSelect(option)}
+                          onKeyDown={event => { if (event.key === 'Escape') setOpen(false); }}
+                          className={`h-4 w-4 shrink-0 rounded border-gray-300 ${theme === 'blue' ? 'accent-blue-600' : 'accent-indigo-600'}`} />
+                        <span className="break-words">{option.label}</span>
+                      </label>
+                    ) : <span>{option.label}</span>}
+                    {allowDelete && (
                       <button
                         type="button"
                         onClick={(event) => {
@@ -209,6 +256,7 @@ const ProjectOptionsDropdown = ({
                 );
               })
             )}
+            </div>
 
             {allowManage && (
               <div className="border-t border-gray-100 p-2">
@@ -219,9 +267,11 @@ const ProjectOptionsDropdown = ({
                       value={newOptionLabel}
                       onChange={(e) => setNewOptionLabel(e.target.value)}
                       placeholder="Enter value..."
+                      aria-label={optionType === 'technology' ? 'New technology name' : 'New option name'}
+                      maxLength={optionType === 'technology' ? 100 : undefined}
                       className={`flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 ${themeClasses.inputRing}`}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleAddOption();
+                        if (e.key === 'Enter') { e.preventDefault(); handleAddOption(); }
                         if (e.key === 'Escape') {
                           setIsAdding(false);
                           setNewOptionLabel('');
@@ -254,9 +304,10 @@ const ProjectOptionsDropdown = ({
                   <button
                     type="button"
                     onClick={() => setIsAdding(true)}
+                    disabled={loading || saving}
                     className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-lg ${themeClasses.addText} ${themeClasses.addHover}`}
                   >
-                    <Plus size={14} /> Add new option
+                    <Plus size={14} /> {addLabel}
                   </button>
                 )}
               </div>

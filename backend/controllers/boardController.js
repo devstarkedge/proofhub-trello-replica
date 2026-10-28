@@ -6,6 +6,7 @@ import { authorizeProjectResource, requireProjectPermission } from '../services/
 import Board from "../models/Board.js";
 import { canUserAccessBoard as canUserAccessBoardUnified } from "../utils/boardAccess.js";
 import { normalizeClientDetails, validateProjectClient } from '../../shared/projectClient.mjs';
+import { validateMarketingContact, validateProjectTechnologies } from '../services/projectDetails.js';
 import List from "../models/List.js";
 import Card from "../models/Card.js";
 import Attachment from "../models/Attachment.js";
@@ -397,6 +398,7 @@ export const getBoard = asyncHandler(async (req, res, next) => {
     .populate("team", "name")
     .populate("department", "name")
     .populate("members", "name email avatar")
+    .populate({ path: 'technologies', select: 'label value', match: { workspaceId: req.workspaceId, type: 'technology' } })
     .lean();
 
   if (!board || board.isDeleted) {
@@ -420,6 +422,15 @@ export const getBoard = asyncHandler(async (req, res, next) => {
   board.progress = progress;
   board.totalCards = totalCards;
   board.completedCards = completedCards;
+  board.canEdit = false;
+  if (req.user.role !== 'employee' && (String(board.owner?._id || board.owner) === String(req.user.id || req.user._id) || ['admin', 'manager'].includes(req.user.role))) {
+    try {
+      await requireProjectPermission(req, 'project.update', board);
+      board.canEdit = true;
+    } catch (error) {
+      if (error.statusCode !== 403) throw error;
+    }
+  }
   if (String(board.billingCycle || '').toLowerCase() === MILESTONE_BILLING_TYPE) {
     board.totalProjectBudget = fromCents(board.totalProjectBudgetCents);
     board.milestones = await getProjectMilestones(board._id, { includeApprovals: true });
@@ -436,6 +447,8 @@ export const getBoard = asyncHandler(async (req, res, next) => {
 // @access  Private
 export const createBoard = asyncHandler(async (req, res, next) => {
   await requireProjectPermission(req, 'project.create');
+  validateMarketingContact(req.body.clientDetails);
+  const technologies = await validateProjectTechnologies(Object.hasOwn(req.body, 'technologies') ? req.body.technologies : [], req.workspaceId);
   // The effective type includes the existing schema default for API callers.
   const clientErrors = validateProjectClient(req.body.projectType || 'Hired Client', req.body.clientDetails);
   if (Object.keys(clientErrors).length) {
@@ -572,6 +585,7 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     milestoneWorkflow: milestoneSchedule?.workflow || 'sequential',
     clientDetails: projectType === 'Inhouse' ? undefined : clientDetails,
     projectCategory,
+    technologies,
     projectType: projectType || 'Hired Client'
   };
 
@@ -717,13 +731,19 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
   if (Object.hasOwn(updateBody, 'projectType') && !['Hired Client', 'Inhouse'].includes(updateBody.projectType)) {
     return next(new ErrorResponse('Invalid project type', 400));
   }
+  if (Object.hasOwn(updateBody, 'technologies')) updateBody.technologies = await validateProjectTechnologies(updateBody.technologies, req.workspaceId);
+  validateMarketingContact(updateBody.clientDetails);
   const nextProjectType = updateBody.projectType ?? previousBoard.projectType ?? 'Hired Client';
   const nextClientDetails = Object.hasOwn(updateBody, 'clientDetails') ? updateBody.clientDetails : previousBoard.clientDetails;
   const clientErrors = validateProjectClient(nextProjectType, nextClientDetails);
   if (Object.keys(clientErrors).length) {
     return res.status(400).json({ success: false, message: 'Please complete the required client information.', errors: clientErrors });
   }
-  if (Object.hasOwn(updateBody, 'clientDetails')) updateBody.clientDetails = normalizeClientDetails(nextClientDetails);
+  if (Object.hasOwn(updateBody, 'clientDetails')) updateBody.clientDetails = normalizeClientDetails({
+    ...nextClientDetails,
+    // Older clients do not send this optional field; preserve its saved value.
+    marketingContact: nextClientDetails?.marketingContact ?? previousBoard.clientDetails?.marketingContact
+  });
   if (updateBody.projectType === 'Inhouse') {
     updateBody.projectSource = null;
     updateBody.billingCycle = null;
@@ -732,7 +752,7 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
     updateBody.projectUrl = null;
     updateBody.upworkId = null;
     updateBody.estimatedTime = null;
-    updateBody.clientDetails = { clientName: null, clientEmail: null, clientWhatsappNumber: null };
+    updateBody.clientDetails = { clientName: null, clientEmail: null, clientWhatsappNumber: null, marketingContact: false };
   }
   delete updateBody.totalProjectBudgetCents;
 

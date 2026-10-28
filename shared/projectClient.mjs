@@ -41,6 +41,7 @@ export function normalizeClientDetails(value) {
     clientName: trim(value?.clientName),
     clientEmail: trim(value?.clientEmail),
     clientWhatsappNumber: trim(value?.clientWhatsappNumber).replace(/[\s().-]/g, ''),
+    marketingContact: value?.marketingContact === true,
   };
 }
 
@@ -64,6 +65,7 @@ export function clientDetailsFromForm(form) {
   return normalizeClientDetails({
     clientName: form.clientName,
     clientEmail: form.clientEmail,
+    marketingContact: form.marketingContact,
     clientWhatsappNumber: form.clientMobileNumber
       ? `${form.clientCountryCode || ''}${form.clientMobileNumber}` : '',
   });

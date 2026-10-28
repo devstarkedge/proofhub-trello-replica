@@ -5,6 +5,7 @@ import ReactCountryFlag from 'react-country-flag';
 import FormField from './FormField';
 
 import { COUNTRY_CODES } from '../shared/constants';
+import useProjectAccess from '../../../hooks/useProjectAccess';
 
 const ClientSection = memo(({
   required = false,
@@ -12,12 +13,14 @@ const ClientSection = memo(({
   clientEmail,
   clientCountryCode,
   clientMobileNumber,
+  marketingContact = false,
   errors,
   handleInputChange,
   handleBlur,
   handleCountryCodeChange,
   handleMobileNumberChange
 }) => {
+  const { isEmployee } = useProjectAccess();
   const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
   const [countrySearchQuery, setCountrySearchQuery] = useState("");
   const countryDropdownRef = useRef(null);
@@ -47,12 +50,21 @@ const ClientSection = memo(({
     [clientCountryCode]
   );
 
+  if (isEmployee) return null;
   return (
     <section className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-5 border border-blue-200">
-      <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
-        <Mail size={16} className="text-blue-600" />
-        Client Information
-      </h3>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+          <Mail size={16} className="text-blue-600" />
+          Client Information
+        </h3>
+        <label className="flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer">
+          <input type="checkbox" name="marketingContact" checked={marketingContact === true}
+            onChange={event => handleInputChange({ target: { name: 'marketingContact', value: event.target.checked } })}
+            className="h-4 w-4 rounded border-gray-300 accent-blue-600 focus:ring-blue-500" />
+          Marketing Contact
+        </label>
+      </div>
 
       <div className="space-y-4">
         <FormField label="Client Name" icon={User} required={required} error={errors?.clientName}>

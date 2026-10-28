@@ -22,6 +22,7 @@ import ClientSection from './ProjectModals/sections/ClientSection';
 import FilesTab from './ProjectModals/tabs/FilesTab';
 import TeamTab from './ProjectModals/tabs/TeamTab';
 import useProjectStore from '../store/projectStore';
+import useProjectAccess from '../hooks/useProjectAccess';
 
 import { TabNavigation as Tab } from './ProjectModals/shared/TabNavigation';
 import { COUNTRY_CODES, PROJECT_URL_REGEX } from './ProjectModals/shared/constants';
@@ -29,7 +30,7 @@ import { drawerVariants } from './ProjectModals/shared/animations';
 import FormField from './ProjectModals/sections/FormField';
 import { useFileUploadSimulation } from './ProjectModals/shared/useFileUploadSimulation';
 
-const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded, departmentManagers = [] }) => {
+const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded, departmentManagers = [], draftScope }) => {
   const { user } = useContext(AuthContext);
   const { departments } = useProjectStore();
   const [activeTab, setActiveTab] = useState('details');
@@ -57,6 +58,8 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
     clientCountryCode: "+91",
     clientMobileNumber: "",
     projectCategory: "",
+    technologies: [],
+    marketingContact: false,
     assignees: [],
     estimatedTime: "",
     visibility: "public",
@@ -127,8 +130,8 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
 
   // Draft key
   const draftKey = useMemo(() => (
-    selectedDepartmentId ? `projectDraft:add:${selectedDepartmentId}` : 'projectDraft:add:global'
-  ), [selectedDepartmentId]);
+    `projectDraft:${draftScope}:add:${selectedDepartmentId || 'global'}`
+  ), [selectedDepartmentId, draftScope]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -277,6 +280,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
         next.clientEmail = '';
         next.clientCountryCode = '+91';
         next.clientMobileNumber = '';
+        next.marketingContact = false;
       }
       return next;
     });
@@ -492,6 +496,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
         dueDate: formData.dueDate,
         visibility: formData.visibility,
         projectCategory: formData.projectCategory,
+        technologies: formData.technologies,
         projectType: formData.projectType,
         runBackgroundTasks: true
       };
@@ -879,8 +884,9 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                     />
 
                     {/* Project Details */}
-                    {formData.projectType !== 'Inhouse' && (
                       <ProjectDetailsSection
+                        projectType={formData.projectType}
+                        technologies={formData.technologies}
                         projectSource={formData.projectSource}
                         upworkId={formData.upworkId}
                         billingCycle={formData.billingCycle}
@@ -919,11 +925,11 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                         handleDeleteCategory={handleDeleteCategory}
                         handleCreateCategory={handleCreateCategory}
                       />
-                    )}
 
                     {/* Client Information */}
                     {formData.projectType !== 'Inhouse' && (
                       <ClientSection
+                        marketingContact={formData.marketingContact}
                         required={formData.projectType === 'Hired Client'}
                         clientName={formData.clientName}
                         clientEmail={formData.clientEmail}
@@ -1043,4 +1049,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
 
 EnterpriseAddProjectModal.displayName = 'EnterpriseAddProjectModal';
 
-export default EnterpriseAddProjectModal;
+export default function AddProjectModal(props) {
+  const { canCreate, scopeKey } = useProjectAccess();
+  return canCreate ? <EnterpriseAddProjectModal {...props} key={scopeKey} draftScope={scopeKey} /> : null;
+}

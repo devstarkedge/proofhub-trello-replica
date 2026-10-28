@@ -13,7 +13,7 @@ const projectDropdownOptionSchema = new mongoose.Schema({
   type: {
     type: String,
     required: [true, 'Option type is required'],
-    enum: ['projectSource', 'billingType'],
+    enum: ['projectSource', 'billingType', 'technology'],
     index: true
   },
   value: {
