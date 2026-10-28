@@ -1,8 +1,8 @@
 import express from 'express';
 import { protect } from '../../middleware/authMiddleware.js';
 import { rateLimiter } from '../../middleware/rateLimiter.js';
-import { requireConfigAdmin, publicConnection, approveChange, validateConnection, saveConnection, toggleConnection } from './configService.js';
-import { HubSpotConnection, HubSpotAudit } from './models.js';
+import { requireConfigAdmin, getConnectionDetails, approveChange, validateConnection, saveConnection, toggleConnection } from './configService.js';
+import { HubSpotAudit } from './models.js';
 import { SyncError } from './domain.js';
 import { getModuleSettings, updateModuleSettings } from './workspaceModules.js';
 
@@ -31,7 +31,7 @@ const strictBody = keys => (req, res, next) => {
 router.get('/', wrap(async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json({ success: true, data: {
-    hubspot: publicConnection(await HubSpotConnection.findOne({ workspaceId: req.workspaceId }).lean()),
+    hubspot: await getConnectionDetails({ ...inputFor(req), issuePage: req.query.issuePage === undefined ? 1 : Number(req.query.issuePage) }),
     modules: await getModuleSettings(req.workspaceId),
   } });
 }));

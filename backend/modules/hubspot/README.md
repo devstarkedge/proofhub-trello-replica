@@ -1,7 +1,7 @@
 # FlowTask to HubSpot Contacts
 
 This integration uses the pinned HubSpot **2026-09** CRM Contacts and account-info
-APIs. It sends `email`, `firstname`, `lastname`, `phone`, project `technology`, the custom marketing request, and an optional workspace contact owner from
+APIs. It sends `email`, `firstname`, `lastname`, `phone`, project `technology`, project client details, and an optional workspace contact owner from
 eligible, non-deleted `Hired Client` Boards. HubSpot never writes client data
 back to FlowTask. There are no inbound webhooks or manual sync/retry endpoints.
 
@@ -52,6 +52,12 @@ The account's Portal ID must be verifiable to save a connection. If HubSpot's
 non-destructive token inspection is supported, both required scopes are checked;
 otherwise write capability is explicitly shown as **unverified**. A denied account
 identity lookup blocks configuration rather than trusting a user-entered ID.
+
+The editor prefills the saved connection name and Contact Owner from the verified
+configuration. The saved Service Key appears as a masked placeholder: leaving it
+blank retains the existing encrypted credential, while entering a new key replaces
+it. Both validation and saving can use the retained key on the backend; its original
+value is never returned to the browser. Initial setup still requires a key.
 
 Saved credentials are always masked. AES-GCM authenticates ciphertext against
 workspace ID, Portal ID, and encryption key version. Replacement validates first,
@@ -207,38 +213,43 @@ first and otherwise a unique, case-insensitive label match. Unknown/hidden or
 ambiguous options block the write. Values are sorted, deduplicated, semicolon
 separated, and sent as an empty string when the combined selection is empty.
 Eligible projects sharing a client contribute a union of technologies. Conflicting
-client details or marketing preferences block writes instead of choosing a winner.
+client details block writes instead of choosing a winner.
 
-Create the editable Boolean Contact property flowtask_marketing_requested. Create
-two contact-based workflows in HubSpot: property equals true → Set marketing
-contact status to Marketing; property equals false → Set as Non-marketing. Enable
-re-enrollment on each change to the request property in BOTH workflows, including
-future true-to-false and false-to-true transitions. Activate the workflows and
-verify their enrollment history in a non-production account. If your subscription
-does not support this workflow action, this mechanism cannot apply marketing
-status: the Configs warning remains, and FlowTask never claims application.
-Workflow entitlement and activation cannot be verified with Contacts-only scopes.
-FlowTask does not request workflow-management access or create workflows secretly.
-
-The hs_marketable_status field is read-only. It is requested only when reading a
-contact, NEVER included in create/update properties. Accepted request properties
-are tracked separately from actual status: pending → confirmed only after a
-read-back matches the requested Boolean. Read-only confirmation checks start
-after 30 seconds and recur at five-minute intervals while eligible/configured;
-these checks do not write HubSpot, consume write retries or replay failed sources.
-Non-marketing may remain pending until HubSpot's next account update date.
-Configs displays pending/confirmed totals and a persistent workflow setup warning.
+Marketing Contact remains a local FlowTask field. It is not sent to HubSpot,
+read from HubSpot, included in change detection or used for shared-client conflicts.
+Changing only that checkbox neither queues sync nor resets failed retry budgets.
+There is no marketing workflow, custom request property or confirmation polling.
 
 Contact Owner is an optional positive-integer STRING on the existing workspace
 configuration; do not convert Owner IDs to JavaScript numbers. Setup/replacement
 requires the existing password step-up. The Owners API verifies ID and archived
 state when crm.objects.owners.read is available; a 403 records unverified status
-and is clearly shown in Configs. A definite missing/archived owner blocks saving
+and Configs explains how to enable that permission in HubSpot. Verified owners show
+their HubSpot first/last name with a green check. A confirmed MISSING_SCOPES response
+shows `Missing scope - crm.objects.owners.read` in red; other lookup failures do not
+claim a missing scope or display a verified check. Owner names and lookup status
+are refreshed on Configs with a five-minute metadata cache, including existing
+connections. This cache does not change the configuration version, update timestamp,
+credentials or sync state. Concurrent replacements reject stale metadata updates.
+Validate connection
+checks the current owner field as well as Contacts access, without modifying the
+saved configuration. After granting the scope, validate and save the configuration
+to persist the new verified status. Reuse the saved key unless HubSpot issues a
+replacement. A definite missing/archived owner blocks saving
 or syncing. Owners are checked again during sync. This additional scope is only
 needed for owner verification. Missing owner configuration omits hubspot_owner_id
 entirely and preserves remote ownership. Changing the configuration does not
 resync unchanged old contacts; the latest owner applies on their next eligible
 source edit. A different portal never inherits an omitted old owner setting.
 
-References: https://knowledge.hubspot.com/records/set-contacts-as-non-marketing
-and https://knowledge.hubspot.com/workflows/add-re-enrollment-triggers-to-a-workflow
+Configs lists current project sync failures with `Project - [name]` and the safe
+error message for each project. It reads names from the active workspace only,
+excludes deleted/ineligible projects and failures from other HubSpot portals, and
+paginates 25 projects at a time. Corrected projects leave the list when their
+source intent changes. A successful sync of another project does not hide remaining
+project failures. Client details and credentials are not included in this response.
+
+After upgrading, run `npm run migrate` from the repository root. The
+`hubspot_remove_marketing_sync` migration removes the retired field from persisted
+change signatures and releases obsolete marketing-only blocks. It preserves
+exhausted failures, attempt counts, contact mappings and local client data.
