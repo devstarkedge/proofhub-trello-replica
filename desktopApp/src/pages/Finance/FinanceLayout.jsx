@@ -1,5 +1,6 @@
+import useAccessControl from '../../hooks/useAccessControl';
 import { useState, useEffect, useContext, useCallback, useRef } from 'react';
-import { Outlet, NavLink, useLocation } from 'react-router-dom';
+import { Outlet, NavLink, useLocation, Navigate } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Users, 
@@ -25,6 +26,9 @@ import { toast } from 'react-toastify';
  */
 const FinanceLayout = () => {
   const location = useLocation();
+  const { can, loading: permissionsLoading } = useAccessControl();
+  const canRevenue = can('finance', 'revenue_analytics');
+  const canBilling = can('finance', 'billing_details');
   const { user } = useContext(AuthContext);
   const [customPages, setCustomPages] = useState([]);
   const [pendingPagesCount, setPendingPagesCount] = useState(0);
@@ -248,7 +252,7 @@ const FinanceLayout = () => {
           style={{ backgroundColor: 'var(--color-bg-secondary)' }}
         >
           {/* Main Tabs */}
-          {tabs.map((tab) => {
+          {tabs.filter(tab => tab.id === 'dashboard' ? canRevenue : canBilling).map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
             
@@ -275,7 +279,7 @@ const FinanceLayout = () => {
           })}
 
           {/* Approved Custom Pages as Individual Tabs */}
-          {customPages
+          {(canBilling ? customPages : [])
             .filter(page => page.status === 'approved')
             .map(page => {
               const isPageActive = location.pathname.includes(`/pages/${page._id}`);
@@ -341,7 +345,7 @@ const FinanceLayout = () => {
                         Pending Pages
                       </span>
                     </div>
-                    {customPages
+                    {(canBilling ? customPages : [])
                       .filter(page => page.status !== 'approved')
                       .map(page => (
                       <NavLink
@@ -419,7 +423,9 @@ const FinanceLayout = () => {
         </div>
 
         {/* Page Content - Rendered via Outlet */}
-        <Outlet />
+        {permissionsLoading ? <p role="status">Loading Finance access…</p> : activeTab === 'dashboard' ? (
+          canRevenue ? <Outlet /> : canBilling ? <Navigate to="/finance/users" replace /> : <p>Your Finance access does not include reports. Ask your workspace administrator for the reports you need.</p>
+        ) : canBilling ? <Outlet /> : <p>You do not have access to billing reports.</p>}
       </main>
     </div>
   );

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { boundedInteger, pageNumber } from '../utils/pagination.js';
 import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 // Reaction schema for emoji reactions
@@ -309,62 +310,24 @@ commentSchema.pre('save', function(next) {
 
 // Static method to get paginated comments with pinned first
 commentSchema.statics.getPaginatedComments = async function(query, options = {}) {
-  const { page = 1, limit = 20, sortBy = 'createdAt', sortOrder = -1 } = options;
+  const page = pageNumber(options.page), limit = boundedInteger(options.limit, 20, 100);
   const skip = (page - 1) * limit;
-
-  // Get pinned comments first
-  const pinnedComments = await this.find({ ...query, isPinned: true, parentComment: null })
-    .populate('user', 'name avatar')
-    .populate('pinnedBy', 'name')
-    .sort({ pinnedAt: -1 })
-    .lean();
-
-  // Get non-pinned comments with pagination
-  const regularComments = await this.find({ ...query, isPinned: false, parentComment: null })
-    .populate('user', 'name avatar')
-    .sort({ [sortBy]: sortOrder })
-    .skip(skip)
-    .limit(limit)
-    .lean();
-
-  // Get total count for pagination
-  const total = await this.countDocuments({ ...query, parentComment: null });
-
-  return {
-    comments: [...pinnedComments, ...regularComments],
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
-      hasMore: page * limit < total
-    }
-  };
+  const filter = { ...query, parentComment: null };
+  const [comments, total] = await Promise.all([
+    this.find(filter).populate('user', 'name avatar').populate('pinnedBy', 'name').sort({ isPinned: -1, pinnedAt: -1, createdAt: -1, _id: -1 }).skip(skip).limit(limit).lean(),
+    this.countDocuments(filter)
+  ]);
+  return { comments, pagination: { page, limit, total, totalPages: Math.ceil(total / limit), hasMore: page * limit < total } };
 };
 
-// Static method to get threaded replies
 commentSchema.statics.getReplies = async function(parentCommentId, options = {}) {
-  const { page = 1, limit = 10 } = options;
-  const skip = (page - 1) * limit;
-
-  const replies = await this.find({ parentComment: parentCommentId })
-    .populate('user', 'name avatar')
-    .sort({ createdAt: 1 })
-    .skip(skip)
-    .limit(limit)
-    .lean();
-
-  const total = await this.countDocuments({ parentComment: parentCommentId });
-
-  return {
-    replies,
-    pagination: {
-      page,
-      limit,
-      total,
-      hasMore: page * limit < total
-    }
-  };
+  const page = pageNumber(options.page), limit = boundedInteger(options.limit, 10, 100), skip = (page - 1) * limit;
+  const filter = { ...options.filter, parentComment: parentCommentId };
+  const [replies, total] = await Promise.all([
+    this.find(filter).populate('user', 'name avatar').sort({ createdAt: 1, _id: 1 }).skip(skip).limit(limit).lean(),
+    this.countDocuments(filter)
+  ]);
+  return { replies, pagination: { page, limit, total, hasMore: page * limit < total } };
 };
 
 // Instance method to add reaction

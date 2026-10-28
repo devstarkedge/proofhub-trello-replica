@@ -1,3 +1,4 @@
+import { actorFromToken } from '../../../shared/offlineQueue.mjs';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { shallow } from 'zustand/shallow';
@@ -22,6 +23,8 @@ const buildCardsById = (cardsByList) => {
 
 // Track the current request to prevent race conditions
 let currentRequestId = 0;
+let cacheGeneration = 0;
+const cacheScope = () => `${actorFromToken(localStorage.getItem('token') || '')}:${localStorage.getItem('workspaceId') || ''}`;
 
 const useWorkflowStore = create(
   devtools(
@@ -51,20 +54,23 @@ const useWorkflowStore = create(
       
       // Prefetch workflow data in background
       prefetchWorkflow: async (projectId) => {
+        const generation = cacheGeneration;
+        const scope = cacheScope();
         const state = get();
         // Don't prefetch if we already have fresh data
-        if (state.prefetchedData[projectId] && (Date.now() - state.prefetchedData[projectId].timestamp < 60000)) {
+        if (state.prefetchedData[projectId]?.scope === scope && state.prefetchedData[projectId]?.generation === generation && (Date.now() - state.prefetchedData[projectId].timestamp < 60000)) {
            return;
         }
 
         try {
           const response = await Database.getWorkflowComplete(projectId);
-          if (response.success && response.data) {
+          if (response.success && response.data && cacheGeneration === generation && cacheScope() === scope) {
              set(state => ({
                prefetchedData: {
                  ...state.prefetchedData,
                  [projectId]: {
                    data: response.data,
+                   scope, generation,
                    timestamp: Date.now()
                  }
                }
@@ -77,11 +83,13 @@ const useWorkflowStore = create(
       },
       initializeWorkflow: async (projectId) => {
         const requestId = ++currentRequestId;
+        const scope = cacheScope();
+        const generation = cacheGeneration;
         logger.debug('PROJECT_RESOLUTION_START', { projectId, requestId });
         const state = get();
         
         // Check if we already have data for this project
-        const isSameProject = state.currentProjectId === projectId;
+        const isSameProject = state.currentProjectId === projectId && state.currentScope === scope;
         const hasData = state.board && state.lists && state.lists.length >= 0; 
         
         if (isSameProject && hasData) {
@@ -94,7 +102,7 @@ const useWorkflowStore = create(
         } else {
           // Check for prefetched data first
           const prefetched = state.prefetchedData[projectId];
-          if (prefetched && (Date.now() - prefetched.timestamp < 300000)) { // 5 minutes validity
+          if (prefetched?.scope === cacheScope() && prefetched?.generation === cacheGeneration && (Date.now() - prefetched.timestamp < 300000)) { // 5 minutes validity
              console.log('Using prefetched data for', projectId);
              const { board, lists, cardsByList } = prefetched.data;
              const cardsById = buildCardsById(cardsByList);
@@ -106,7 +114,7 @@ const useWorkflowStore = create(
                 loading: false,
                 lastUpdated: Date.now(),
                 error: null,
-                currentProjectId: projectId
+                currentScope: scope, currentProjectId: projectId
              });
              logger.debug('PROJECT_RESOLUTION_COMPLETE', { projectId, boardId: board?._id, source: 'prefetch' });
              // Clear used prefetch to free memory? Optional. keeping it for now.
@@ -121,7 +129,7 @@ const useWorkflowStore = create(
             lists: [], 
             cardsByList: {},
             cardsById: {},
-            currentProjectId: projectId 
+            currentScope: scope, currentProjectId: projectId
           });
         }
 
@@ -130,7 +138,7 @@ const useWorkflowStore = create(
           const response = await Database.getWorkflowComplete(projectId);
           
           // Check if this request is still the current one
-          if (requestId !== currentRequestId) {
+          if (requestId !== currentRequestId || generation !== cacheGeneration || scope !== cacheScope()) {
             console.log('Stale request ignored for project:', projectId);
             return;
           }
@@ -163,7 +171,7 @@ const useWorkflowStore = create(
           });
           logger.debug('PROJECT_RESOLUTION_COMPLETE', { projectId, boardId: board?._id, source: 'network' });
         } catch (error) {
-          if (requestId !== currentRequestId) return;
+          if (requestId !== currentRequestId || generation !== cacheGeneration || scope !== cacheScope()) return;
 
           console.error('Error initializing workflow:', error);
           logger.debug('PROJECT_CONTEXT_INVALID', { projectId, requestId, message: error.message });
@@ -867,7 +875,10 @@ const useWorkflowStore = create(
       // cache, which clearWorkflow itself deliberately leaves alone
       // (prefetching another project shouldn't wipe the currently-viewed
       // one's cache) but does need to go on an actual workspace switch.
-      reset: () => set({
+      reset: () => {
+        currentRequestId += 1;
+        cacheGeneration += 1;
+        set({
         board: null,
         lists: [],
         cardsByList: {},
@@ -877,7 +888,8 @@ const useWorkflowStore = create(
         lastUpdated: null,
         currentProjectId: null,
         prefetchedData: {}
-      })
+      });
+      }
     }),
     {
       name: 'workflow-store'

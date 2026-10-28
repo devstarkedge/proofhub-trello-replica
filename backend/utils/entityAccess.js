@@ -34,15 +34,15 @@ import { getAssignmentBasedBoardIds, userHasCapability, CAPABILITIES } from '../
 async function userCanAccessBoard({ userId, boardId }) {
   if (!boardId || !mongoose.Types.ObjectId.isValid(boardId)) return false;
 
-  const board = await Board.findById(boardId).select('owner members visibility isDeleted').lean();
+  const board = await Board.findById(boardId).select('workspaceId owner members visibility isDeleted department team').lean();
   if (!board || board.isDeleted) return false;
 
   const membership = await WorkspaceMembership.findOne({ user: userId, workspace: getActiveWorkspaceId(), status: 'active' })
-    .select('role accessType allowedProjects')
+    .select('role roleId department team accessType allowedProjects restriction')
     .lean();
   if (!membership) return false;
 
-  return canUserAccessBoard(board, { _id: userId, id: userId, role: membership.role, allowedProjects: membership.allowedProjects || [] });
+  return canUserAccessBoard(board, { ...membership, _id: userId, id: userId, workspaceId: getActiveWorkspaceId(), allowedProjects: membership.allowedProjects || [] });
 
 }
 

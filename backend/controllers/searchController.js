@@ -1,3 +1,5 @@
+import { resourceReadFilter } from '../services/resourceReadFilter.js';
+import { boardAccessFilter as getBoardAccessFilter } from '../utils/boardAccess.js';
 import WorkspaceMembership from '../models/WorkspaceMembership.js';
 import { literalSearch } from '../utils/literalSearch.js';
 import Card from "../models/Card.js";
@@ -27,16 +29,7 @@ export const globalSearch = asyncHandler(async (req, res, next) => {
   let results = {};
 
   // Resolve boards accessible to current user
-  const boardAccessFilter = req.user.role === 'admin'
-    ? {}
-    : {
-        $or: [
-          { owner: req.user.id },
-          { members: req.user.id },
-          { visibility: "public" },
-          ...(req.user.allowedProjects?.length ? [{ _id: { $in: req.user.allowedProjects } }] : [])
-        ]
-      };
+  const boardAccessFilter = await getBoardAccessFilter(req.user);
 
   const accessibleBoards = await Board.find(boardAccessFilter).select('_id').lean();
   const accessibleBoardIds = accessibleBoards.map(b => b._id);
@@ -51,11 +44,11 @@ export const globalSearch = asyncHandler(async (req, res, next) => {
             { description: searchRegex },
           ]
         },
-        req.user.role === 'admin' ? {} : { board: { $in: accessibleBoardIds } }
+        { board: { $in: accessibleBoardIds } }
       ]
     };
 
-    const cards = await Card.find(cardQuery)
+    const cards = await Card.find({ $and: [cardQuery, await resourceReadFilter(req, 'task')] })
       .populate("assignees", "name email avatar")
       .populate("list", "title")
       .populate("board", "name")
@@ -127,26 +120,15 @@ export const searchCards = asyncHandler(async (req, res, next) => {
   }
 
   // Access control: Ensure user can only search in accessible boards
-  const accessibleBoards = await Board.find(
-    req.user.role === 'admin'
-      ? {}
-      : {
-          $or: [
-            { owner: req.user.id },
-            { members: req.user.id },
-            { visibility: "public" },
-            ...(req.user.allowedProjects?.length ? [{ _id: { $in: req.user.allowedProjects } }] : [])
-          ]
-        }
-  ).select('_id').lean();
+  const accessibleBoards = await Board.find(await getBoardAccessFilter(req.user)).select('_id').lean();
   const accessibleBoardIds = accessibleBoards.map(b => b._id.toString());
 
   if (board) {
-    if (req.user.role !== 'admin' && !accessibleBoardIds.includes(board.toString())) {
+    if (!accessibleBoardIds.includes(board.toString())) {
       return next(new ErrorResponse("Not authorized to search in this project", 403));
     }
     query.board = board;
-  } else if (req.user.role !== 'admin') {
+  } else {
     query.board = { $in: accessibleBoardIds };
   }
   if (assignee) query.assignees = { $in: [assignee] };
@@ -160,7 +142,7 @@ export const searchCards = asyncHandler(async (req, res, next) => {
     if (dueDateTo) query.dueDate.$lte = new Date(dueDateTo);
   }
 
-  const cards = await Card.find(query)
+  const cards = await Card.find({ $and: [query, await resourceReadFilter(req, 'task')] })
     .populate("assignees", "name email avatar")
     .populate("members", "name email avatar")
     .populate("list", "title")
@@ -194,12 +176,8 @@ export const getSuggestions = asyncHandler(async (req, res, next) => {
 
   let suggestions = [];
 
-  // Build department filter for board lookup
-  const getDepartmentBoardIds = async () => {
-    if (!departmentId || departmentId === "all") return null;
-    const boards = await Board.find({ department: departmentId }).select("_id");
-    return boards.map((b) => b._id);
-  };
+  const visibleBoardIds = await Board.distinct('_id', { $and: [await getBoardAccessFilter(req.user), departmentId && departmentId !== 'all' ? { department: departmentId } : {}] });
+  const getDepartmentBoardIds = async () => visibleBoardIds;
 
   switch (field) {
     case "task": {
@@ -208,6 +186,7 @@ export const getSuggestions = asyncHandler(async (req, res, next) => {
       if (boardFilter) matchStage.board = { $in: boardFilter };
 
       const cards = await Card.find({
+        ...await resourceReadFilter(req, 'task'),
         ...matchStage,
         title: searchRegex,
       })
@@ -224,7 +203,7 @@ export const getSuggestions = asyncHandler(async (req, res, next) => {
     }
 
     case "project": {
-      const boardMatch = { name: searchRegex };
+      const boardMatch = { name: searchRegex, _id: { $in: visibleBoardIds } };
       if (departmentId && departmentId !== "all") {
         boardMatch.department = departmentId;
       }
@@ -294,14 +273,14 @@ export const getSuggestions = asyncHandler(async (req, res, next) => {
       if (boardFilter) cardMatch.board = { $in: boardFilter };
 
       const [cards, boards, users] = await Promise.all([
-        Card.find({ ...cardMatch, title: searchRegex })
+        Card.find({ ...await resourceReadFilter(req, 'task'), ...cardMatch, title: searchRegex })
           .select("title")
           .limit(4)
           .lean(),
         Board.find(
           departmentId && departmentId !== "all"
-            ? { name: searchRegex, department: departmentId }
-            : { name: searchRegex }
+            ? { name: searchRegex, department: departmentId, _id: { $in: visibleBoardIds } }
+            : { name: searchRegex, _id: { $in: visibleBoardIds } }
         )
           .select("name")
           .limit(3)

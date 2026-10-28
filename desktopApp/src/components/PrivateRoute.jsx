@@ -33,9 +33,9 @@ const PrivateRoute = ({ children, requiredRole }) => {
     return <Navigate to={`/login?returnTo=${encodeURIComponent(returnTo)}`} state={{ from: location }} replace />;
   }
 
-  // Force admin to change password if required
-  if (user && user.role === 'admin' && user.forcePasswordChange && location.pathname !== '/admin/settings') {
-    return <Navigate to="/admin/settings" replace />;
+  if (user?.forcePasswordChange) {
+    const passwordPath = user.role === 'admin' ? '/admin/settings' : '/settings';
+    return location.pathname === passwordPath ? children : <Navigate to={passwordPath} replace />;
   }
 
   // Check verification status (admin is always verified)

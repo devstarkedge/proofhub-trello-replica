@@ -1,3 +1,4 @@
+import { deleteResource } from '../resourceDeletion.js';
 /**
  * Card Service — orchestrates card/task operations
  * 
@@ -255,7 +256,8 @@ class CardService {
 
     const boardId = card.board;
 
-    await notificationService.notifyTaskDeleted(card, user.id);
+    await deleteResource('card', card._id, { actor: user });
+    await notificationService.notifyTaskDeleted(card, user.id).catch(() => {});
 
     const boardForDelete = await Board.findById(card.board).select('name department').lean();
     chatHooks.onTaskDeleted(card, boardForDelete, user).catch(() => {});
@@ -274,7 +276,7 @@ class CardService {
       deletedBy: { id: user.id, name: user.name },
     });
 
-    await card.deleteOne();
+
     return { success: true };
   }
 

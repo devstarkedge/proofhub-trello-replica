@@ -1,0 +1,37 @@
+name: Verify builds
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      VITE_BACKEND_URL: http://localhost:5000
+      VITE_BACKEND_PRODUCTION: https://example.invalid
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+            desktopApp/package-lock.json
+      - run: npm ci --prefix backend --no-audit
+      - run: npm ci --prefix frontend --no-audit
+      - run: npm ci --prefix desktopApp --no-audit
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      # Test sources and Electron fixtures are kept local by project preference.
+      # This workflow verifies lockfile installation and production builds only.
+      - run: npm run build --prefix frontend
+        env:
+          NODE_ENV: production
+      - run: npm run build --prefix desktopApp
+        env:
+          NODE_ENV: production

@@ -1,3 +1,4 @@
+import OfflineEdits from './OfflineEdits';
 
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 
@@ -11,6 +12,7 @@ const NetworkStatusToast = () => {
 
   return (
     <>
+      <OfflineEdits />
       {/* Offline Toast */}
       <div
         className={`fixed top-4 right-4 z-[9999] transition-all duration-300 ease-out transform ${

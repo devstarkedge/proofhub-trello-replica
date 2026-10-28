@@ -12,6 +12,7 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(localStorage.getItem("token"));
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [sessionError, setSessionError] = useState(null);
 
   const normalizeUser = useCallback((userData) => {
     if (!userData || typeof userData !== "object") {
@@ -49,6 +50,9 @@ export const AuthProvider = ({ children }) => {
 
   const logoutUser = useCallback(() => {
     // Only remove token from localStorage
+    const refreshToken = localStorage.getItem('refreshToken');
+    if (refreshToken) api.post('/api/auth/logout', { refreshToken }, { skipOfflineQueue: true }).catch(() => {});
+    localStorage.removeItem('refreshToken');
     localStorage.removeItem("token");
     localStorage.removeItem("workspaceId");
     sessionStorage.removeItem("push_modal_dismissed");
@@ -74,6 +78,8 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const restoreSession = useCallback(async () => {
+    setSessionError(null);
+    setLoading(true);
     const savedToken = localStorage.getItem("token");
 
     if (!savedToken) {
@@ -92,7 +98,7 @@ export const AuthProvider = ({ children }) => {
       }
 
       // Re-hydrate state from verified data (user data in memory only)
-      setToken(savedToken);
+      setToken(localStorage.getItem("token"));
       setUser(normalizedUser);
       setIsAuthenticated(true);
 
@@ -110,7 +116,8 @@ export const AuthProvider = ({ children }) => {
       // moment later. See WorkspaceContext.jsx's loadWorkspaces/switchWorkspace.
     } catch (error) {
       console.error("Session restore failed:", error);
-      logoutUser();
+      if (error.response?.status === 401) logoutUser();
+      else setSessionError('Your session could not be verified. Check your connection and retry.');
     }
 
     setLoading(false);
@@ -131,6 +138,7 @@ export const AuthProvider = ({ children }) => {
     const handleRoleChanged = (event) => {
       const { userId, newRole } = event.detail;
       if (user && user._id === userId) {
+        resetAllOnWorkspaceSwitch();
         setUser(prev => prev ? { ...prev, role: newRole } : prev);
         // Reload permissions so the UI reflects the new role immediately
         useRoleStore.getState().loadMyPermissions().catch(err =>
@@ -143,39 +151,27 @@ export const AuthProvider = ({ children }) => {
     return () => window.removeEventListener('socket-user-role-changed', handleRoleChanged);
   }, [user]);
 
-  // Axios interceptor for automatic token refresh
   useEffect(() => {
-    const interceptor = api.interceptors.response.use(
-      (response) => response,
-      async (error) => {
-        const originalRequest = error.config;
-        // Prevent retry on refresh endpoint to avoid infinite loops
-        if (originalRequest.url && originalRequest.url.includes('/api/auth/refresh')) {
-          return Promise.reject(error);
-        }
-        if (error.response?.status === 401 && !originalRequest._retry && !originalRequest.url.includes('/api/auth/login')) {
-          originalRequest._retry = true;
-          try {
-            const refreshResponse = await api.post("/api/auth/refresh");
-            const { token: newToken } = refreshResponse.data;
-            localStorage.setItem("token", newToken);
-            setToken(newToken);
-            originalRequest.headers["Authorization"] = `Bearer ${newToken}`;
-            return api(originalRequest);
-          } catch (refreshError) {
-            console.error("Token refresh failed:", refreshError);
-            logoutUser();
-            return Promise.reject(refreshError);
-          }
-        }
-        return Promise.reject(error);
-      }
-    );
-
-    return () => {
-      api.interceptors.response.eject(interceptor);
+    const updated = event => {
+      if (event.detail.token) setToken(event.detail.token);
+      else logoutUser();
     };
+    window.addEventListener('session-token-updated', updated);
+    return () => window.removeEventListener('session-token-updated', updated);
   }, [logoutUser]);
+
+  useEffect(() => {
+    const changed = event => {
+      const detail = event.detail || {};
+      if (detail.workspaceId && String(detail.workspaceId) !== localStorage.getItem('workspaceId')) return;
+      if (detail.userId && String(detail.userId) !== String(user?._id || user?.id)) return;
+      resetAllOnWorkspaceSwitch();
+      restoreSession();
+    };
+    const events = ['socket-authz-changed', 'socket-user-project-access-changed', 'socket-access-control-updated'];
+    events.forEach(event => window.addEventListener(event, changed));
+    return () => events.forEach(event => window.removeEventListener(event, changed));
+  }, [user?._id, user?.id, restoreSession]);
 
   const login = async (email, password) => {
     const body = JSON.stringify({ email, password });
@@ -223,6 +219,8 @@ export const AuthProvider = ({ children }) => {
         token,
         isAuthenticated,
         loading,
+        sessionError,
+        retrySession: restoreSession,
         login,
         loginUser,
         logoutUser,

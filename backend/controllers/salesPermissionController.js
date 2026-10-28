@@ -1,3 +1,4 @@
+import { workspacePerson } from '../services/workspaceAudience.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { resolveResourceAccess } from '../modules/permissions/permissionEngine.js';
 import { setResourceOverride } from '../modules/permissions/accessControlService.js';
@@ -12,7 +13,7 @@ import { shouldNotifyOnModuleGrant } from '../utils/permissionNotificationGuards
 // @access  Private/Admin
 export const getSalesPermission = asyncHandler(async (req, res) => {
   const userId = req.params.id;
-  const targetUser = await User.findById(userId).select('role');
+  const targetUser = await workspacePerson(userId, req.workspaceId);
 
   if (!targetUser) {
     return res.status(200).json({ success: true, data: null });
@@ -21,7 +22,7 @@ export const getSalesPermission = asyncHandler(async (req, res) => {
   // Delegates to the same engine as GET /api/sales/permissions/:userId and
   // PUT /api/access-control/users/:userId/overrides/sales — one resolver,
   // not a second parallel read path.
-  const result = await resolveResourceAccess(targetUser, 'sales');
+  const result = await resolveResourceAccess(targetUser, 'sales', req.workspaceId);
   res.status(200).json({ success: true, data: toLegacyShape('sales', result.actions) });
 });
 
@@ -30,13 +31,13 @@ export const getSalesPermission = asyncHandler(async (req, res) => {
 // @access  Private/Admin
 export const setSalesPermission = asyncHandler(async (req, res) => {
   const userId = req.params.id;
-  const targetUser = await User.findById(userId).select('role');
+  const targetUser = await workspacePerson(userId, req.workspaceId);
 
   if (!targetUser) {
     return res.status(404).json({ success: false, message: 'User not found' });
   }
 
-  const previousResult = await resolveResourceAccess(targetUser, 'sales');
+  const previousResult = await resolveResourceAccess(targetUser, 'sales', req.workspaceId);
   const previousModuleVisible = previousResult.actions?.view === true;
 
   const actions = fromLegacyShape('sales', {

@@ -26,11 +26,11 @@ export async function syncUserDepartmentRoster({ workspaceId, userId, department
  * Which array depends on the role being granted IN THIS WORKSPACE, not the
  * user's global User.role (those can differ across workspaces).
  */
-export async function addUserToDepartmentRoster(workspaceId, departmentId, userId, roleSlug) {
+export async function addUserToDepartmentRoster(workspaceId, departmentId, userId, roleSlug, { session = null } = {}) {
   if (!departmentId) return;
 
   await workspaceContext.run({ workspaceId }, async () => {
-    const dept = await Department.findById(departmentId);
+    const dept = await Department.findById(departmentId).session(session);
     if (!dept) return;
 
     const targetArray = departmentRosterFieldForRole(roleSlug);
@@ -40,7 +40,7 @@ export async function addUserToDepartmentRoster(workspaceId, departmentId, userI
     if (!dept[targetArray].some((id) => id.toString() === userId.toString())) {
       dept[targetArray].push(userId);
     }
-    await dept.save();
+    await dept.save({ session });
   });
 }
 

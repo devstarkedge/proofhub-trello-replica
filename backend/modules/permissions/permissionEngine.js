@@ -1,7 +1,7 @@
 import AccessOverride from '../../models/AccessOverride.js';
 import Role from '../../models/Role.js';
 import { RESOURCES, RESOURCE_ROLE_DEFAULTS, getResourceActionKeys } from '../../config/permissionRegistry.js';
-import { ensureDefaultWorkspace } from './workspaceService.js';
+import { getActiveWorkspaceId } from '../workspaces/workspaceContext.js';
 
 /**
  * The single permission resolver. Every consumer — sidebar visibility,
@@ -45,7 +45,8 @@ const allActionsAs = (resource, value) =>
  */
 export async function getActiveOverride(userId, resource, workspaceId) {
   if (!userId || !resource) return null;
-  const workspace = workspaceId || (await ensureDefaultWorkspace());
+  const workspace = workspaceId || getActiveWorkspaceId();
+  if (!workspace) return null;
   const doc = await AccessOverride.findOne({
     workspace,
     user: userId,
@@ -65,16 +66,17 @@ export async function getActiveOverride(userId, resource, workspaceId) {
  * active workspace explicitly, since the target User document itself never
  * carries a workspace (a user can belong to several).
  */
-export async function resolveResourceAccess(user, resource, workspaceId) {
+export async function resolveResourceAccess(user, resource, workspaceId, options = {}) {
   const key = String(resource || '').toLowerCase();
   if (!RESOURCES[key]) {
     throw new Error(`Unknown permission resource: ${resource}`);
   }
 
-  const ws = workspaceId || user?.workspaceId || (await ensureDefaultWorkspace());
+  const ws = workspaceId || user?.workspaceId || getActiveWorkspaceId();
+  if (!ws || !user) return { resource: key, actions: allActionsAs(key, false), scope: 'none', source: 'no-workspace' };
   const userId = user._id || user.id;
   const role = String(user.role || '').toLowerCase();
-  const override = await getActiveOverride(userId, key, ws);
+  const override = Object.hasOwn(options, 'override') ? options.override && !isExpired(options.override) ? options.override : null : await getActiveOverride(userId, key, ws);
 
   // 1. Explicit deny always wins, even over Admin.
   if (override?.effect === 'deny') {
@@ -146,6 +148,14 @@ export async function hasResourceAction(user, resource, actionKey, workspaceId) 
   if (!user) return false;
   const result = await resolveResourceAccess(user, resource, workspaceId);
   return result.actions?.[actionKey] === true;
+}
+
+export async function resolveResourceAccessBatch(users, resource, workspaceId) {
+  if (!workspaceId) return new Map();
+  const overrides = await AccessOverride.find({ workspace: workspaceId, user: { $in: users.map(user => user._id || user.id) }, resource, isActive: true }).lean();
+  const byUser = new Map(overrides.filter(doc => !isExpired(doc)).map(doc => [String(doc.user), doc]));
+  const entries = await Promise.all(users.map(async user => [String(user._id || user.id), await resolveResourceAccess(user, resource, workspaceId, { override: byUser.get(String(user._id || user.id)) || null })]));
+  return new Map(entries);
 }
 
 /**

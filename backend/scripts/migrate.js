@@ -47,6 +47,7 @@ async function main() {
 
   console.log('Connecting to MongoDB...');
   await mongoose.connect(mongoUri, {
+    autoIndex: false,
     maxPoolSize: config.db.maxPoolSize,
     serverSelectionTimeoutMS: config.db.serverSelectionTimeoutMS,
     socketTimeoutMS: config.db.socketTimeoutMS,

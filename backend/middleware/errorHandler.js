@@ -14,7 +14,8 @@ const errorHandler = (err, req, res, next) => {
   // Log error for debugging
   // A refreshed checkout preview contains a short-lived confirmation proof.
   // Keep it in the caller's response, never in application logs.
-  console.error('Error:', err.code === 'CHECKOUT_RECONFIRM_REQUIRED' ? { code: err.code, message: err.message } : err);
+  // Validation/provider errors can contain submitted passwords or auth headers.
+  console.error('Request failed', { name: err.name, code: err.code, status: err.statusCode || 500 });
 
   // Mongoose bad ObjectId
   if (err.name === 'CastError') {
@@ -42,6 +43,7 @@ const errorHandler = (err, req, res, next) => {
   }
 
   // Mongoose validation error
+  if (err.name === 'VersionError') error = new ErrorResponse('This item changed while you were editing it. Refresh and retry.', 409);
   if (err.name === 'ValidationError') {
     const message = Object.values(err.errors).map(val => val.message).join(', ');
     error = new ErrorResponse(message, 400);

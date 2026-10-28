@@ -1,3 +1,4 @@
+import { modulePublisher } from './modulePublication.js';
 /**
  * Socket.IO Emitters
  * 
@@ -169,7 +170,7 @@ export const emitBulkUsersUnassigned = (userIds, departmentId) => {
 // ─── Finance Emitters ───────────────────────────────────────────────────────
 
 export const emitFinancePagePending = (page, creatorName) => {
-  getIO().to(ROOM.admin()).emit('finance:page:pending', {
+  modulePublisher('finance', getActiveWorkspaceId(), { roles: ['admin'] }).emit('finance:page:pending', {
     page,
     creatorName,
     message: `${creatorName} created a new finance page: "${page.name}" - Pending approval`
@@ -178,8 +179,7 @@ export const emitFinancePagePending = (page, creatorName) => {
 
 export const emitFinancePagePublished = (page) => {
   const io = getIO();
-  io.to(ROOM.admin()).emit('finance:page:published', { page, message: `New finance page "${page.name}" is now available` });
-  io.to(ROOM.managers()).emit('finance:page:published', { page, message: `New finance page "${page.name}" is now available` });
+  modulePublisher('finance', getActiveWorkspaceId(), { roles: ['admin', 'manager'] }).emit('finance:page:published', { page, message: `New finance page "${page.name}" is now available` });
 };
 
 export const emitFinancePageStatusChanged = (page, action) => {
@@ -188,20 +188,17 @@ export const emitFinancePageStatusChanged = (page, action) => {
     ? `Finance page "${page.name}" has been approved and is now visible to all managers`
     : `Finance page "${page.name}" was not approved`;
 
-  io.to(ROOM.admin()).emit('finance:page:status-changed', { page, action, message });
-  io.to(ROOM.managers()).emit('finance:page:status-changed', { page, action, message });
+  modulePublisher('finance', getActiveWorkspaceId(), { roles: ['admin', 'manager'] }).emit('finance:page:status-changed', { page, action, message });
 };
 
 export const emitFinancePageUpdated = (page) => {
   const io = getIO();
-  io.to(ROOM.admin()).emit('finance:page:updated', { page, message: `Finance page "${page.name}" has been updated` });
-  io.to(ROOM.managers()).emit('finance:page:updated', { page, message: `Finance page "${page.name}" has been updated` });
+  modulePublisher('finance', getActiveWorkspaceId(), { roles: ['admin', 'manager'] }).emit('finance:page:updated', { page, message: `Finance page "${page.name}" has been updated` });
 };
 
 export const emitFinancePageDeleted = (pageId, pageName) => {
   const io = getIO();
-  io.to(ROOM.admin()).emit('finance:page:deleted', { pageId, pageName, message: `Finance page "${pageName}" has been deleted` });
-  io.to(ROOM.managers()).emit('finance:page:deleted', { pageId, pageName, message: `Finance page "${pageName}" has been deleted` });
+  modulePublisher('finance', getActiveWorkspaceId(), { roles: ['admin', 'manager'] }).emit('finance:page:deleted', { pageId, pageName, message: `Finance page "${pageName}" has been deleted` });
 };
 
 export const emitFinanceDataRefresh = (context = {}) => {
@@ -217,35 +214,33 @@ export const emitFinanceDataRefresh = (context = {}) => {
   // every caller today runs inside a request that already has it.
   const workspaceId = context.workspaceId || getActiveWorkspaceId();
   if (workspaceId) {
-    io.to(ROOM.finance(workspaceId)).emit('finance:data:refresh', payload);
+    modulePublisher('finance', workspaceId).emit('finance:data:refresh', payload);
   }
-  io.to(ROOM.admin(workspaceId)).emit('finance:data:refresh', payload);
-  io.to(ROOM.managers(workspaceId)).emit('finance:data:refresh', payload);
 };
 
 // ─── Sales Tab Emitters ─────────────────────────────────────────────────────
 
 /** Broadcast tab created to sales room */
 export const emitSalesTabCreated = (tab) => {
-  getIO().to(ROOM.sales(tab.workspaceId || getActiveWorkspaceId())).emit('sales:tab:created', { tab });
+  modulePublisher('sales', tab.workspaceId || getActiveWorkspaceId()).emit('sales:tab:created', { tab });
 };
 
 /** Broadcast tab updated to sales room */
 export const emitSalesTabUpdated = (tab) => {
-  getIO().to(ROOM.sales(tab.workspaceId || getActiveWorkspaceId())).emit('sales:tab:updated', { tab });
+  modulePublisher('sales', tab.workspaceId || getActiveWorkspaceId()).emit('sales:tab:updated', { tab });
 };
 
 /** Broadcast tab deleted to sales room */
 export const emitSalesTabDeleted = (tabId) => {
   const workspaceId = getActiveWorkspaceId();
   if (!workspaceId) return;
-  getIO().to(ROOM.sales(workspaceId)).emit('sales:tab:deleted', { tabId });
+  modulePublisher('sales', workspaceId).emit('sales:tab:deleted', { tabId });
 };
 
 /** Notify the tab owner that their tab was approved */
 export const emitSalesTabApproved = (tab) => {
   getIO().to(ROOM.user(tab.ownerId, tab.workspaceId || getActiveWorkspaceId())).emit('sales:tab:approved', { tab });
-  getIO().to(ROOM.sales(tab.workspaceId || getActiveWorkspaceId())).emit('sales:tab:updated', { tab });
+  modulePublisher('sales', tab.workspaceId || getActiveWorkspaceId()).emit('sales:tab:updated', { tab });
 };
 
 /** Notify the tab owner that their tab was ignored */
@@ -262,7 +257,7 @@ export const emitSalesTabAlert = (userId, alertData) => {
 export const emitSalesTabUnreadUpdate = (tabId, unreadMatches) => {
   const workspaceId = getActiveWorkspaceId();
   if (!workspaceId) return;
-  getIO().to(ROOM.sales(workspaceId)).emit('sales:tab:unread-update', { tabId, unreadMatches });
+  modulePublisher('sales', workspaceId).emit('sales:tab:unread-update', { tabId, unreadMatches });
 };
 
 /** Notify admins of a pending shared/public tab */

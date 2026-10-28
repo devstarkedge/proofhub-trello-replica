@@ -7,7 +7,7 @@ import logger from '../utils/logger';
 import { getWorkspaceGateDecision } from '../utils/workspaceGate';
 
 const PrivateRoute = ({ children, requiredRole }) => {
-  const { user, isAuthenticated, loading } = useContext(AuthContext);
+  const { user, isAuthenticated, loading, sessionError, retrySession } = useContext(AuthContext);
   const { workspaces, currentWorkspace, status: workspaceStatus, loadWorkspaces } = useContext(WorkspaceContext);
   const location = useLocation();
 
@@ -22,6 +22,8 @@ const PrivateRoute = ({ children, requiredRole }) => {
     );
   }
 
+  if (sessionError) return <div role="alert" className="min-h-screen grid place-content-center gap-4 text-center p-8"><p>{sessionError}</p><button onClick={retrySession}>Retry</button></div>;
+
   if (!isAuthenticated) {
     // "/" is the only route an unauthenticated visitor sees a public page
     // for — every other protected path still redirects to /login exactly
@@ -33,9 +35,9 @@ const PrivateRoute = ({ children, requiredRole }) => {
     return <Navigate to={`/login?returnTo=${encodeURIComponent(returnTo)}`} state={{ from: location }} replace />;
   }
 
-  // Force admin to change password if required
-  if (user && user.role === 'admin' && user.forcePasswordChange && location.pathname !== '/admin/settings') {
-    return <Navigate to="/admin/settings" replace />;
+  if (user?.forcePasswordChange) {
+    const passwordPath = user.role === 'admin' ? '/admin/settings' : '/settings';
+    return location.pathname === passwordPath ? children : <Navigate to={passwordPath} replace />;
   }
 
   // Check verification status (admin is always verified)

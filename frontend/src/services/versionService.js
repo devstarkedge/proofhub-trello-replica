@@ -1,3 +1,4 @@
+import { sessionFetch as fetch } from './sessionFetch';
 // Version history service for tracking edits and rollback
 const baseURL = import.meta.env.VITE_BACKEND_URL;
 

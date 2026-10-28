@@ -20,15 +20,14 @@ import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function occurrenceJobId(recurringTaskId, nextOccurrence) {
-  const ts = nextOccurrence instanceof Date ? nextOccurrence.toISOString() : nextOccurrence;
-  return `recur:${recurringTaskId}:${ts}`;
+  return `recur-${recurringTaskId}-${new Date(nextOccurrence).getTime()}`;
 }
 
 /**
  * Generic job-id prefix for a recurring task (for removal when we don't know the exact ts).
  */
 function recurJobPrefix(recurringTaskId) {
-  return `recur:${recurringTaskId}:`;
+  return `recur-${recurringTaskId}-`;
 }
 
 /**
@@ -40,9 +39,8 @@ async function removePendingRecurringJob(recurringTaskId) {
     const delayed = await recurringTaskQueue.getDelayed();
     const prefix = recurJobPrefix(recurringTaskId.toString());
     for (const job of delayed) {
-      if (job.id && job.id.startsWith(prefix)) {
+      if (job.id && (job.id.startsWith(prefix) || job.id.startsWith(`recur:${recurringTaskId}:`) || job.id.startsWith(`recur-completion-${recurringTaskId}-`) || job.id.startsWith(`recur-completion:${recurringTaskId}:`) || job.id === `recur-recovery:${recurringTaskId}`)) {
         await job.remove();
-        return;
       }
     }
   } catch {
@@ -76,7 +74,7 @@ export async function scheduleNextOccurrence(recurringTask) {
 
   await recurringTaskQueue.add(
     'generate-task-instance',
-    { recurringTaskId: id },
+    { recurringTaskId: id, workspaceId: String(recurringTask.workspaceId), expectedOccurrence: next.toISOString(), occurrenceKey: `scheduled:${next.toISOString()}` },
     {
       jobId,
       delay,
@@ -98,15 +96,16 @@ export async function scheduleNextOccurrence(recurringTask) {
  * @param {string} recurringTaskId
  * @param {number} delayMs - 0 for immediate (whenComplete/whenDone), N days in ms for daysAfter
  */
-export async function enqueueCompletionTriggered(recurringTaskId, delayMs = 0) {
+export async function enqueueCompletionTriggered(recurringTaskId, delayMs = 0, sourceSubtaskId) {
   if (!isQueueActive()) return;
 
   const id = recurringTaskId.toString();
-  const jobId = `recur-completion:${id}:${Date.now()}`;
+  if (!sourceSubtaskId) throw new Error('Completion recurrences require the source subtask');
+  const jobId = `recur-completion-${id}-${sourceSubtaskId}`;
 
   await recurringTaskQueue.add(
     'generate-task-instance',
-    { recurringTaskId: id },
+    { recurringTaskId: id, occurrenceKey: `completion:${sourceSubtaskId}` },
     {
       jobId,
       delay: Math.max(0, delayMs),
@@ -155,14 +154,14 @@ export async function recoverRecurringSchedules() {
       recurBehavior: 'onSchedule',
       nextOccurrence: { $gt: now },
       scheduleType: { $ne: 'daysAfter' },
-    }).select('_id nextOccurrence recurBehavior').lean(),
+    }).select('_id workspaceId isActive nextOccurrence recurBehavior').lean(),
     // Overdue tasks (nextOccurrence already passed — fire immediately)
     RecurringTask.find({
       isActive: true,
       recurBehavior: 'onSchedule',
       nextOccurrence: { $lte: now },
       scheduleType: { $ne: 'daysAfter' },
-    }).select('_id nextOccurrence recurBehavior').lean(),
+    }).select('_id workspaceId isActive nextOccurrence recurBehavior').lean(),
   ]));
 
   for (const task of futureTasks) {
@@ -171,17 +170,7 @@ export async function recoverRecurringSchedules() {
   }
 
   for (const task of overdueTasks) {
-    const id = task._id.toString();
-    await recurringTaskQueue.add(
-      'generate-task-instance',
-      { recurringTaskId: id },
-      {
-        jobId: `recur-recovery:${id}`,
-        delay: 0,
-        removeOnComplete: true,
-        removeOnFail: { count: 50 },
-      }
-    );
+    await scheduleNextOccurrence(task);
     recovered++;
   }
 

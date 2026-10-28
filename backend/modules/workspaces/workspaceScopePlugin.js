@@ -39,9 +39,8 @@ function toObjectId(value) {
  *
  * Known, deliberate limits (see docs/access-control-migration.md-style
  * companion notes for the workspace migration):
- *  - bulkWrite() bypasses all document/query middleware — nothing in this
- *    codebase calls it on a workspace-owned model today; any future use
- *    must stamp workspaceId into every operation's filter/update by hand.
+ *  - bulkWrite() bypasses document/query hooks; the model static below
+ *    scopes its operations explicitly and prevents tenant reassignment.
  *  - An aggregate()'s own $lookup sub-pipelines are not separately scoped —
  *    safe only because the joined foreign key was itself correctly scoped
  *    at write time (e.g. Card.board only ever points at a same-workspace
@@ -57,6 +56,42 @@ function toObjectId(value) {
  *    the resulting document) or it will silently skip this plugin entirely.
  */
 export default function workspaceScopePlugin(schema, { allowGlobal = false } = {}) {
+  schema.statics.bulkWrite = async function (operations, options) {
+    const ctx = getActiveContext();
+    if (!ctx?.workspaceId && !ctx?.bypass) throw new Error('Bulk writes require workspace context');
+    const scoped = operations.map(operation => {
+      const [kind, original] = Object.entries(operation)[0] || [];
+      if (!['insertOne', 'updateOne', 'updateMany', 'replaceOne', 'deleteOne', 'deleteMany'].includes(kind)) throw new Error('Unsupported tenant bulk operation');
+      const entry = { ...original };
+      const explicit = entry.document?.workspaceId || entry.replacement?.workspaceId || entry.filter?.workspaceId;
+      const workspaceId = ctx?.bypass ? explicit : ctx.workspaceId;
+      if (!workspaceId || explicit && String(explicit) !== String(workspaceId)) throw new Error('Invalid workspace in bulk operation');
+      if (entry.document) entry.document = { ...entry.document, workspaceId };
+      if (entry.replacement) entry.replacement = { ...entry.replacement, workspaceId };
+      if (entry.filter) {
+        if (entry.upsert && Object.keys(entry.filter).some(key => key.startsWith('$'))) throw new Error('Bulk upserts require an explicit equality filter');
+        entry.filter = { ...entry.filter, workspaceId: toObjectId(workspaceId) };
+      }
+      if (entry.update) {
+        if (Array.isArray(entry.update)) throw new Error('Pipeline bulk updates are not supported');
+        entry.update = { ...entry.update };
+        for (const [operator, value] of Object.entries(entry.update)) {
+          if (!operator.startsWith('$')) throw new Error('Bulk updates must use explicit operators');
+          for (const [field, target] of Object.entries(value || {})) {
+            if (field === 'workspaceId') {
+              if (!['$set', '$setOnInsert'].includes(operator) || String(target) !== String(workspaceId)) throw new Error('workspaceId is immutable');
+            } else if (field.startsWith('workspaceId.') || operator === '$rename' && String(target).startsWith('workspaceId')) throw new Error('workspaceId is immutable');
+          }
+        }
+        if (entry.upsert) {
+          entry.update.$setOnInsert = { ...entry.update.$setOnInsert };
+          if (!entry.update.$set?.workspaceId) entry.update.$setOnInsert.workspaceId = workspaceId;
+        }
+      }
+      return { [kind]: entry };
+    });
+    return mongoose.Model.bulkWrite.call(this, scoped, options);
+  };
   const buildFilter = (ctx) => (
     allowGlobal
       ? { $or: [{ workspaceId: toObjectId(ctx.workspaceId) }, { workspaceId: null, isSystem: true }] }

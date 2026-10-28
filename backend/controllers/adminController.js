@@ -3,6 +3,7 @@ import User from '../models/User.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { requestEmailChange } from '../services/emailChangeService.js';
+import { issueSession } from '../services/authSessionService.js';
 /**
  * @desc    Update the signed-in admin's account settings
  * @route   PUT /api/admin/settings
@@ -49,6 +50,7 @@ export const updateAdminSettings = asyncHandler(async (req, res, next) => {
 
   res.status(200).json({
     success: true,
+    ...(newPassword ? await issueSession(admin) : {}),
     message: newEmail && newEmail !== admin.email ? 'Check your new email address to confirm the change.' : 'Account settings updated successfully',
     data: {
       email: admin.email,
@@ -84,6 +86,7 @@ export const forcePasswordChange = asyncHandler(async (req, res, next) => {
   }
 
   user.forcePasswordChange = true;
+  user.tokenVersion = (user.tokenVersion || 0) + 1;
   await user.save();
 
   res.status(200).json({

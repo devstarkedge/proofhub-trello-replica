@@ -1,3 +1,5 @@
+import { executeRecurrence } from '../services/recurrenceExecution.js';
+import { recurrenceJobIdentity } from '../services/recurrenceJobIdentity.js';
 /**
  * Recurring Task Worker
  *
@@ -8,68 +10,13 @@
  * Job types:
  *   generate-task-instance — create a subtask and chain the next job
  */
-import mongoose from 'mongoose';
 import { Worker } from '../queues/runtime.js';
 import { getWorkerConnection } from '../queues/connection.js';
 import RecurringTask from '../models/RecurringTask.js';
-import Subtask from '../models/Subtask.js';
-import Card from '../models/Card.js';
 import { emitToBoard } from '../realtime/index.js';
 import { refreshCardHierarchyStats } from '../utils/hierarchyStats.js';
 import { scheduleNextOccurrence } from '../schedulers/recurringTaskScheduler.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
-
-// ─── Subtask Generation (moved from recurrenceScheduler.js) ─────────────────
-
-async function generateRecurringSubtask(recurringTask, userId) {
-  const card = await Card.findById(recurringTask.card).populate('board', 'name');
-  if (!card) {
-    throw new Error('Parent card not found');
-  }
-
-  const currentCount = await Subtask.countDocuments({ task: recurringTask.card });
-
-  let subtaskDueDate = recurringTask.nextOccurrence;
-  let subtaskStartDate = null;
-
-  if (recurringTask.startDate && recurringTask.dueDate) {
-    const daysDiff = Math.ceil(
-      (new Date(recurringTask.dueDate) - new Date(recurringTask.startDate)) / (1000 * 60 * 60 * 24)
-    );
-    subtaskStartDate = new Date(subtaskDueDate);
-    subtaskStartDate.setDate(subtaskStartDate.getDate() - daysDiff);
-  }
-
-  const template = recurringTask.subtaskTemplate || {};
-  const parentTitle = card.title || 'Task';
-
-  const validTags = (template.tags || []).filter(
-    (tag) => tag && mongoose.Types.ObjectId.isValid(tag)
-  );
-
-  const subtask = await Subtask.create({
-    task: recurringTask.card,
-    board: recurringTask.board,
-    title: template.title || `${parentTitle} - Recurring Instance`,
-    description: template.description || '',
-    status: 'todo',
-    priority: template.priority || 'medium',
-    assignees: template.assignees || [],
-    tags: validTags,
-    dueDate: subtaskDueDate,
-    startDate: subtaskStartDate,
-    order: currentCount,
-    createdBy: userId,
-    isRecurring: true,
-    recurringTaskId: recurringTask._id,
-    breadcrumbs: {
-      project: card.board?.name || '',
-      task: card.title || '',
-    },
-  });
-
-  return subtask;
-}
 
 // ─── Job Handlers ───────────────────────────────────────────────────────────
 
@@ -84,42 +31,30 @@ const JOB_HANDLERS = {
     // This worker runs outside any Express request, so there is no ambient
     // workspace context — look the task up unscoped (its own _id already
     // disambiguates it), then run everything else inside its workspace.
-    const recurringTask = await workspaceContext.runUnscoped(
+    let recurringTask = await workspaceContext.runUnscoped(
       async () => await RecurringTask.findById(recurringTaskId)
     );
-    if (!recurringTask || !recurringTask.isActive) {
+    if (!recurringTask) {
       return { skipped: true, reason: 'inactive or not found' };
     }
 
     return workspaceContext.run({ workspaceId: recurringTask.workspaceId }, async () => {
-      // Check end conditions
-      if (recurringTask.shouldEnd()) {
-        recurringTask.isActive = false;
-        await recurringTask.save();
-        return { skipped: true, reason: 'end condition met' };
-      }
-
-      // Generate subtask
-      const subtask = await generateRecurringSubtask(recurringTask, recurringTask.createdBy);
-
-      // Update recurrence state
-      recurringTask.generatedSubtasks.push(subtask._id);
-      recurringTask.completedOccurrences += 1;
-      recurringTask.lastOccurrence = new Date();
-      recurringTask.nextOccurrence = recurringTask.calculateNextOccurrence();
-
-      // Check if should end after this occurrence
-      if (recurringTask.shouldEnd()) {
-        recurringTask.isActive = false;
-      }
-
-      await recurringTask.save();
+      const identity = recurrenceJobIdentity(job, recurringTask);
+      if (identity.skipped) return identity;
+      const { occurrenceKey, expectedOccurrence } = identity;
+      const result = await executeRecurrence(recurringTaskId, {
+        occurrenceKey, expectedOccurrence, actorId: recurringTask.createdBy
+      });
+      if (result.skipped) return result;
+      const { subtask } = result;
+      recurringTask = result.recurrence;
 
       // Refresh card hierarchy stats
       await refreshCardHierarchyStats(recurringTask.card);
 
       // Emit real-time updates
       const boardId = recurringTask.board.toString();
+      if (result.created) {
       emitToBoard(boardId, 'recurrence-triggered', {
         cardId: recurringTask.card,
         recurrence: recurringTask,
@@ -131,6 +66,8 @@ const JOB_HANDLERS = {
         taskId: recurringTask.card,
         subtask,
       });
+
+      }
 
       // Self-schedule next occurrence (only if still active & onSchedule)
       if (recurringTask.isActive && recurringTask.nextOccurrence) {

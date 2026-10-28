@@ -1,3 +1,5 @@
+import optimisticWritesPlugin from '../modules/workspaces/optimisticWrites.plugin.js';
+import tenantReferencesPlugin from '../modules/workspaces/tenantReferences.plugin.js';
 import mongoose from 'mongoose';
 import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
@@ -157,6 +159,8 @@ subtaskNanoSchema.index({ workspaceId: 1, assignees: 1, status: 1 });
 subtaskNanoSchema.index({ workspaceId: 1, dueDate: 1 });
 
 subtaskNanoSchema.plugin(workspaceScopePlugin);
+subtaskNanoSchema.plugin(tenantReferencesPlugin, { members: ['assignees'], references: { task: 'Card', subtask: 'Subtask', board: 'Board', tags: 'Label', coverImage: 'Attachment' }, parent: { field: 'subtask', model: 'Subtask' } });
+subtaskNanoSchema.plugin(optimisticWritesPlugin);
 
 export default mongoose.model('SubtaskNano', subtaskNanoSchema);
 

@@ -1,5 +1,6 @@
 import { v2 as cloudinary } from 'cloudinary';
 import { Readable } from 'stream';
+import { createReadStream } from 'node:fs';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 
@@ -159,10 +160,8 @@ export const uploadAnnouncementAttachment = async (fileBuffer, options = {}) => 
       }
     );
 
-    const readable = new Readable();
-    readable._read = () => {};
-    readable.push(fileBuffer);
-    readable.push(null);
+    const readable = Buffer.isBuffer(fileBuffer) ? Readable.from([fileBuffer]) : createReadStream(fileBuffer);
+    readable.once('error', error => { uploadStream.destroy(error); reject(error); });
     readable.pipe(uploadStream);
   });
 };
@@ -237,7 +236,8 @@ export const deleteAnnouncementAttachment = async (publicId, resourceType = 'ima
   try {
     const result = await cloudinary.uploader.destroy(publicId, {
       resource_type: resourceType,
-      invalidate: true
+      invalidate: true,
+      ...options
     });
     return { success: result.result === 'ok', result };
   } catch (error) {
@@ -350,6 +350,8 @@ export const uploadToCloudinary = (fileBuffer, options = {}) => {
       use_filename: true,
       unique_filename: true,
       overwrite: false,
+      type: 'authenticated',
+      timeout: 45000,
       ...options
     };
 
@@ -384,10 +386,8 @@ export const uploadToCloudinary = (fileBuffer, options = {}) => {
     );
 
     // Convert buffer to readable stream and pipe to upload
-    const readable = new Readable();
-    readable._read = () => {};
-    readable.push(fileBuffer);
-    readable.push(null);
+    const readable = Buffer.isBuffer(fileBuffer) ? Readable.from([fileBuffer]) : createReadStream(fileBuffer);
+    readable.once('error', error => { uploadStream.destroy(error); reject(error); });
     readable.pipe(uploadStream);
   });
 };
@@ -416,11 +416,13 @@ export const uploadFromUrl = async (url, options = {}) => {
  * @param {string} resourceType - 'image', 'video', 'raw', or 'auto'
  * @returns {Promise<Object>} Cloudinary deletion response
  */
-export const deleteFromCloudinary = async (publicId, resourceType = 'image') => {
+export const deleteFromCloudinary = async (publicId, resourceType = 'image', options = {}) => {
+  configureCloudinary();
   try {
     const result = await cloudinary.uploader.destroy(publicId, {
       resource_type: resourceType,
-      invalidate: true
+      invalidate: true,
+      ...options
     });
     return result;
   } catch (error) {

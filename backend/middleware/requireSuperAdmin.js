@@ -66,10 +66,12 @@ export const requireSuperAdmin = async (req, res, next) => {
     }
 
     // User is exempt from workspaceScopePlugin — no context wrapper needed.
-    const user = await User.findById(userId).select('name email isSuperAdmin isActive').lean();
+    const user = await User.findById(userId).select('name email isSuperAdmin isActive tokenVersion forcePasswordChange').lean();
     if (!user || !user.isActive) {
       return res.status(401).json({ success: false, message: 'User not found or deactivated' });
     }
+    if (decoded.type !== 'access' || !Number.isInteger(decoded.tokenVersion) || decoded.tokenVersion !== (user.tokenVersion || 0)) return res.status(401).json({ success: false, message: 'Session invalidated' });
+    if (user.forcePasswordChange) return res.status(403).json({ success: false, code: 'PASSWORD_CHANGE_REQUIRED', message: 'Change your password to continue' });
     if (user.isSuperAdmin !== true) {
       logger.warn('Super Admin access denied: role not granted', { userId, path: req.originalUrl });
       return res.status(403).json({ success: false, message: 'Super Admin access required' });

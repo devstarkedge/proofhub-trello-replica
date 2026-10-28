@@ -1,3 +1,5 @@
+import { actorFromToken } from '../../../shared/offlineQueue.mjs';
+import { installSessionTransport } from '../../../shared/sessionTransport.mjs';
 import axios from 'axios';
 import { addMutation, processMutations } from './backgroundSync';
 import { createBackendConnectivityMonitor } from './backendConnectivity';
@@ -15,6 +17,12 @@ const api = axios.create({
 // Add a request interceptor to check network status and include token
 api.interceptors.request.use(
   (config) => {
+    config._requestActor ||= actorFromToken(localStorage.getItem('token') || '');
+    config._requestWorkspace ||= config.headers?.['x-workspace-id'] || localStorage.getItem('workspaceId');
+    if (config._sessionActor && actorFromToken(localStorage.getItem('token') || '') !== config._sessionActor) {
+      config.skipOfflineQueue = true;
+      throw new Error('Session changed; reopen this item before retrying');
+    }
     // Block requests when offline
     if (!navigator.onLine) {
       const offlineError = new Error('No internet connection. Please check your network.');
@@ -28,7 +36,7 @@ api.interceptors.request.use(
       config.headers['Authorization'] = `Bearer ${token}`;
     }
     const workspaceId = localStorage.getItem('workspaceId');
-    if (workspaceId) {
+    if (workspaceId && !config.headers['x-workspace-id']) {
       config.headers['x-workspace-id'] = workspaceId;
     }
     return config;
@@ -49,9 +57,9 @@ api.interceptors.response.use(
     if (!navigator.onLine && shouldQueueOfflineRequest(error.config)) {
       // Store the failed request for later retry
       await addMutation({
-        url: error.config.url,
+        url: api.getUri(error.config),
+          baseURL: error.config.baseURL,
         method: error.config.method,
-        headers: error.config.headers,
         body: error.config.data,
         timestamp: Date.now(),
       });
@@ -69,5 +77,7 @@ api.interceptors.response.use(
 window.addEventListener('online', () => {
   processMutations();
 });
+
+installSessionTransport(api, localStorage, token => window.dispatchEvent(new CustomEvent('session-token-updated', { detail: { token } })));
 
 export default api;

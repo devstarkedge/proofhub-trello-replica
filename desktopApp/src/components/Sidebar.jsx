@@ -1,5 +1,5 @@
-import { useContext, useState, useEffect } from 'react';
-import { Home, Users, Settings, UserCheck, Bell, CalendarClock, ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen, X, DollarSign, Zap, TrendingUp, ShieldCheck, CalendarDays, Fingerprint, Timer } from 'lucide-react';
+import { useContext, useState } from 'react';
+import { Home, Users, Settings, UserCheck, Bell, CalendarClock, PanelLeftClose, PanelLeftOpen, X, DollarSign, Zap, TrendingUp, ShieldCheck, CalendarDays, Fingerprint, Timer } from 'lucide-react';
 import { NavLink, useLocation, matchPath } from 'react-router-dom';
 import { Dialog } from 'radix-ui';
 import SidebarTooltip from './SidebarTooltip';
@@ -21,7 +21,6 @@ const iconColors = {
   '/teams': { color: '#06b6d4', bg: 'rgba(6, 182, 212, 0.12)' }, // Cyan - Teams
   '/hr-panel': { color: '#ec4899', bg: 'rgba(236, 72, 153, 0.12)' }, // Pink - HR Panel
   '/admin/settings': { color: '#6366f1', bg: 'rgba(99, 102, 241, 0.12)' }, // Indigo - Settings
-  '/pm-sheet': { color: '#14b8a6', bg: 'rgba(20, 184, 166, 0.12)' }, // Teal - PM Sheet
   '/finance': { color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)' }, // Emerald - Finance
   '/sales': { color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.12)' }, // Purple - Sales
   '/access-control': { color: '#7c3aed', bg: 'rgba(124, 58, 237, 0.12)' }, // Violet - Access & Permissions
@@ -36,7 +35,6 @@ const Sidebar = ({ isMobile = false, collapsed = false, onToggleCollapse, onClos
   const leavePendingCount = useLeavePendingLive();
   const { user } = useContext(AuthContext);
   const [hoveredItem, setHoveredItem] = useState(null);
-  const [pmSheetExpanded, setPmSheetExpanded] = useState(false);
   const location = useLocation();
 
   // Single source of truth for "can this user see module X" — replaces two
@@ -57,27 +55,9 @@ const Sidebar = ({ isMobile = false, collapsed = false, onToggleCollapse, onClos
   const { pendingCount: joinRequestsPendingCount } = useJoinRequestsLive();
   const { pendingCount: regularizationPendingCount } = useRegularizationApprovalLive();
 
-  // Check if current path is under PM Sheet
-  const isPMSheetActive = location.pathname.startsWith('/pm-sheet');
-
-  // Auto-expand PM Sheet when on a PM Sheet page
-  useEffect(() => {
-    if (isPMSheetActive) {
-      setPmSheetExpanded(true);
-    }
-  }, [isPMSheetActive]);
-
   // Sales/Finance visibility now comes from useAccessControl() above, which
   // already stays live via the shared socket-driven refresh — no per-module
   // fetch/listener pair needed here anymore.
-
-  // PM Sheet child pages
-  const pmSheetChildren = [
-    { path: '/pm-sheet', label: 'Dashboard' },
-    { path: '/pm-sheet/month-wise', label: 'Month Wise Report' },
-    { path: '/pm-sheet/coordinator', label: 'Coordinator Report' },
-    { path: '/pm-sheet/approach', label: 'Approach Page' },
-  ];
 
   const getNavItems = () => {
     const userRole = (user?.role || '').toLowerCase();
@@ -108,7 +88,6 @@ const Sidebar = ({ isMobile = false, collapsed = false, onToggleCollapse, onClos
 
     // Finance - Admin always, other users only when explicitly granted
     if (userRole === 'admin' || financeVisible) {
-      // items.push({ path: '/pm-sheet', icon: FileSpreadsheet, label: 'PM Sheet', hasChildren: true });
       items.push({ path: '/finance', icon: DollarSign, label: 'Finance' });
     }
     
@@ -172,28 +151,11 @@ const Sidebar = ({ isMobile = false, collapsed = false, onToggleCollapse, onClos
     return iconColors[path] || { color: 'var(--color-text-secondary)', bg: 'transparent' };
   };
 
-  const renderPMSheetChildren = () => (
-    <div id="sidebar-pm-sheet-pages" className="ml-6 mt-1 space-y-1 border-l-2 pl-3" style={{ borderColor: getIconConfig('/pm-sheet').bg }}>
-      {pmSheetChildren.map((child) => (
-        <NavLink key={child.path} to={child.path} end onClick={isMobile ? onClose : undefined}
-          className="sidebar-child-link block truncate rounded-lg px-3 py-2 text-sm"
-          style={({ isActive }) => ({
-            color: isActive ? getIconConfig('/pm-sheet').color : 'var(--color-text-secondary)',
-            backgroundColor: isActive ? getIconConfig('/pm-sheet').bg : 'transparent',
-            fontWeight: isActive ? 600 : 500,
-          })}>
-          {child.label}
-        </NavLink>
-      ))}
-    </div>
-  );
-
   const renderNavItem = (item) => {
-    const { path, icon: Icon, label, badge, matchPrefix, iconKey, hasChildren } = item;
+    const { path, icon: Icon, label, badge, matchPrefix, iconKey } = item;
     const iconConfig = getIconConfig(iconKey || path);
     const isHovered = hoveredItem === path;
-    const isItemActive = (routerActive) => hasChildren ? isPMSheetActive
-      : matchPrefix ? location.pathname.startsWith(matchPrefix) : routerActive;
+    const isItemActive = (routerActive) => matchPrefix ? location.pathname.startsWith(matchPrefix) : routerActive;
     // Tooltip's slot merges style objects, so resolve route styling before
     // passing the link through it (a NavLink style callback would be lost).
     const active = isItemActive(Boolean(matchPath({ path, end: path === '/' }, location.pathname)));
@@ -216,9 +178,7 @@ const Sidebar = ({ isMobile = false, collapsed = false, onToggleCollapse, onClos
             {badge > 99 ? '99+' : badge}
           </span>
         )}
-        {hasChildren && <span className="sidebar-item-label" aria-hidden="true">
-          {pmSheetExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-        </span>}
+
       </>
     );
     const shared = {
@@ -230,22 +190,11 @@ const Sidebar = ({ isMobile = false, collapsed = false, onToggleCollapse, onClos
     return (
       <div key={path}>
         <SidebarTooltip enabled={collapsed} label={badge ? label + ' (' + badge + ')' : label}>
-          {hasChildren ? (
-            <button {...shared} type="button" aria-expanded={!collapsed && pmSheetExpanded} aria-controls="sidebar-pm-sheet-pages"
-              onClick={() => {
-                if (collapsed) { onToggleCollapse(); setPmSheetExpanded(true); }
-                else setPmSheetExpanded((value) => !value);
-              }} style={itemStyle(isPMSheetActive)}>
-              {contents(isPMSheetActive)}
-            </button>
-          ) : (
             <NavLink {...shared} to={path} end={path === '/'} onClick={isMobile ? onClose : undefined}
               style={itemStyle(active)}>
               {contents(active)}
             </NavLink>
-          )}
         </SidebarTooltip>
-        {hasChildren && pmSheetExpanded && !collapsed && renderPMSheetChildren()}
       </div>
     );
   };

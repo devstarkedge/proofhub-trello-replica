@@ -1,3 +1,4 @@
+import tenantReferencesPlugin from '../modules/workspaces/tenantReferences.plugin.js';
 import mongoose from 'mongoose';
 import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 import hubspotSourcePlugin from '../modules/hubspot/sourcePlugin.js';
@@ -267,6 +268,7 @@ boardSchema.index({ workspaceId: 1, members: 1, updatedAt: -1 });
 boardSchema.index({ workspaceId: 1, isDeleted: 1, deletedAt: 1 });
 
 boardSchema.plugin(workspaceScopePlugin);
+boardSchema.plugin(tenantReferencesPlugin, { members: ['owner', 'members'], references: { department: 'Department', team: 'Team' }, parent: null });
 boardSchema.plugin(hubspotSourcePlugin);
 boardSchema.index({ workspaceId: 1, 'hubspotSync.status': 1, 'hubspotSync.nextAttemptAt': 1 });
 boardSchema.index({ workspaceId: 1, 'hubspotSync.emailHash': 1, projectType: 1 });

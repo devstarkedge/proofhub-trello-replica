@@ -1,3 +1,6 @@
+import { resourceReadFilter } from '../services/resourceReadFilter.js';
+import { boardAccessFilter } from '../utils/boardAccess.js';
+import { authorizeProjectResource } from '../services/projectAuthorization.js';
 import { DateTime } from 'luxon';
 import Card from "../models/Card.js";
 import List from "../models/List.js";
@@ -23,70 +26,22 @@ export const getCalendarTasks = asyncHandler(async (req, res) => {
     });
   }
 
-  // Parse dates with timezone awareness to prevent date boundary skewing
   const tz = req.headers['x-timezone'] || 'UTC';
-  const parsedStart = DateTime.fromISO(start, { zone: tz });
-  const parsedEnd = DateTime.fromISO(end, { zone: tz });
-  const startDate = parsedStart.isValid ? parsedStart.startOf('day').toJSDate() : new Date(start);
-  const endDate = parsedEnd.isValid ? parsedEnd.endOf('day').toJSDate() : (() => {
-    const d = new Date(end);
-    d.setHours(23, 59, 59, 999);
-    return d;
-  })();
+  if (typeof start !== 'string' || typeof end !== 'string' || start.length > 64 || end.length > 64) return res.status(400).json({ success: false, message: 'A valid date range is required' });
+  const parsedStart = DateTime.fromISO(start, { zone: tz }), parsedEnd = DateTime.fromISO(end, { zone: tz });
+  if (!parsedStart.isValid || !parsedEnd.isValid || parsedEnd < parsedStart || parsedEnd.diff(parsedStart, 'days').days > 366) return res.status(400).json({ success: false, message: 'Choose a valid calendar range of at most one year' });
+  const startDate = parsedStart.startOf('day').toJSDate(), endDate = parsedEnd.endOf('day').toJSDate();
+  if (departmentId && departmentId !== 'all' && !mongoose.isValidObjectId(departmentId)) return res.status(400).json({ success: false, message: 'Invalid department' });
 
   // Resolve boards accessible to current user
-  const accessibleBoards = await Board.find(
-    user.role === 'admin'
-      ? {}
-      : {
-          $or: [
-            { owner: user._id },
-            { members: user._id },
-            { visibility: 'public' },
-            ...(user.allowedProjects?.length ? [{ _id: { $in: user.allowedProjects } }] : [])
-          ]
-        }
-  ).select('_id').lean();
+  const accessibleBoards = await Board.find(await boardAccessFilter(user)).select('_id').lean();
   const accessibleBoardIds = accessibleBoards.map(b => b._id);
 
-  // Build department filter based on verified user access
-  let departmentMatch = {};
-  if (departmentId && departmentId !== 'all') {
-    if (user.role !== 'admin') {
-      const hasDeptAccess = await Department.exists({
-        _id: departmentId,
-        $or: [{ managers: user._id }, { members: user._id }],
-        isActive: true
-      });
-      if (!hasDeptAccess) {
-        return res.status(403).json({
-          success: false,
-          message: "Not authorized to access calendar for this department"
-        });
-      }
-    }
-    departmentMatch = {
-      'boardInfo.department': new mongoose.Types.ObjectId(departmentId),
-      ...(user.role === 'admin' ? {} : { 'boardInfo._id': { $in: accessibleBoardIds } })
-    };
-  } else {
-    // Get departments user has access to
-    const userDepartments = await Department.find({
-      $or: [
-        { managers: user._id },
-        { members: user._id }
-      ],
-      isActive: true
-    }).select('_id');
-    const departmentIds = userDepartments.map(d => d._id);
-    departmentMatch = {
-      'boardInfo.department': { $in: departmentIds },
-      ...(user.role === 'admin' ? {} : { 'boardInfo._id': { $in: accessibleBoardIds } })
-    };
-  }
+  const departmentMatch = { 'boardInfo._id': { $in: accessibleBoardIds }, ...(departmentId && departmentId !== 'all' ? { 'boardInfo.department': new mongoose.Types.ObjectId(departmentId) } : {}) };
 
   // Aggregation pipeline for calendar tasks
   const pipeline = [
+    { $match: await resourceReadFilter(req, 'task') },
     // Join with boards to get department info
     {
       $lookup: {
@@ -226,6 +181,7 @@ export const getCalendarTasks = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const createTaskFromCalendar = asyncHandler(async (req, res) => {
+  await authorizeProjectResource(req, 'project', req.body.projectId, 'task.create');
   const {
     title,
     description,
@@ -347,6 +303,7 @@ export const createTaskFromCalendar = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const updateTaskDates = asyncHandler(async (req, res) => {
+  await authorizeProjectResource(req, 'task', req.params.id, 'task.edit_dates');
   const { id } = req.params;
   const { startDate, dueDate } = req.body;
   const user = req.user;
@@ -439,7 +396,7 @@ export const getProjectsForDepartment = asyncHandler(async (req, res) => {
   }
   // If departmentId is 'all' or invalid, return all non-archived projects
 
-  const projects = await Board.find(query)
+  const projects = await Board.find({ $and: [query, await boardAccessFilter(req.user)] })
     .select('_id name status priority department')
     .populate('department', 'name')
     .sort({ name: 1 });
@@ -456,6 +413,7 @@ export const getProjectsForDepartment = asyncHandler(async (req, res) => {
  * @access  Private
  */
 export const getListsForProject = asyncHandler(async (req, res) => {
+  await authorizeProjectResource(req, 'project', req.params.projectId, 'task.view');
   const { projectId } = req.params;
 
   const lists = await List.find({

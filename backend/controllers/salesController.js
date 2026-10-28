@@ -1,3 +1,6 @@
+import { modulePublisher } from '../realtime/modulePublication.js';
+import { ErrorResponse } from '../middleware/errorHandler.js';
+import { workspacePerson } from '../services/workspaceAudience.js';
 import { ROOM } from '../realtime/events.js';
 import mongoose from 'mongoose';
 import SalesRow from '../models/SalesRow.js';
@@ -245,10 +248,12 @@ const RESERVED_ROW_FIELDS = [
 
 // Helper to separate standard and custom fields for save
 const prepareRowForSave = (data) => {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new ErrorResponse('An object of row fields is required', 400);
   const standard = {};
   const custom = {};
 
   Object.keys(data).forEach(key => {
+    if (key.startsWith('$') || key.includes('.') || ['__proto__', 'prototype', 'constructor'].includes(key)) throw new ErrorResponse('Invalid sales field', 400);
     if (STANDARD_FIELDS.includes(key)) {
       standard[key] = data[key];
     } else if (!RESERVED_ROW_FIELDS.includes(key)) {
@@ -258,6 +263,17 @@ const prepareRowForSave = (data) => {
 
   return { standard, custom };
 };
+
+function editableRowPatch(data, user) {
+  const { standard, custom } = prepareRowForSave(data);
+  if (user.role !== 'admin') delete standard.name;
+  if (standard.bidLink !== undefined) {
+    const normalized = normalizeBidLink(standard.bidLink);
+    if (normalized.error) throw new ErrorResponse(normalized.error, 400);
+    standard.bidLink = normalized.value;
+  }
+  return { standard, custom };
+}
 
 /**
  * @desc    Get all sales rows with pagination, filtering, and search
@@ -549,7 +565,7 @@ export const createSalesRow = async (req, res) => {
     );
 
     // Emit real-time event with flattened row
-    getIO().to(ROOM.sales(req.workspaceId)).emit('sales:row:created', { row: flatRow });
+    modulePublisher('sales', req.workspaceId).emit('sales:row:created', { row: flatRow });
 
     // Evaluate watch tab alerts (fire-and-forget via queue)
     enqueueSalesAlertNewRow(flatRow).catch(err =>
@@ -601,22 +617,7 @@ export const updateSalesRow = async (req, res) => {
       });
     }
 
-    // Separate standard and custom fields
-    const { standard, custom } = prepareRowForSave(req.body);
-
-    // Non-admin users cannot change the name field
-    if (req.user.role !== 'admin') {
-      delete standard.name;
-    }
-
-    // Normalize bidLink if provided
-    if (standard.bidLink !== undefined) {
-      const blResult = normalizeBidLink(standard.bidLink);
-      if (blResult.error) {
-        return res.status(400).json({ success: false, message: blResult.error });
-      }
-      standard.bidLink = blResult.value;
-    }
+    const { standard, custom } = editableRowPatch(req.body, req.user);
 
     // Validate: don't allow clearing required fields to empty
     // Merge existing row values with updates, then validate
@@ -678,9 +679,9 @@ export const updateSalesRow = async (req, res) => {
     );
 
     // Emit real-time events
-    getIO().to(ROOM.sales(req.workspaceId)).emit('sales:row:updated', { row: flatRow, changes });
+    modulePublisher('sales', req.workspaceId).emit('sales:row:updated', { row: flatRow, changes });
     if (didUnlock) {
-      getIO().to(ROOM.sales(req.workspaceId)).emit('sales:row:unlocked', { rowId: row._id });
+      modulePublisher('sales', req.workspaceId).emit('sales:row:unlocked', { rowId: row._id });
     }
 
     // Evaluate watch tab alerts on update (fire-and-forget via queue)
@@ -701,7 +702,7 @@ export const updateSalesRow = async (req, res) => {
     if (parsed) {
       return res.status(400).json({ success: false, ...parsed });
     }
-    res.status(400).json({
+    res.status(error.name === 'VersionError' ? 409 : error.statusCode || 400).json({
       success: false,
       message: error.message || 'Failed to update sales row',
     });
@@ -739,7 +740,7 @@ export const deleteSalesRow = async (req, res) => {
     });
 
     // Emit real-time event
-    getIO().to(ROOM.sales(req.workspaceId)).emit('sales:row:deleted', { rowId: row._id });
+    modulePublisher('sales', req.workspaceId).emit('sales:row:deleted', { rowId: row._id });
 
     res.json({
       success: true,
@@ -761,69 +762,42 @@ export const deleteSalesRow = async (req, res) => {
  * @access  Private (requires canUpdate permission)
  */
 export const bulkUpdateRows = async (req, res) => {
+  let session;
   try {
     const { rowIds, updates } = req.body;
-    const userId = req.user._id;
-
-    if (!rowIds || !Array.isArray(rowIds) || rowIds.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Row IDs array is required'
-      });
-    }
-
-    const { standard, custom } = prepareRowForSave(updates);
-
-    // Build update object
-    const mongoUpdate = { 
-      $set: { ...standard, updatedBy: userId } 
-    };
-
-    // For custom fields, we need to set them individually in the Map using dot notation if possible,
-    // but updateMany with Map values is tricky. 
-    // updateMany({ ... }, { $set: { "customFields.key": value } }) works.
-    if (Object.keys(custom).length > 0) {
-      Object.entries(custom).forEach(([key, value]) => {
-        mongoUpdate.$set[`customFields.${key}`] = value;
-      });
-    }
-
-    const result = await SalesRow.updateMany(
-      { _id: { $in: rowIds }, isDeleted: false },
-      mongoUpdate
-    );
-
-    // Log activity for each updated row
-    const logPromises = rowIds.map(rowId =>
-      SalesActivityLog.logActivity({
-        salesRow: rowId,
-        user: userId,
-        action: 'updated',
-        description: `Bulk update: ${Object.keys(updates).join(', ')}`,
-        ipAddress: req.ip,
-        userAgent: req.get('user-agent')
-      })
-    );
-    await Promise.all(logPromises);
-
-    // Emit real-time event
-    // Note: We emit the raw updates here. Frontend store handles optimistic update.
-    // Ideally frontend fetching fresh rows on bulk update handles the flattening.
-    getIO().to(ROOM.sales(req.workspaceId)).emit('sales:rows:bulk-updated', { rowIds, updates });
-
-    res.json({
-      success: true,
-      message: `Successfully updated ${result.modifiedCount} rows`,
-      modifiedCount: result.modifiedCount
+    if (!Array.isArray(rowIds) || !rowIds.length || rowIds.length > 100 || rowIds.some(id => !mongoose.isValidObjectId(id))) throw new ErrorResponse('Provide between 1 and 100 valid row IDs', 400);
+    const ids = [...new Set(rowIds.map(String))];
+    const { standard, custom } = editableRowPatch(updates, req.user);
+    const results = [];
+    session = await mongoose.startSession();
+    await session.withTransaction(async () => {
+      results.length = 0;
+      const rows = await SalesRow.find({ _id: { $in: ids }, isDeleted: false }).session(session);
+      if (rows.length !== ids.length) throw new ErrorResponse('One or more sales rows were not found', 404);
+      for (const row of rows) {
+        if (row.isLocked() && String(row.lockedBy) !== String(req.user._id)) throw new ErrorResponse('One or more rows are being edited by another user', 423);
+        const validation = validateRequiredFields({ ...row.toObject(), ...standard });
+        if (validation) throw new ErrorResponse(validation.message || 'Required sales fields cannot be cleared', 400);
+        const before = flattenRow(row);
+        const changes = trackChanges(before, { ...standard, ...custom });
+        Object.assign(row, standard);
+        for (const [key, value] of Object.entries(custom)) row.customFields.set(key, value);
+        row.updatedBy = req.user._id;
+        row.releaseLock(req.user._id);
+        await row.save({ session });
+        await SalesActivityLog.create([{ salesRow: row._id, user: req.user._id, action: 'updated', description: 'Bulk update', changes, ipAddress: req.ip, userAgent: req.get('user-agent') }], { session });
+        results.push({ before, after: flattenRow(row), changes });
+      }
     });
+    const safeUpdates = { ...standard, ...custom };
+    modulePublisher('sales', req.workspaceId).emit('sales:rows:bulk-updated', { rowIds: ids, updates: safeUpdates });
+    for (const item of results) if (item.changes.length) enqueueSalesAlertRowUpdate(item.before, item.after).catch(() => {});
+    SalesUserPreference.recordSelection(req.user._id, standard).catch(() => {});
+    res.json({ success: true, message: `Successfully updated ${results.length} rows`, modifiedCount: results.length });
   } catch (error) {
-    console.error('Bulk update error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to bulk update rows',
-      error: error.message
-    });
-  }
+    const parsed = parseValidationError(error);
+    res.status(error.name === 'VersionError' ? 409 : error.statusCode || (parsed ? 400 : 500)).json({ success: false, ...(parsed || {}), message: error.name === 'VersionError' ? 'A sales row changed. Refresh and retry.' : error.message || 'Failed to bulk update rows' });
+  } finally { if (session) await session.endSession(); }
 };
 
 /**
@@ -859,7 +833,7 @@ export const bulkDeleteRows = async (req, res) => {
     await Promise.all(logPromises);
 
     // Emit real-time event
-    getIO().to(ROOM.sales(req.workspaceId)).emit('sales:rows:bulk-deleted', { rowIds });
+    modulePublisher('sales', req.workspaceId).emit('sales:rows:bulk-deleted', { rowIds });
 
     res.json({
       success: true,
@@ -906,7 +880,7 @@ export const lockRow = async (req, res) => {
     await row.save();
 
     // Emit real-time event
-    getIO().to(ROOM.sales(req.workspaceId)).emit('sales:row:locked', {
+    modulePublisher('sales', req.workspaceId).emit('sales:row:locked', {
       rowId: row._id,
       lockedBy: { _id: userId, name: req.user.name }
     });
@@ -952,7 +926,7 @@ export const unlockRow = async (req, res) => {
       row.lockedAt = null;
       await row.save();
 
-      getIO().to(ROOM.sales(req.workspaceId)).emit('sales:row:unlocked', { rowId: row._id });
+      modulePublisher('sales', req.workspaceId).emit('sales:row:unlocked', { rowId: row._id });
 
       return res.json({
         success: true,
@@ -961,7 +935,7 @@ export const unlockRow = async (req, res) => {
     }
 
     if (!row.lockedBy) {
-      getIO().to(ROOM.sales(req.workspaceId)).emit('sales:row:unlocked', { rowId: row._id });
+      modulePublisher('sales', req.workspaceId).emit('sales:row:unlocked', { rowId: row._id });
       return res.json({
         success: true,
         message: 'Row already unlocked'
@@ -979,7 +953,7 @@ export const unlockRow = async (req, res) => {
     await row.save();
 
     // Emit real-time event
-    getIO().to(ROOM.sales(req.workspaceId)).emit('sales:row:unlocked', { rowId: row._id });
+    modulePublisher('sales', req.workspaceId).emit('sales:row:unlocked', { rowId: row._id });
 
     res.json({
       success: true,
@@ -1438,7 +1412,7 @@ export const importRows = async (req, res) => {
 
     // Emit real-time events
     if (results.success.length > 0) {
-      getIO().to(ROOM.sales(req.workspaceId)).emit('sales:rows:imported', {
+      modulePublisher('sales', req.workspaceId).emit('sales:rows:imported', {
         count: results.success.length,
         newColumnsCreated: results.newColumnsCreated,
         newDropdownOptionsCreated: results.newDropdownOptionsCreated
@@ -1453,13 +1427,13 @@ export const importRows = async (req, res) => {
     }
     // Also emit column/dropdown updates if new ones were created
     if (results.newColumnsCreated.length > 0) {
-      getIO().to(ROOM.sales(req.workspaceId)).emit('sales:column:created', { columns: results.newColumnsCreated });
+      modulePublisher('sales', req.workspaceId).emit('sales:column:created', { columns: results.newColumnsCreated });
     }
     if (results.newDropdownOptionsCreated.length > 0) {
       // Group by columnName for targeted updates
       const affectedColumns = [...new Set(results.newDropdownOptionsCreated.map(o => o.columnName))];
       affectedColumns.forEach(colName => {
-        getIO().to(ROOM.sales(req.workspaceId)).emit('sales:dropdown:updated', { columnName: colName });
+        modulePublisher('sales', req.workspaceId).emit('sales:dropdown:updated', { columnName: colName });
       });
     }
 
@@ -1561,7 +1535,7 @@ export const addDropdownOption = async (req, res) => {
     });
 
     // Emit real-time event
-    getIO().to(ROOM.sales(req.workspaceId)).emit('sales:dropdown:updated', { columnName, option });
+    modulePublisher('sales', req.workspaceId).emit('sales:dropdown:updated', { columnName, option });
 
     res.status(201).json({
       success: true,
@@ -1602,7 +1576,7 @@ export const updateDropdownOption = async (req, res) => {
     }
 
     // Emit real-time event
-    getIO().to(ROOM.sales(req.workspaceId)).emit('sales:dropdown:updated', { columnName, option });
+    modulePublisher('sales', req.workspaceId).emit('sales:dropdown:updated', { columnName, option });
 
     res.json({
       success: true,
@@ -1675,7 +1649,7 @@ export const deleteDropdownOption = async (req, res) => {
     await SalesDropdownOption.deleteOne({ _id: id, columnName });
 
     // Emit real-time event
-    getIO().to(ROOM.sales(req.workspaceId)).emit('sales:dropdown:updated', { columnName, deletedId: id });
+    modulePublisher('sales', req.workspaceId).emit('sales:dropdown:updated', { columnName, deletedId: id });
 
     res.json({
       success: true,
@@ -1735,7 +1709,7 @@ export const createCustomColumn = async (req, res) => {
     });
 
     // Emit real-time event
-    getIO().to(ROOM.sales(req.workspaceId)).emit('sales:column:created', { column });
+    modulePublisher('sales', req.workspaceId).emit('sales:column:created', { column });
 
     res.status(201).json({
       success: true,
@@ -1777,7 +1751,7 @@ export const deleteCustomColumn = async (req, res) => {
     await SalesColumn.deleteOne({ _id: id });
 
     // Emit real-time event
-    getIO().to(ROOM.sales(req.workspaceId)).emit('sales:column:deleted', { columnId: column._id, columnKey: column.key });
+    modulePublisher('sales', req.workspaceId).emit('sales:column:deleted', { columnId: column._id, columnKey: column.key });
 
     res.json({
       success: true,
@@ -1819,7 +1793,7 @@ export const updateCustomColumn = async (req, res) => {
     await column.save();
 
     // Emit real-time event
-    getIO().to(ROOM.sales(req.workspaceId)).emit('sales:column:updated', { column });
+    modulePublisher('sales', req.workspaceId).emit('sales:column:updated', { column });
 
     res.json({
       success: true,
@@ -1854,7 +1828,7 @@ export const getUserPermissions = async (req, res) => {
     }
 
     const User = (await import('../models/User.js')).default;
-    const targetUser = await User.findById(userId).select('role');
+    const targetUser = await workspacePerson(userId, req.workspaceId);
 
     if (!targetUser) {
       return res.status(404).json({
@@ -1865,7 +1839,7 @@ export const getUserPermissions = async (req, res) => {
 
     // Delegates to the centralized permission engine (resource: 'sales').
     // Admin bypass, override lookup, and expiry handling all live there now.
-    const result = await resolveResourceAccess(targetUser, 'sales');
+    const result = await resolveResourceAccess(targetUser, 'sales', req.workspaceId);
     const permissions = toLegacyShape('sales', result.actions);
 
     res.json({
@@ -1893,12 +1867,12 @@ export const updateUserPermissions = async (req, res) => {
     const adminId = req.user._id;
 
     const User = (await import('../models/User.js')).default;
-    const targetUser = await User.findById(userId).select('role');
+    const targetUser = await workspacePerson(userId, req.workspaceId);
     if (!targetUser) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    const previousResult = await resolveResourceAccess(targetUser, 'sales');
+    const previousResult = await resolveResourceAccess(targetUser, 'sales', req.workspaceId);
     const previousModuleVisible = previousResult.actions?.view === true;
 
     const actions = fromLegacyShape('sales', {

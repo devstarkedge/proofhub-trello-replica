@@ -1,4 +1,5 @@
 import { processAllAttendanceEvents } from '../modules/attendance/attendanceEvents.service.js';
+import { processFileDeletionJobs } from '../services/fileDeletionJobs.js';
 /**
  * Cleanup Worker
  *
@@ -18,11 +19,13 @@ import { reconcileAllOverdueSessions } from '../modules/attendance/attendanceSes
 import config from '../config/index.js';
 
 const JOB_HANDLERS = {
+  async 'cleanup-file-jobs'() { return processFileDeletionJobs(); },
   async 'attendance-event-delivery'(){await processAllAttendanceEvents();return {status:'ok'};},
   /**
    * Permanently delete attachments that have been in trash for 30+ days.
    */
   async 'cleanup-trash'(_job) {
+    await processFileDeletionJobs();
     await cleanupTrashedAttachments();
     return { status: 'ok' };
   },

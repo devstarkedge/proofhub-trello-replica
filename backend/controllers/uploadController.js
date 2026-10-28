@@ -1,5 +1,8 @@
 import asyncHandler from '../middleware/asyncHandler.js';
-import upload from '../middleware/upload.js';
+import { uploadMiddleware } from './attachmentController.js';
+import { authorizeProjectResource } from '../services/projectAuthorization.js';
+import { attachmentPath } from '../services/attachmentDelivery.js';
+import { uploadBudget, uploadRateLimit } from '../middleware/uploadBudget.js';
 import { uploadToCloudinary } from '../utils/cloudinary.js';
 import Card from '../models/Card.js';
 import Attachment from '../models/Attachment.js';
@@ -8,7 +11,7 @@ import { emitToBoard } from '../realtime/index.js';
 // POST /api/uploads/image
 // Cloudinary-backed enterprise upload (stateless, zero local disk writes)
 export const uploadImage = [
-  upload.single('image'),
+  uploadRateLimit, uploadBudget, uploadMiddleware.single('image'),
   asyncHandler(async (req, res) => {
     const file = req.file;
     if (!file) {
@@ -16,18 +19,19 @@ export const uploadImage = [
     }
 
     const cardId = req.query.cardId;
+    await authorizeProjectResource(req, 'task', cardId, 'attachment.upload');
     const setCover = req.query.setCover === 'true';
     const uploadType = req.query.type || 'general';
 
     const folder = `flowtask/workspaces/${req.workspaceId || 'default'}/cards/${cardId || 'images'}`;
 
     // Upload directly from memory buffer to Cloudinary CDN
-    const cloudinaryResult = await uploadToCloudinary(file.buffer, {
+    const cloudinaryResult = await uploadToCloudinary(file.path || file.buffer, {
       folder,
       resourceType: 'image'
     });
 
-    const secureUrl = cloudinaryResult.secure_url || cloudinaryResult.url;
+    let secureUrl;
 
     // If cardId provided, track as an enterprise Attachment record
     if (cardId) {
@@ -42,13 +46,16 @@ export const uploadImage = [
           url: cloudinaryResult.url,
           secureUrl: cloudinaryResult.secure_url,
           publicId: cloudinaryResult.public_id,
+          deliveryType: 'authenticated', resourceType: 'image', format: cloudinaryResult.format,
           card: card._id,
           board: card.board,
           uploadedBy: req.user ? req.user.id : null,
           contextType: uploadType === 'comment-image' ? 'comment' : 'description',
+          contextRef: card._id,
           isCover: !!setCover,
           workspaceId: req.workspaceId
         });
+        secureUrl = attachmentPath(attachment._id);
 
         if (setCover) {
           card.coverImage = attachment._id;

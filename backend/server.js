@@ -51,7 +51,6 @@ import versionsRoutes from './routes/versions.js';
 import projectsRoutes from './routes/projects.js';
 import slackRoutes from './routes/slack.js';
 import teamAnalyticsRoutes from './routes/teamAnalytics.js';
-import pmSheetRoutes from './routes/pmSheet.js';
 import calendarRoutes from './routes/calendar.js';
 import financeRoutes from './routes/finance.js';
 import myShortcutsRoutes from './routes/myShortcuts.js';
@@ -109,7 +108,7 @@ const corsHandler = cors({
   credentials: true,
   exposedHeaders: ['ETag', 'X-Screenshot-Authorized-Until', 'X-Image-Width', 'X-Image-Height'],
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Idempotency-Key', 'x-workspace-id', 'If-None-Match'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Idempotency-Key', 'x-offline-mutation-id', 'x-workspace-id', 'x-timezone', 'If-Match', 'If-None-Match'],
 });
 
 // Explicit OPTIONS preflight handler must come BEFORE Helmet and all routes
@@ -123,7 +122,8 @@ app.use((req, res, next) => {
   res.on('finish', () => {
     const duration = Date.now() - start;
     if (duration > 1000 || res.statusCode >= 400) {
-      logger.http(`${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`);
+      const route = req.route?.path ? `${req.baseUrl || ''}${req.route.path}` : 'unmatched route';
+      logger.http(`${req.method} ${route} ${res.statusCode} ${duration}ms`);
     }
   });
   next();
@@ -223,7 +223,6 @@ app.use('/api/versions', versionsRoutes);
 app.use('/api/projects', projectsRoutes);
 app.use('/api/slack', slackRoutes);
 app.use('/api/team-analytics', teamAnalyticsRoutes);
-app.use('/api/pm-sheet', protect, requireModule('finance'), pmSheetRoutes);
 app.use('/api/calendar', calendarRoutes);
 app.use('/api/finance', protect, requireModule('finance'), financeRoutes);
 app.use('/api/my-shortcuts', myShortcutsRoutes);
@@ -287,12 +286,17 @@ import * as workspaceContext from './modules/workspaces/workspaceContext.js';
 import { hasPendingMigrations } from './scripts/migrationRegistry.js';
 
 connectRedis().then(() => mongoose.connect(config.db.uri, {
+  autoIndex: !config.isProd,
   maxPoolSize: config.db.maxPoolSize,
   serverSelectionTimeoutMS: config.db.serverSelectionTimeoutMS,
   socketTimeoutMS: config.db.socketTimeoutMS,
 }))
   .then(async () => {
     logger.info('Connected to MongoDB with connection pooling');
+    if (config.isProd) {
+      const pending = await hasPendingMigrations();
+      if (pending.length) throw new Error(`Database migrations must be applied before release: ${pending.map(migration => migration.name).join(', ')}`);
+    }
 
     await configureRealtimeCluster(socketManager.getIO());
     startNotificationPublication();

@@ -96,6 +96,28 @@ export function projectVisibilityFilter(ctx) {
   return { $and: conditions };
 }
 
+// Match the project.view grant and deny scopes as well as visibility. A
+// workspace-visible project alone does not confer a project-scoped grant.
+export function projectAccessFilter(ctx) {
+  if (!can(ctx, 'project.view')) return { _id: { $in: [] }, workspaceId: ctx?.workspaceId };
+  const relation = record => {
+    const ids = record.scopeIds || [];
+    if (record.scope === 'workspace') return {};
+    if (record.scope === 'own') return { $or: [{ owner: ctx.userId }, { managers: ctx.userId }] };
+    if (record.scope === 'assigned') return { $or: [{ members: ctx.userId }, { assignees: ctx.userId }, { _id: { $in: ctx.assignedTaskIds || [] } }] };
+    if (record.scope === 'project') return ids.length ? { _id: { $in: ids } } : {};
+    if (record.scope === 'department') {
+      const departments = [...(ctx.departments || []), ...(ctx.managedDepartments || [])];
+      return ids.length ? { department: { $in: departments.filter(value => includes(ids, value)) } } : { $or: [{ department: { $in: departments } }, { _id: { $in: ctx.memberProjectIds || [] } }] };
+    }
+    return { _id: { $in: [] } };
+  };
+  const grants = ctx.isOwner ? [{ scope: 'workspace' }] : records(mapGet(ctx.grants, 'project.view')).filter(g => current(g, ctx.now ?? Date.now()));
+  const conditions = [projectVisibilityFilter(ctx), { $or: grants.map(relation) }];
+  if (!ctx.isOwner) for (const deny of records(mapGet(ctx.denies, 'project.view')).filter(d => current(d, ctx.now ?? Date.now()))) conditions.push({ $nor: [relation(deny)] });
+  return { $and: conditions };
+}
+
 export function scopeFilter(ctx, permission, resourceType, visibleProjects = []) {
   if (!can(ctx, permission)) return { workspaceId: ctx?.workspaceId, _id: { $in: [] } };
   if (resourceType === 'project') {
@@ -105,18 +127,21 @@ export function scopeFilter(ctx, permission, resourceType, visibleProjects = [])
   }
   const projects = visibleProjects.filter(p => canViewProject(ctx, p));
   const ownerField = ({ comment: 'user', attachment: 'uploadedBy', task: 'createdBy', member: 'user', department: 'owner', team: 'owner' })[resourceType] || 'createdBy';
+  const assignment = () => resourceType === 'comment' ? { card: { $in: ctx.assignedTaskIds || [] } }
+    : resourceType === 'attachment' ? { $or: [{ card: { $in: ctx.assignedTaskIds || [] } }, { subtask: { $in: ctx.assignedSubtaskIds || [] } }, { nanoSubtask: { $in: ctx.assignedNanoIds || [] } }, { comment: { $in: ctx.assignedCommentIds || [] } }, { contextRef: { $in: [...(ctx.assignedTaskIds || []), ...(ctx.assignedSubtaskIds || []), ...(ctx.assignedNanoIds || []), ...(ctx.assignedCommentIds || [])] } }] }
+    : { $or: [{ assignees: ctx.userId }, { members: ctx.userId }, { [resourceType === 'task' ? '_id' : 'task']: { $in: ctx.assignedTaskIds || [] } }] };
   const relation = record => {
     let eligible = projects;
     if (record.scopeIds?.length) eligible = eligible.filter(p => includes(record.scopeIds, record.scope === 'department' ? p.department : p._id));
     if (record.scope === 'department') eligible = eligible.filter(p => includes(CATALOG[permission].scopeBasis === 'management' ? ctx.managedDepartments : [...(ctx.departments || []), ...(ctx.managedDepartments || [])], p.department) || (!record.scopeIds?.length && includes(ctx.memberProjectIds, p._id)));
     const parent = { board: { $in: eligible.map(p => p._id) } };
     if (record.scope === 'own') return { $and: [parent, { [ownerField]: ctx.userId }] };
-    if (record.scope === 'assigned') return { $and: [parent, { $or: [{ assignees: ctx.userId }, { members: ctx.userId }, { _id: { $in: ctx.assignedTaskIds || [] } }] }] };
+    if (record.scope === 'assigned') return { $and: [parent, assignment()] };
     return parent;
   };
   const grants = ctx.isOwner ? [{ scope: 'workspace' }] : records(mapGet(ctx.grants, permission)).filter(g => current(g, ctx.now ?? Date.now()));
   const filters = [{ workspaceId: ctx.workspaceId }, { $or: grants.map(relation) }];
   if (!ctx.isOwner) for (const deny of records(mapGet(ctx.denies, permission)).filter(d => current(d, ctx.now ?? Date.now()))) filters.push({ $nor: [relation(deny)] });
-  if (ctx.restriction?.type === 'assigned_only') filters.push({ $or: [{ assignees: ctx.userId }, { members: ctx.userId }, { _id: { $in: ctx.assignedTaskIds || [] } }] });
+  if (ctx.restriction?.type === 'assigned_only') filters.push(assignment());
   return { $and: filters };
 }

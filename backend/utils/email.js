@@ -25,7 +25,7 @@ const initTransporter = () => {
     greetingTimeout: 10000,       // 10s for SMTP greeting
     socketTimeout: 15000,         // 15s for socket inactivity
     tls: {
-      rejectUnauthorized: false,  // accept self-signed certs (common on cloud)
+      rejectUnauthorized: process.env.NODE_ENV === 'production' || process.env.SMTP_ALLOW_INVALID_CERT !== 'true',
     },
   });
 };

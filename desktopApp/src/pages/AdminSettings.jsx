@@ -80,7 +80,7 @@ const AdminSettings = () => {
       
       // Update user context if email changed
       if (res.data.data?.email) {
-        setUser((prev) => ({ ...prev, email: res.data.data.email }));
+        setUser((prev) => ({ ...prev, email: res.data.data.email, forcePasswordChange: res.data.data.forcePasswordChange }));
       }
       
       setFormData({

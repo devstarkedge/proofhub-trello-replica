@@ -7,6 +7,8 @@ import { resolveResourceAccess, canManageAccessControl } from './permissionEngin
 import { ensureDefaultWorkspace } from './workspaceService.js';
 import { invalidateAuthCache } from '../../middleware/authMiddleware.js';
 import { emitToUser } from '../../realtime/index.js';
+import { getIO } from '../../realtime/emitters.js';
+import { ROOM } from '../../realtime/events.js';
 import { recordAuditLog } from './auditLogService.js';
 
 const forbidden = (message) => {
@@ -284,6 +286,8 @@ async function emitAndReturnEffective(targetUserId, targetUser, resourceKey, wor
       resource: resourceKey,
       effective
     });
+    // Existing subscriptions must be re-established using the new permissions.
+    getIO().in(ROOM.user(targetUserId, workspaceId)).disconnectSockets(true);
   } catch (err) {
     console.error('Error emitting access-control update:', err);
   }

@@ -1,3 +1,5 @@
+import optimisticWritesPlugin from '../modules/workspaces/optimisticWrites.plugin.js';
+import tenantReferencesPlugin from '../modules/workspaces/tenantReferences.plugin.js';
 import mongoose from 'mongoose';
 import mongoosePaginate from 'mongoose-paginate-v2';
 import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
@@ -288,7 +290,9 @@ cardSchema.virtual('totalLoggedTime').get(function() {
 // Add pagination plugin
 cardSchema.plugin(mongoosePaginate);
 cardSchema.plugin(workspaceScopePlugin);
+cardSchema.plugin(tenantReferencesPlugin, { members: ['assignees', 'members'], references: { board: 'Board', list: 'List', labels: 'Label', coverImage: 'Attachment' }, parent: { field: 'list', model: 'List' } });
 cardSchema.plugin(taskAssignmentPlugin);
+cardSchema.plugin(optimisticWritesPlugin);
 cardSchema.index({ workspaceId: 1, createdBy: 1, trackingCreationId: 1 }, { unique: true, partialFilterExpression: { trackingCreationId: { $type: 'string' } } });
 
 export default mongoose.model('Card', cardSchema);

@@ -9,7 +9,7 @@ const baseline = [
 ];
 const manager = [
   ...baseline,
-  ...grant('project.create project.update project.manage_members project.manage_settings project.delete project.restore task.copy_move_cross category.manage reminder.manage analytics.schedule_reports pm_sheet.view pm_sheet.update_status announcement.create announcement.view_engagement team.create member.invite_guest', 'department'),
+  ...grant('project.create project.update project.manage_members project.manage_settings project.delete project.restore task.copy_move_cross category.manage reminder.manage analytics.schedule_reports announcement.create announcement.view_engagement team.create member.invite_guest', 'department'),
   ...grant('task.edit_dates task.edit_priority task.assign task.archive task.delete comment.moderate attachment.manage', 'project'),
   ...grant('tracking.view_reports tracking.view_screenshots member.assign_department member.set_access_scope department.update department.manage_members', 'department'),
   ...grant('project_option.manage', 'workspace')

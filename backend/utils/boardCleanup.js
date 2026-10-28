@@ -1,148 +1,30 @@
 import Board from '../models/Board.js';
-import List from '../models/List.js';
-import Card from '../models/Card.js';
-import Subtask from '../models/Subtask.js';
-import SubtaskNano from '../models/SubtaskNano.js';
-import Comment from '../models/Comment.js';
-import Attachment from '../models/Attachment.js';
-import Label from '../models/Label.js';
-import Activity from '../models/Activity.js';
-import RecurringTask from '../models/RecurringTask.js';
-import Reminder from '../models/Reminder.js';
-import Department from '../models/Department.js';
-import '../models/Notification.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
-
-// Default: permanently delete boards soft-deleted more than 30 seconds ago
+import { deleteResource } from '../services/resourceDeletion.js';
 const CLEANUP_THRESHOLD_MS = 30 * 1000;
-
-/**
- * Permanently delete boards and all related data in batched operations.
- * Designed for high performance — uses $in queries instead of per-board loops.
- * @param {string[]} boardIds - Array of board ObjectIds to permanently delete
- */
-export const permanentlyDeleteBoards = async (boardIds) => {
-  if (!boardIds || boardIds.length === 0) return { deleted: 0 };
-
-  // A pure delete/cleanup sweep across whichever boards were passed in —
-  // never creates new documents, so the plugin's write-side auto-stamp
-  // never comes into play here. Runs outside any request (called from the
-  // cleanup worker), so it needs the explicit bypass like every other
-  // background job that touches workspace-scoped models.
-  return workspaceContext.runUnscoped(async () => await permanentlyDeleteBoardsUnscoped(boardIds));
-};
-
-const permanentlyDeleteBoardsUnscoped = async (boardIds) => {
-  try {
-    // 1. Fetch all boards to know their departments (for cleanup)
-    const boards = await Board.find({ _id: { $in: boardIds } })
-      .select('_id department coverImage')
-      .lean();
-
-    if (boards.length === 0) return { deleted: 0 };
-
-    const actualBoardIds = boards.map(b => b._id);
-
-    // 2. Collect all card IDs and subtask IDs in bulk
-    const [cards, subtasks] = await Promise.all([
-      Card.find({ board: { $in: actualBoardIds } }).select('_id').lean(),
-      Subtask.find({ board: { $in: actualBoardIds } }).select('_id').lean()
-    ]);
-
-    const cardIds = cards.map(c => c._id);
-    const subtaskIds = subtasks.map(s => s._id);
-
-    // 3. Perform all cascade deletions in parallel where independent
-    const deleteOps = [
-      // Delete nano subtasks (depends on subtaskIds)
-      subtaskIds.length > 0
-        ? SubtaskNano.deleteMany({ subtask: { $in: subtaskIds } })
-        : Promise.resolve(),
-      // Delete subtasks
-      Subtask.deleteMany({ board: { $in: actualBoardIds } }),
-      // Delete labels
-      Label.deleteMany({ board: { $in: actualBoardIds } }),
-      // Delete reminders
-      Reminder.deleteMany({ project: { $in: actualBoardIds } }),
-      // Delete activities
-      Activity.deleteMany({ board: { $in: actualBoardIds } }),
-      // Delete lists
-      List.deleteMany({ board: { $in: actualBoardIds } }),
-    ];
-
-    // Card-dependent deletions
-    if (cardIds.length > 0) {
-      deleteOps.push(
-        Comment.deleteMany({ card: { $in: cardIds } }),
-        Attachment.deleteMany({ card: { $in: cardIds } }),
-        RecurringTask.deleteMany({ card: { $in: cardIds } }),
-        Card.deleteMany({ board: { $in: actualBoardIds } })
-      );
+export async function permanentlyDeleteBoards(boardIds, { cutoff = new Date(Date.now() - CLEANUP_THRESHOLD_MS) } = {}) {
+  if (!boardIds?.length) return { deleted: 0 };
+  let deleted = 0;
+  await workspaceContext.runUnscoped(async () => {
+    const cursor = Board.find({ _id: { $in: boardIds }, isDeleted: true, deletedAt: { $lte: cutoff } }).select('_id workspaceId').lean().cursor();
+    for await (const board of cursor) {
+      const result = await workspaceContext.run({ workspaceId: board.workspaceId }, () => deleteResource('board', board._id, { requireDeletedBefore: cutoff }));
+      if (result.deleted) deleted += 1;
     }
-
-    await Promise.all(deleteOps);
-
-    // 4. Remove boards from departments' projects arrays (grouped by department)
-    const deptMap = {};
-    for (const board of boards) {
-      if (board.department) {
-        const deptId = board.department.toString();
-        if (!deptMap[deptId]) deptMap[deptId] = [];
-        deptMap[deptId].push(board._id);
-      }
+  });
+  return { deleted };
+}
+export async function cleanupSoftDeletedBoards() {
+  const cutoff = new Date(Date.now() - CLEANUP_THRESHOLD_MS);
+  await workspaceContext.runUnscoped(async () => {
+    const cursor = Board.find({ isDeleted: true, deletedAt: { $lte: cutoff } }).select('_id workspaceId').lean().cursor();
+    for await (const board of cursor) {
+      try {
+        await workspaceContext.run({ workspaceId: board.workspaceId }, () => deleteResource('board', board._id, { requireDeletedBefore: cutoff }));
+      } catch (error) { console.error('Project cleanup failed', { id: String(board._id), code: error.code || error.name }); }
     }
-
-    await Promise.all(
-      Object.entries(deptMap).map(([deptId, ids]) =>
-        Department.findByIdAndUpdate(deptId, {
-          $pullAll: { projects: ids }
-        })
-      )
-    );
-
-    // 5. Delete the boards themselves
-    await Board.deleteMany({ _id: { $in: actualBoardIds } });
-
-    console.log(`[BoardCleanup] Permanently deleted ${actualBoardIds.length} boards and all related data.`);
-    return { deleted: actualBoardIds.length };
-  } catch (error) {
-    console.error('[BoardCleanup] Error during permanent deletion:', error);
-    throw error;
-  }
-};
-
-/**
- * Find and permanently delete boards that were soft-deleted beyond the threshold.
- */
-export const cleanupSoftDeletedBoards = async () => {
-  const threshold = new Date(Date.now() - CLEANUP_THRESHOLD_MS);
-
-  try {
-    // Deliberate cross-tenant scan — runs on a schedule, outside any request.
-    // The explicit `await` inside this callback matters: a bare `return
-    // Query` (even from an async function) hands back an un-awaited
-    // thenable whose actual exec() — and the pre-hook that reads the active
-    // context — only runs on a later microtask tick, by which point
-    // runUnscoped() has already reverted the context. See
-    // workspaceScopePlugin.js's callers for the same pattern.
-    const candidates = await workspaceContext.runUnscoped(async () => await Board.find({
-      isDeleted: true,
-      deletedAt: { $lte: threshold }
-    })
-      .select('_id')
-      .lean());
-
-    if (candidates.length === 0) return;
-
-    const boardIds = candidates.map(c => c._id);
-    await permanentlyDeleteBoards(boardIds);
-  } catch (error) {
-    console.error('[BoardCleanup] Scheduled cleanup error:', error);
-  }
-};
-
-// Legacy no-ops — polling replaced by BullMQ repeatable jobs via maintenanceScheduler
+  });
+}
 export const startBoardCleanup = () => {};
 export const stopBoardCleanup = () => {};
-
 export default { permanentlyDeleteBoards, cleanupSoftDeletedBoards, startBoardCleanup, stopBoardCleanup };

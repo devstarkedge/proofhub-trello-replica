@@ -1,3 +1,7 @@
+import { resourceReadFilter } from '../services/resourceReadFilter.js';
+import { deleteResource } from '../services/resourceDeletion.js';
+import { boundedInteger, pageNumber } from '../utils/pagination.js';
+import { authorizeProjectResource, authorizeTaskPatch, prepareTaskCreation } from '../services/projectAuthorization.js';
 import { strictUpdate, NANO_UPDATE_FIELDS } from '../utils/strictUpdate.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
@@ -24,8 +28,8 @@ const populateConfig = [
   { path: 'billedTime.user', select: 'name email avatar' }
 ];
 
-const getOrderedNanos = (subtaskId) => {
-  return SubtaskNano.find({ subtask: subtaskId })
+const getOrderedNanos = (subtaskId, filter = {}) => {
+  return SubtaskNano.find({ $and: [{ subtask: subtaskId }, filter] })
     .sort({ order: 1, createdAt: 1 })
     .populate(populateConfig);
 };
@@ -58,13 +62,14 @@ const emitNanoTimeTrackingWebhook = async ({ operation, entryType, nano, actor, 
 };
 
 export const getNanosForSubtask = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'subtask', req.params.subtaskId, 'task.view');
   const { subtaskId } = req.params;
   const subtask = await Subtask.findById(subtaskId);
   if (!subtask) {
     return next(new ErrorResponse('Subtask not found', 404));
   }
 
-  const nanos = await getOrderedNanos(subtaskId);
+  const nanos = await getOrderedNanos(subtaskId, await resourceReadFilter(req, 'nano', subtask.board));
   res.status(200).json({
     success: true,
     data: nanos
@@ -72,6 +77,7 @@ export const getNanosForSubtask = asyncHandler(async (req, res, next) => {
 });
 
 export const getNanoById = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'nano', req.params.id, 'task.view');
   const nano = await SubtaskNano.findById(req.params.id)
     .populate(populateConfig);
 
@@ -86,6 +92,8 @@ export const getNanoById = asyncHandler(async (req, res, next) => {
 });
 
 export const createNano = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'subtask', req.params.subtaskId, 'task.create');
+  prepareTaskCreation(req);
   const { subtaskId } = req.params;
   const subtask = await Subtask.findById(subtaskId).populate('task board');
   if (!subtask) {
@@ -165,6 +173,7 @@ export const createNano = asyncHandler(async (req, res, next) => {
 });
 
 export const updateNano = asyncHandler(async (req, res, next) => {
+  await authorizeTaskPatch(req, 'nano', req.params.id);
   req.body = strictUpdate(req.body, NANO_UPDATE_FIELDS);
   let nano = await SubtaskNano.findById(req.params.id);
   if (!nano) {
@@ -268,7 +277,7 @@ export const updateNano = asyncHandler(async (req, res, next) => {
   nano = await SubtaskNano.findByIdAndUpdate(
     req.params.id,
     updates,
-    { returnDocument: 'after' }
+    { returnDocument: 'after', runValidators: true, expectedRevision: req.expectedRevision }
   ).populate(populateConfig);
 
   // Send response immediately for better UX
@@ -463,6 +472,7 @@ export const updateNano = asyncHandler(async (req, res, next) => {
 });
 
 export const deleteNano = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'nano', req.params.id, 'task.delete');
   const nano = await SubtaskNano.findById(req.params.id);
   if (!nano) {
     return next(new ErrorResponse('Subtask-Nano not found', 404));
@@ -478,7 +488,7 @@ export const deleteNano = asyncHandler(async (req, res, next) => {
   const taskId = nano.task;
   const boardId = nano.board;
 
-  await nano.deleteOne();
+  await deleteResource('nano', nano._id, { actor: req.user });
 
   // Log activity
   await Activity.create({
@@ -524,6 +534,7 @@ export const deleteNano = asyncHandler(async (req, res, next) => {
 });
 
 export const reorderNanos = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'subtask', req.params.subtaskId, 'task.move');
   const { subtaskId } = req.params;
   const { orderedIds } = req.body;
 
@@ -555,6 +566,7 @@ export const reorderNanos = asyncHandler(async (req, res, next) => {
 // @route   GET /api/subtask-nanos/:id/activity
 // @access  Private
 export const getNanoActivity = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'nano', req.params.id, 'task.view');
   const { id } = req.params;
   const { limit = 100, page = 1 } = req.query;
 
@@ -571,8 +583,8 @@ export const getNanoActivity = asyncHandler(async (req, res, next) => {
   })
     .populate('user', 'name email avatar')
     .sort({ createdAt: -1 })
-    .limit(parseInt(limit))
-    .skip((parseInt(page) - 1) * parseInt(limit));
+    .limit(boundedInteger(limit, 100, 200))
+    .skip((pageNumber(page) - 1) * boundedInteger(limit, 100, 200));
 
   const total = await Activity.countDocuments({ 
     nanoSubtask: id,
@@ -583,8 +595,8 @@ export const getNanoActivity = asyncHandler(async (req, res, next) => {
     success: true,
     count: activities.length,
     total,
-    page: parseInt(page),
-    pages: Math.ceil(total / parseInt(limit)),
+    page: pageNumber(page),
+    pages: Math.ceil(total / boundedInteger(limit, 100, 200)),
     data: activities,
   });
 });
@@ -593,6 +605,7 @@ export const getNanoActivity = asyncHandler(async (req, res, next) => {
 // @route   POST /api/subtask-nanos/:id/time-tracking
 // @access  Private
 export const addTimeEntry = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'nano', req.params.id, 'time.log');
   const { id } = req.params;
   const { type, entry } = req.body;
 
@@ -681,6 +694,7 @@ export const addTimeEntry = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/subtask-nanos/:id/time-tracking/:entryId
 // @access  Private
 export const updateTimeEntry = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'nano', req.params.id, 'time.log');
   const { id, entryId } = req.params;
   const { type, updates } = req.body;
 
@@ -772,6 +786,7 @@ export const updateTimeEntry = asyncHandler(async (req, res, next) => {
 // @route   DELETE /api/subtask-nanos/:id/time-tracking/:entryId
 // @access  Private
 export const deleteTimeEntry = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'nano', req.params.id, 'time.log');
   const { id, entryId } = req.params;
   const { type } = req.query;
 

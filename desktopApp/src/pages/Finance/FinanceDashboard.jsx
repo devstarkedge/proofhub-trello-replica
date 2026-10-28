@@ -1,3 +1,4 @@
+import useAccessControl from '../../hooks/useAccessControl';
 import { useState, useEffect, useContext, useMemo } from 'react';
 import {
   DollarSign,
@@ -26,6 +27,8 @@ import { getBillingTypeLabel, getBillingTypeStyle } from '../../utils/billing';
  */
 const FinanceDashboard = () => {
   const navigate = useNavigate();
+  const { can } = useAccessControl();
+  const canBilling = can('finance', 'billing_details');
   const { user } = useContext(AuthContext);
   const [summary, setSummary] = useState(null);
   const [usersData, setUsersData] = useState([]);
@@ -88,8 +91,8 @@ const FinanceDashboard = () => {
       // Fetch all data in parallel
       const [summaryRes, usersRes, projectsRes] = await Promise.all([
         api.get(`/api/finance/summary?${params.toString()}`),
-        api.get(`/api/finance/users?${params.toString()}`),
-        api.get(`/api/finance/projects?${params.toString()}`)
+        canBilling ? api.get(`/api/finance/users?${params.toString()}`) : Promise.resolve({ data: { success: true, data: [] } }),
+        canBilling ? api.get(`/api/finance/projects?${params.toString()}`) : Promise.resolve({ data: { success: true, data: [] } })
       ]);
 
       if (summaryRes.data.success) setSummary(summaryRes.data.data);
@@ -106,7 +109,7 @@ const FinanceDashboard = () => {
 
   useEffect(() => {
     fetchDashboardData();
-  }, [selectedPeriod]);
+  }, [selectedPeriod, canBilling]);
 
   // Real-time updates via Socket.IO
   useEffect(() => {
@@ -138,7 +141,7 @@ const FinanceDashboard = () => {
       clearTimeout(refreshTimeout);
       socketService.leaveFinance();
     };
-  }, [selectedPeriod]); // Re-subscribe if period changes to use updated fetchDashboardData
+  }, [selectedPeriod, canBilling]); // Re-subscribe if period changes to use updated fetchDashboardData
 
   // Format currency
   const formatCurrency = (amount) => {
@@ -315,7 +318,7 @@ const FinanceDashboard = () => {
               backgroundColor: 'var(--color-bg-secondary)',
               borderColor: 'var(--color-border-subtle)'
             }}
-            onClick={() => navigate('/finance/projects')}
+            onClick={canBilling ? () => navigate('/finance/projects') : undefined}
           >
             <div className="flex items-start justify-between">
               <div>
@@ -430,7 +433,7 @@ const FinanceDashboard = () => {
                   {formatTime(summary?.totalBilledTime)}
                 </p>
                 <p className="text-xs mt-2 flex items-center gap-1" style={{ color: 'var(--color-text-muted)' }}>
-                  <span>{usersData.length} contributors</span>
+                  {canBilling && <span>{usersData.length} contributors</span>}
                   <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
                 </p>
               </div>
@@ -446,6 +449,7 @@ const FinanceDashboard = () => {
         </div>
       )}
 
+      {canBilling && <>
       {/* Two Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Top Users */}
@@ -549,7 +553,7 @@ const FinanceDashboard = () => {
               </h3>
             </div>
             <button
-              onClick={() => navigate('/finance/projects')}
+              onClick={canBilling ? () => navigate('/finance/projects') : undefined}
               className="text-xs font-medium flex items-center gap-1 hover:underline"
               style={{ color: '#10b981' }}
             >
@@ -622,6 +626,8 @@ const FinanceDashboard = () => {
           )}
         </div>
       </div>
+
+      </>}
 
       {/* Department Breakdown */}
       <div
@@ -704,6 +710,7 @@ const FinanceDashboard = () => {
         )}
       </div>
 
+      {canBilling && <>
       {/* Quick Actions */}
       <div
         className="p-4 rounded-xl border"
@@ -728,7 +735,7 @@ const FinanceDashboard = () => {
             View Users Report
           </button>
           <button
-            onClick={() => navigate('/finance/projects')}
+            onClick={canBilling ? () => navigate('/finance/projects') : undefined}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:scale-[1.02]"
             style={{
               backgroundColor: 'rgba(139, 92, 246, 0.12)',
@@ -764,6 +771,7 @@ const FinanceDashboard = () => {
           )}
         </div>
       </div>
+      </>}
     </div>
   );
 };

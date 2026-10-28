@@ -1,3 +1,4 @@
+import { literalSearch } from '../utils/literalSearch.js';
 import Label from '../models/Label.js';
 import Card from '../models/Card.js';
 import Subtask from '../models/Subtask.js';
@@ -34,7 +35,7 @@ export const createLabel = asyncHandler(async (req, res) => {
   // Check for duplicate label name in the same board
   const existingLabel = await Label.findOne({ 
     board: boardId, 
-    name: { $regex: new RegExp(`^${name.trim()}$`, 'i') }
+    name: { $regex: new RegExp(`^${literalSearch(name.trim()).source}$`, 'i') }
   });
 
   if (existingLabel) {
@@ -73,7 +74,7 @@ export const updateLabel = asyncHandler(async (req, res) => {
   if (name && name.trim().toLowerCase() !== label.name.toLowerCase()) {
     const existingLabel = await Label.findOne({
       board: label.board,
-      name: { $regex: new RegExp(`^${name.trim()}$`, 'i') },
+      name: { $regex: new RegExp(`^${literalSearch(name.trim()).source}$`, 'i') },
       _id: { $ne: id }
     });
 

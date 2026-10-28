@@ -1,93 +1,22 @@
-import mongoose from 'mongoose';
 import Card from '../models/Card.js';
-import Attachment from '../models/Attachment.js';
-import Comment from '../models/Comment.js';
-import Activity from '../models/Activity.js';
-import Subtask from '../models/Subtask.js';
-import SubtaskNano from '../models/SubtaskNano.js';
-import RecurringTask from '../models/RecurringTask.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
-
-let isRunningCleanup = false;
-
-/**
- * Remove archived cards that have passed their auto-delete deadline along with related data.
- * This relies solely on persisted timestamps so it survives restarts and is idempotent.
- */
-export const cleanupExpiredArchivedCards = async () => {
-  if (isRunningCleanup) {
-    return;
-  }
-
-  isRunningCleanup = true;
-  const now = new Date();
-
-  try {
-    // Deliberate cross-tenant scan — runs on a schedule, outside any
-    // request — and a pure delete sweep with no new-document writes, so
-    // the whole thing (including the per-card cascade below) is safe to
-    // run under a single bypass.
-    await workspaceContext.runUnscoped(async () => await cleanupExpiredArchivedCardsUnscoped(now));
-  } catch (err) {
-    console.error('Error during archived card cleanup scan:', err);
-  } finally {
-    isRunningCleanup = false;
-  }
-};
-
-const cleanupExpiredArchivedCardsUnscoped = async (now) => {
-  const candidates = await Card.find({
-    isArchived: true,
-    autoDeleteAt: { $lte: now }
-  }).select('_id board list title').lean();
-
-  if (!candidates.length) {
-    return;
-  }
-
-  for (const card of candidates) {
-    const session = await mongoose.startSession();
-    try {
-      await session.withTransaction(async () => {
-        const subtaskIds = await Subtask.distinct('_id', { task: card._id }).session(session);
-        const nanoIds = await SubtaskNano.distinct('_id', { task: card._id }).session(session);
-        const relatedRefs = [card._id, ...subtaskIds, ...nanoIds].filter(Boolean);
-
-        await Attachment.deleteMany({
-          $or: [
-            { card: card._id },
-            { subtask: { $in: subtaskIds } },
-            { nanoSubtask: { $in: nanoIds } },
-            { contextRef: { $in: relatedRefs } }
-          ]
-        }, { session });
-
-        await Comment.deleteMany({
-          $or: [
-            { card: card._id },
-            { contextRef: { $in: relatedRefs } }
-          ]
-        }, { session });
-
-        await Activity.deleteMany({ card: card._id }, { session });
-        await RecurringTask.deleteMany({ card: card._id }, { session });
-        await SubtaskNano.deleteMany({ task: card._id }, { session });
-        await Subtask.deleteMany({ task: card._id }, { session });
-
-        await Card.deleteOne({ _id: card._id }, { session });
-      });
-
-      console.log(`Archived card auto-deleted: ${card._id} (${card.title || 'untitled'})`);
-    } catch (err) {
-      console.error(`Failed to auto-delete archived card ${card._id}:`, err);
-    } finally {
-      await session.endSession();
+import { deleteResource } from '../services/resourceDeletion.js';
+let running;
+export function cleanupExpiredArchivedCards() {
+  if (!running) running = scan().finally(() => { running = null; });
+  return running;
+}
+async function scan() {
+  const cutoff = new Date();
+  await workspaceContext.runUnscoped(async () => {
+    const cursor = Card.find({ isArchived: true, autoDeleteAt: { $lte: cutoff } }).select('_id workspaceId').lean().cursor();
+    for await (const card of cursor) {
+      try {
+        await workspaceContext.run({ workspaceId: card.workspaceId }, () => deleteResource('card', card._id, { requireExpiredAt: cutoff }));
+      } catch (error) { console.error('Archived task cleanup failed', { id: String(card._id), code: error.code || error.name }); }
     }
-  }
-};
-
-// Legacy no-ops — polling replaced by BullMQ repeatable jobs via maintenanceScheduler
+  });
+}
 export const startArchivedCardCleanup = () => {};
 export const stopArchivedCardCleanup = () => {};
-
 export default { cleanupExpiredArchivedCards, startArchivedCardCleanup, stopArchivedCardCleanup };

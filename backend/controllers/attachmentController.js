@@ -1,3 +1,6 @@
+import { resourceReadFilter } from '../services/resourceReadFilter.js';
+import { boundedInteger, pageNumber } from '../utils/pagination.js';
+import { authorizeProjectResource, authorizeContext } from '../services/projectAuthorization.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import Attachment from '../models/Attachment.js';
 import Card from '../models/Card.js';
@@ -11,9 +14,11 @@ import { emitToBoard } from '../realtime/index.js';
 import { chatHooks } from '../utils/chatHooks.js';
 import { uploadToCloudinary, getFileTypeCategory, getCloudinaryResourceType, getThumbnailUrl, getOptimizedUrl } from '../utils/cloudinary.js';
 import multer from 'multer';
+import { attachmentStorage, MAX_UPLOAD_BYTES } from '../middleware/uploadBudget.js';
+import { boundedResponseBuffer } from '../utils/boundedDownload.js';
 
 // Configure multer for memory storage (we'll upload to Cloudinary)
-const storage = multer.memoryStorage();
+const storage = attachmentStorage;
 
 const fileFilter = (req, file, cb) => {
   // Allowed file types
@@ -46,7 +51,9 @@ const fileFilter = (req, file, cb) => {
 export const uploadMiddleware = multer({
   storage,
   limits: {
-    fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024, // 10MB default
+    fileSize: MAX_UPLOAD_BYTES,
+    fields: 20,
+    fieldSize: 64 * 1024,
     files: 10 // Max 10 files at once
   },
   fileFilter
@@ -56,6 +63,7 @@ export const uploadMiddleware = multer({
 // @route   POST /api/attachments/upload
 // @access  Private
 export const uploadAttachment = asyncHandler(async (req, res) => {
+  await authorizeContext(req, 'attachment.upload');
   if (!req.file) {
     throw new ErrorResponse('No file uploaded', 400);
   }
@@ -149,7 +157,7 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
   // Upload to Cloudinary
   let cloudinaryResult;
   try {
-    cloudinaryResult = await uploadToCloudinary(req.file.buffer, {
+    cloudinaryResult = await uploadToCloudinary(req.file.path || req.file.buffer, {
       folder: folderPath,
       resourceType,
       context: {
@@ -178,6 +186,7 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     url: cloudinaryResult.url,
     secureUrl: cloudinaryResult.secure_url,
     publicId: cloudinaryResult.public_id,
+    deliveryType: 'authenticated',
     resourceType: cloudinaryResult.resource_type,
     format: cloudinaryResult.format,
     // Use the frontend's contextType ('description' or 'comment') for proper separation
@@ -312,6 +321,7 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
 // @route   POST /api/attachments/upload-multiple
 // @access  Private
 export const uploadMultipleAttachments = asyncHandler(async (req, res) => {
+  await authorizeContext(req, 'attachment.upload');
   if (!req.files || req.files.length === 0) {
     throw new ErrorResponse('No files uploaded', 400);
   }
@@ -329,7 +339,7 @@ export const uploadMultipleAttachments = asyncHandler(async (req, res) => {
     const resourceType = getCloudinaryResourceType(file.mimetype);
 
     try {
-      const cloudinaryResult = await uploadToCloudinary(file.buffer, {
+      const cloudinaryResult = await uploadToCloudinary(file.path || file.buffer, {
         folder: `flowtask/workspaces/${req.workspaceId}/cards/${cardId}/attachments`,
         resourceType,
         context: {
@@ -348,6 +358,7 @@ export const uploadMultipleAttachments = asyncHandler(async (req, res) => {
         url: cloudinaryResult.url,
         secureUrl: cloudinaryResult.secure_url,
         publicId: cloudinaryResult.public_id,
+    deliveryType: 'authenticated',
         resourceType: cloudinaryResult.resource_type,
         format: cloudinaryResult.format,
         // Use the frontend's contextType ('description' or 'comment') for proper separation
@@ -432,14 +443,15 @@ export const uploadMultipleAttachments = asyncHandler(async (req, res) => {
 // @route   GET /api/attachments/card/:cardId
 // @access  Private
 export const getCardAttachments = asyncHandler(async (req, res) => {
+  await authorizeContext(req);
   const { cardId } = req.params;
   const { page = 1, limit = 20, fileType } = req.query;
 
-  const pageNum = parseInt(page, 10);
-  const limitNum = parseInt(limit, 10);
+  const pageNum = pageNumber(page);
+  const limitNum = boundedInteger(limit, 20, 100);
   const skip = (pageNum - 1) * limitNum;
 
-  const query = { card: cardId, isDeleted: false };
+  const query = { ...await resourceReadFilter(req, 'attachment'), card: cardId, isDeleted: false };
   if (fileType) {
     query.fileType = fileType;
   }
@@ -471,14 +483,15 @@ export const getCardAttachments = asyncHandler(async (req, res) => {
 // @route   GET /api/attachments/board/:boardId
 // @access  Private
 export const getBoardAttachments = asyncHandler(async (req, res) => {
+  await authorizeContext(req);
   const { boardId } = req.params;
   const { page = 1, limit = 50, fileType, versionGroup } = req.query;
 
-  const pageNum = parseInt(page, 10);
-  const limitNum = parseInt(limit, 10);
+  const pageNum = pageNumber(page);
+  const limitNum = boundedInteger(limit, 20, 100);
   const skip = (pageNum - 1) * limitNum;
 
-  const query = { board: boardId, contextType: 'board', isDeleted: false };
+  const query = { ...await resourceReadFilter(req, 'attachment'), board: boardId, contextType: 'board', isDeleted: false };
   if (fileType) {
     query.fileType = fileType;
   }
@@ -513,14 +526,15 @@ export const getBoardAttachments = asyncHandler(async (req, res) => {
 // @route   GET /api/attachments/subtask/:subtaskId
 // @access  Private
 export const getSubtaskAttachments = asyncHandler(async (req, res) => {
+  await authorizeContext(req);
   const { subtaskId } = req.params;
   const { page = 1, limit = 20, fileType } = req.query;
 
-  const pageNum = parseInt(page, 10);
-  const limitNum = parseInt(limit, 10);
+  const pageNum = pageNumber(page);
+  const limitNum = boundedInteger(limit, 20, 100);
   const skip = (pageNum - 1) * limitNum;
 
-  const query = { subtask: subtaskId, isDeleted: false };
+  const query = { ...await resourceReadFilter(req, 'attachment'), subtask: subtaskId, isDeleted: false };
   if (fileType) {
     query.fileType = fileType;
   }
@@ -552,14 +566,15 @@ export const getSubtaskAttachments = asyncHandler(async (req, res) => {
 // @route   GET /api/attachments/nano/:nanoSubtaskId
 // @access  Private
 export const getNanoSubtaskAttachments = asyncHandler(async (req, res) => {
+  await authorizeContext(req);
   const { nanoSubtaskId } = req.params;
   const { page = 1, limit = 20, fileType } = req.query;
 
-  const pageNum = parseInt(page, 10);
-  const limitNum = parseInt(limit, 10);
+  const pageNum = pageNumber(page);
+  const limitNum = boundedInteger(limit, 20, 100);
   const skip = (pageNum - 1) * limitNum;
 
-  const query = { nanoSubtask: nanoSubtaskId, isDeleted: false };
+  const query = { ...await resourceReadFilter(req, 'attachment'), nanoSubtask: nanoSubtaskId, isDeleted: false };
   if (fileType) {
     query.fileType = fileType;
   }
@@ -591,16 +606,17 @@ export const getNanoSubtaskAttachments = asyncHandler(async (req, res) => {
 // @route   GET /api/attachments/context/:contextType/:contextRef
 // @access  Private
 export const getAttachmentsByContext = asyncHandler(async (req, res) => {
+  await authorizeContext(req);
   const { contextType, contextRef } = req.params;
   const { page = 1, limit = 20 } = req.query;
 
-  const pageNum = parseInt(page, 10);
-  const limitNum = parseInt(limit, 10);
+  const pageNum = pageNumber(page);
+  const limitNum = boundedInteger(limit, 20, 100);
   const skip = (pageNum - 1) * limitNum;
 
   const [attachments, total] = await Promise.all([
-    Attachment.findByContext(contextType, contextRef, { skip, limit: limitNum, lean: true }),
-    Attachment.countDocuments({ contextType, contextRef, isDeleted: false })
+    Attachment.findByContext(contextType, contextRef, { skip, limit: limitNum, lean: true, filter: await resourceReadFilter(req, 'attachment') }),
+    Attachment.countDocuments({ ...await resourceReadFilter(req, 'attachment'), contextType, contextRef, isDeleted: false })
   ]);
 
   res.status(200).json({
@@ -618,6 +634,7 @@ export const getAttachmentsByContext = asyncHandler(async (req, res) => {
 // @route   GET /api/attachments/:id
 // @access  Private
 export const getAttachment = asyncHandler(async (req, res) => {
+  await authorizeProjectResource(req, 'attachment', req.params.id, 'task.view');
   const attachment = await Attachment.findById(req.params.id)
     .populate('uploadedBy', 'name avatar')
     .lean();
@@ -636,6 +653,7 @@ export const getAttachment = asyncHandler(async (req, res) => {
 // @route   DELETE /api/attachments/:id
 // @access  Private
 export const deleteAttachment = asyncHandler(async (req, res) => {
+  await authorizeProjectResource(req, 'attachment', req.params.id, 'attachment.manage');
   const attachment = await Attachment.findById(req.params.id);
 
   if (!attachment || attachment.isDeleted) {
@@ -781,6 +799,8 @@ export const deleteAttachment = asyncHandler(async (req, res) => {
 // @route   DELETE /api/attachments/bulk
 // @access  Private
 export const deleteMultipleAttachments = asyncHandler(async (req, res) => {
+  if (!Array.isArray(req.body.attachmentIds) || req.body.attachmentIds.length > 100) throw new ErrorResponse('Provide at most 100 attachment IDs', 400);
+  for (const attachmentId of req.body.attachmentIds) await authorizeProjectResource(req, 'attachment', attachmentId, 'attachment.manage');
   const { attachmentIds } = req.body;
 
   if (!attachmentIds || !Array.isArray(attachmentIds) || attachmentIds.length === 0) {
@@ -859,6 +879,7 @@ export const deleteMultipleAttachments = asyncHandler(async (req, res) => {
 // @route   PATCH /api/attachments/:id/set-cover
 // @access  Private
 export const setAsCover = asyncHandler(async (req, res) => {
+  await authorizeProjectResource(req, 'attachment', req.params.id, 'attachment.manage');
   const attachment = await Attachment.findById(req.params.id);
 
   if (!attachment || attachment.isDeleted) {
@@ -935,9 +956,10 @@ export const setAsCover = asyncHandler(async (req, res) => {
 // @route   POST /api/attachments/paste
 // @access  Private
 export const uploadFromPaste = asyncHandler(async (req, res) => {
+  await authorizeContext(req, 'attachment.upload');
   const { imageData, cardId, subtaskId, nanoSubtaskId, contextType = 'description', contextRef, setCover } = req.body;
 
-  if (!imageData) {
+  if (typeof imageData !== 'string' || !/^data:image\/(png|jpeg|jpg|gif|webp);base64,[A-Za-z\d+/=\r\n]+$/.test(imageData) || imageData.length > Math.ceil(MAX_UPLOAD_BYTES * 4 / 3) + 128) {
     throw new ErrorResponse('Image data is required', 400);
   }
 
@@ -978,6 +1000,7 @@ export const uploadFromPaste = asyncHandler(async (req, res) => {
   // Convert base64 to buffer
   const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
   const buffer = Buffer.from(base64Data, 'base64');
+  if (!buffer.length || buffer.length > MAX_UPLOAD_BYTES) throw new ErrorResponse('Image exceeds the upload limit', 413);
   
   // Detect format from data URL
   const formatMatch = imageData.match(/^data:image\/(\w+);base64,/);
@@ -1008,6 +1031,7 @@ export const uploadFromPaste = asyncHandler(async (req, res) => {
     url: cloudinaryResult.url,
     secureUrl: cloudinaryResult.secure_url,
     publicId: cloudinaryResult.public_id,
+    deliveryType: 'authenticated',
     resourceType: 'image',
     format: cloudinaryResult.format,
     // Use the frontend's contextType ('description' or 'comment') for proper separation
@@ -1071,6 +1095,7 @@ export const uploadFromPaste = asyncHandler(async (req, res) => {
 // @route   POST /api/attachments/upload-from-drive
 // @access  Private
 export const uploadFromGoogleDrive = asyncHandler(async (req, res) => {
+  await authorizeContext(req, 'attachment.upload');
   const { 
     fileId, 
     fileName, 
@@ -1086,7 +1111,7 @@ export const uploadFromGoogleDrive = asyncHandler(async (req, res) => {
   } = req.body;
 
   // Validate required fields
-  if (!fileId || !accessToken) {
+  if (typeof fileId !== 'string' || !/^[A-Za-z\d_-]{1,200}$/.test(fileId) || typeof accessToken !== 'string' || accessToken.length > 4096 || typeof fileName !== 'string' || fileName.length > 255) {
     throw new ErrorResponse('File ID and access token are required', 400);
   }
 
@@ -1170,14 +1195,14 @@ export const uploadFromGoogleDrive = asyncHandler(async (req, res) => {
     }
 
     const driveResponse = await fetch(downloadUrl, {
+      signal: AbortSignal.timeout(15000),
       headers: {
         'Authorization': `Bearer ${accessToken}`
       }
     });
 
     if (!driveResponse.ok) {
-      const errorText = await driveResponse.text();
-      console.error('Google Drive API error:', errorText);
+      await driveResponse.body?.cancel();
       
       if (driveResponse.status === 401) {
         throw new ErrorResponse('Google Drive access token expired. Please try again.', 401);
@@ -1192,8 +1217,7 @@ export const uploadFromGoogleDrive = asyncHandler(async (req, res) => {
       throw new ErrorResponse('Failed to fetch file from Google Drive', 500);
     }
 
-    const arrayBuffer = await driveResponse.arrayBuffer();
-    fileBuffer = Buffer.from(arrayBuffer);
+    fileBuffer = await boundedResponseBuffer(driveResponse, MAX_UPLOAD_BYTES);
 
     // Verify the file isn't empty
     if (fileBuffer.length === 0) {
@@ -1202,8 +1226,7 @@ export const uploadFromGoogleDrive = asyncHandler(async (req, res) => {
 
   } catch (error) {
     if (error instanceof ErrorResponse) throw error;
-    console.error('Google Drive fetch error:', error);
-    throw new ErrorResponse(`Failed to fetch file from Google Drive: ${error.message}`, 500);
+    throw new ErrorResponse('Failed to fetch file from Google Drive', 502);
   }
 
   // Upload to Cloudinary
@@ -1243,6 +1266,7 @@ export const uploadFromGoogleDrive = asyncHandler(async (req, res) => {
     url: cloudinaryResult.url,
     secureUrl: cloudinaryResult.secure_url,
     publicId: cloudinaryResult.public_id,
+    deliveryType: 'authenticated',
     resourceType: cloudinaryResult.resource_type,
     format: cloudinaryResult.format,
     contextType: contextType || 'description',

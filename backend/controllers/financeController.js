@@ -33,7 +33,7 @@ export const getFinanceSummary = async (req, res) => {
     res.json({ success: true, data });
   } catch (error) {
     console.error('Finance Summary Error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Finance report is temporarily unavailable' });
   }
 };
 
@@ -50,7 +50,7 @@ export const getUserFinanceData = async (req, res) => {
     });
   } catch (error) {
     console.error('User Finance Data Error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Finance report is temporarily unavailable' });
   }
 };
 
@@ -67,7 +67,7 @@ export const getProjectFinanceData = async (req, res) => {
     });
   } catch (error) {
     console.error('Project Finance Data Error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Finance report is temporarily unavailable' });
   }
 };
 
@@ -84,7 +84,7 @@ export const getFinanceDepartments = async (req, res) => {
     res.json({ success: true, data: departments });
   } catch (error) {
     console.error('Finance Departments Error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Finance report is temporarily unavailable' });
   }
 };
 
@@ -138,7 +138,7 @@ export const getFinanceFilterOptions = async (req, res) => {
     });
   } catch (error) {
     console.error('Finance Filter Options Error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Finance report is temporarily unavailable' });
   }
 };
 
@@ -151,7 +151,7 @@ export const getWeeklyReportData = async (req, res) => {
     res.json({ success: true, data });
   } catch (error) {
     console.error('Weekly Report Error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Finance report is temporarily unavailable' });
   }
 };
 
@@ -174,7 +174,7 @@ export const getUserContributions = async (req, res) => {
     return res.json({ success: true, data });
   } catch (error) {
     console.error('User Contributions Error:', error);
-    return res.status(500).json({ success: false, message: error.message });
+    return res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Finance report is temporarily unavailable' });
   }
 };
 
@@ -187,6 +187,6 @@ export const getYearWideWeeklyData = async (req, res) => {
     res.json({ success: true, data });
   } catch (error) {
     console.error('Year-Wide Weekly Data Error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Finance report is temporarily unavailable' });
   }
 };

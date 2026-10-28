@@ -1,3 +1,5 @@
+import optimisticWritesPlugin from '../modules/workspaces/optimisticWrites.plugin.js';
+import tenantReferencesPlugin from '../modules/workspaces/tenantReferences.plugin.js';
 import mongoose from 'mongoose';
 import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
@@ -168,6 +170,7 @@ const subtaskSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'RecurringTask'
   },
+  occurrenceKey: { type: String, maxlength: 200 },
   createdBy: {
     immutable: true,
     type: mongoose.Schema.Types.ObjectId,
@@ -196,8 +199,11 @@ subtaskSchema.index({ workspaceId: 1, board: 1, status: 1 });
 subtaskSchema.index({ workspaceId: 1, assignees: 1, status: 1 });
 subtaskSchema.index({ workspaceId: 1, dueDate: 1 });
 subtaskSchema.index({ workspaceId: 1, isRecurring: 1, recurringTaskId: 1 });
+subtaskSchema.index({ workspaceId: 1, recurringTaskId: 1, occurrenceKey: 1 }, { unique: true, partialFilterExpression: { occurrenceKey: { $type: 'string' } } });
 
 subtaskSchema.plugin(workspaceScopePlugin);
+subtaskSchema.plugin(tenantReferencesPlugin, { members: ['assignees', 'watchers'], references: { task: 'Card', board: 'Board', tags: 'Label', coverImage: 'Attachment' }, parent: { field: 'task', model: 'Card' } });
+subtaskSchema.plugin(optimisticWritesPlugin);
 
 export default mongoose.model('Subtask', subtaskSchema);
 

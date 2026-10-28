@@ -35,7 +35,7 @@ const FEATURES = [
   {
     icon: BarChart3,
     label: 'Reports & Finance',
-    description: 'Analytics, finance pages, and PM sheet reporting.',
+    description: 'Analytics, finance pages, and financial reporting.',
     color: 'from-amber-500 to-orange-500',
   },
   {

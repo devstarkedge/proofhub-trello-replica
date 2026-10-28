@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import ProjectDropdownOption from '../models/ProjectDropdownOption.js';
 import Board from '../models/Board.js';
+import { getActiveWorkspaceId } from '../modules/workspaces/workspaceContext.js';
 
 const DEFAULT_OPTIONS = {
   projectSource: [
@@ -27,22 +28,25 @@ const normalizeSlug = (label) =>
     .replace(/[^a-z0-9_]/g, '');
 
 const ensureDefaults = async (type, userId) => {
+  const workspaceId = getActiveWorkspaceId();
+  if (!workspaceId) throw new Error('Workspace context required');
   const defaults = DEFAULT_OPTIONS[type] || [];
   if (defaults.length === 0) return;
 
   await ProjectDropdownOption.bulkWrite(defaults.map((opt, index) => ({
     updateOne: {
-      filter: { type, value: opt.value },
+      filter: { workspaceId, type, value: opt.value },
       update: {
         $setOnInsert: {
+          workspaceId,
           type,
           value: opt.value,
           label: opt.label,
           displayOrder: index,
           createdBy: userId,
-          isActive: true
-        },
-        $set: { isSystem: false }
+          isActive: true,
+          isSystem: false
+        }
       },
       upsert: true
     }

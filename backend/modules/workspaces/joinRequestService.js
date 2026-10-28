@@ -177,14 +177,13 @@ export async function approveJoinRequest(joinRequestId, workspaceId, approverUse
   const sourceInvitation = await WorkspaceInvitation.findById(joinRequest.sourceInvitation)
     .select('invitedBy').lean();
 
-  // Capacity-check + membership creation run inside a transaction together
-  // (see entitlementService.js's doc comment for why the check itself must
-  // be transactional) — joinRequest.save()/email/audit below stay outside,
-  // after commit, unchanged from before this check existed.
+  // Claim the pending decision, membership, capacity and roster in one commit.
   const session = await mongoose.startSession();
   let membership;
   try {
     await session.withTransaction(async () => {
+      const claimed = await WorkspaceJoinRequest.findOneAndUpdate({ _id: joinRequestId, workspace: workspaceId, status: 'pending' }, { $set: { status: 'approved', reviewedBy: approverId, reviewedAt: new Date() } }, { new: true, session });
+      if (!claimed) throw new ErrorResponse('Join request already reviewed', 409);
       await entitlementService.assertCanAddMembers(workspaceId, { session });
       ({ membership } = await createOrRestoreMembership({
         workspaceId,
@@ -195,6 +194,11 @@ export async function approveJoinRequest(joinRequestId, workspaceId, approverUse
         department,
         session
       }));
+      if (!membership || membership.status !== 'active') throw new ErrorResponse('Membership cannot be approved in its current state', 409);
+      claimed.resultingMembership = membership._id;
+      await claimed.save({ session });
+      if (department[0]) await addUserToDepartmentRoster(workspaceId, department[0], joinRequest.user, roleDoc.slug, { session });
+      Object.assign(joinRequest, claimed.toObject());
     });
   } catch (err) {
     entitlementService.notifyFreeLimitReachedIfNeeded(workspaceId, err).catch(() => {});
@@ -202,16 +206,6 @@ export async function approveJoinRequest(joinRequestId, workspaceId, approverUse
   } finally {
     await session.endSession();
   }
-
-  if (department[0]) {
-    await addUserToDepartmentRoster(workspaceId, department[0], joinRequest.user, roleDoc.slug);
-  }
-
-  joinRequest.status = 'approved';
-  joinRequest.reviewedBy = approverId;
-  joinRequest.reviewedAt = new Date();
-  joinRequest.resultingMembership = membership._id;
-  await joinRequest.save();
 
   // Matches invitationController.js#acceptWorkspaceInvitation's existing
   // "joined" precedent: the workspace you just gained access to becomes
@@ -266,18 +260,12 @@ export async function approveJoinRequest(joinRequestId, workspaceId, approverUse
  * Rejects a pending join request. No membership is ever created.
  */
 export async function rejectJoinRequest(joinRequestId, workspaceId, rejecterId, reason = '') {
-  const joinRequest = await WorkspaceJoinRequest.findOne({
+  const joinRequest = await WorkspaceJoinRequest.findOneAndUpdate({
     _id: joinRequestId, workspace: workspaceId, status: 'pending'
-  });
+  }, { $set: { status: 'rejected', reviewedBy: rejecterId, reviewedAt: new Date(), rejectionReason: reason || '' } }, { new: true });
   if (!joinRequest) {
     throw new ErrorResponse('Join request not found or already reviewed', 404);
   }
-
-  joinRequest.status = 'rejected';
-  joinRequest.reviewedBy = rejecterId;
-  joinRequest.reviewedAt = new Date();
-  joinRequest.rejectionReason = reason || '';
-  await joinRequest.save();
 
   const requestingUser = await User.findById(joinRequest.user).select('name email').lean();
   const workspace = await workspaceContext.runUnscoped(async () => Workspace.findById(workspaceId).select('name').lean());

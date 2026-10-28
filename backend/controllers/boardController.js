@@ -1,3 +1,8 @@
+import { resourceReadFilter } from '../services/resourceReadFilter.js';
+import { deleteResource } from '../services/resourceDeletion.js';
+import { boundedInteger, pageNumber } from '../utils/pagination.js';
+import { boardAccessFilter } from '../utils/boardAccess.js';
+import { authorizeProjectResource, requireProjectPermission } from '../services/projectAuthorization.js';
 import Board from "../models/Board.js";
 import { canUserAccessBoard as canUserAccessBoardUnified } from "../utils/boardAccess.js";
 import { normalizeClientDetails, validateProjectClient } from '../../shared/projectClient.mjs';
@@ -46,102 +51,14 @@ import { fromCents } from '../utils/money.js';
 // @desc    Get all boards for user
 // @route   GET /api/boards
 // @access  Private
-export const getBoards = asyncHandler(async (req, res, next) => {
-  const userId = req.user.id;
-  const userRole = req.user.role;
-
-  // Employees are always forced to assignment-based scope — ignore stored accessType
-  const isEmployee = userHasCapability(req.user, CAPABILITIES.FORCE_ASSIGNMENT_SCOPE);
-  const accessType = isEmployee ? 'assigned_tasks' : (req.user.accessType || 'full_department');
-
-  // ── HR Panel project-fetch (?departmentIds=id1,id2) — admin/manager/hr only ──
-  // Employees cannot use this query param to bypass scope restrictions.
-  if (req.query.departmentIds && !isEmployee) {
-    const deptIds = req.query.departmentIds.split(',').filter(Boolean);
-    const boards = await Board.find({
-      department: { $in: deptIds },
-      isDeleted: { $ne: true }
-    })
-      .populate("owner", "name email avatar")
-      .populate("team", "name")
-      .populate("department", "name")
-      .populate("members", "name email avatar")
-      .sort("-createdAt")
-      .lean();
-    return res.status(200).json({ success: true, count: boards.length, data: boards });
-  }
-
-  // ── Admin: full unrestricted access ──
-  if (userHasCapability(req.user, CAPABILITIES.VIEW_ALL_PROJECTS)) {
-    const boards = await Board.find({ isDeleted: { $ne: true } })
-      .populate("owner", "name email avatar")
-      .populate("team", "name")
-      .populate("department", "name")
-      .populate("members", "name email avatar")
-      .sort("-createdAt")
-      .lean();
-    return res.status(200).json({ success: true, count: boards.length, data: boards });
-  }
-
-  let query;
-
-  if (accessType === 'selected_projects') {
-    // Whitelist-based: only explicitly allowed projects
-    const allowedProjects = req.user.allowedProjects || [];
-    query = {
-      _id: { $in: allowedProjects },
-      isDeleted: { $ne: true }
-    };
-
-  } else if (accessType === 'assigned_tasks') {
-    // Assignment-driven: boards accessible via task / subtask / nano-subtask assignee
-    // PLUS boards where user is a direct owner or board-level member.
-    const assignedBoardIds = await getAssignmentBasedBoardIds(userId);
-    query = {
-      isDeleted: { $ne: true },
-      $or: [
-        { owner: userId },
-        { members: userId },
-        { _id: { $in: assignedBoardIds } }
-      ]
-    };
-    // Team membership still applies for non-employees (employees don't get team scope)
-    if (req.user.team && !isEmployee) {
-      query.$or.push({ team: req.user.team });
-    }
-
-  } else {
-    // full_department — manager/hr: projects within their assigned departments
-    const userDeptIds = req.user.department || [];
-    query = {
-      isDeleted: { $ne: true },
-      $or: [
-        { owner: userId },
-        { members: userId },
-        { department: { $in: userDeptIds } }
-      ]
-    };
-    if (userRole === 'manager') {
-      query.$or.push({ visibility: 'public' });
-    }
-    if (req.user.team) {
-      query.$or.push({ team: req.user.team });
-    }
-  }
-
-  const boards = await Board.find(query)
-    .populate("owner", "name email avatar")
-    .populate("team", "name")
-    .populate("department", "name")
-    .populate("members", "name email avatar")
-    .sort("-createdAt")
-    .lean();
-
-  res.status(200).json({
-    success: true,
-    count: boards.length,
-    data: boards,
-  });
+export const getBoards = asyncHandler(async (req, res) => {
+  const scope = await boardAccessFilter(req.user);
+  const department = req.query.departmentIds ? { department: { $in: String(req.query.departmentIds).split(',').filter(mongoose.isValidObjectId) } } : {};
+  const boards = await Board.find({ $and: [scope, department] })
+    .populate('owner', 'name email avatar').populate('team', 'name')
+    .populate('department', 'name').populate('members', 'name email avatar')
+    .sort('-createdAt').lean();
+  res.status(200).json({ success: true, count: boards.length, data: boards });
 });
 
 // @desc    Get boards by department
@@ -150,11 +67,13 @@ export const getBoards = asyncHandler(async (req, res, next) => {
 export const getBoardsByDepartment = asyncHandler(async (req, res, next) => {
   const { departmentId } = req.params;
 
+  const scope = await boardAccessFilter(req.user);
   const boards = await Board.find({
     department: departmentId,
     isArchived: false,
     isDeleted: { $ne: true }
   })
+    .and([scope])
     .populate("owner", "name email avatar")
     .populate("team", "name")
     .populate("members", "name email avatar")
@@ -172,8 +91,11 @@ export const getBoardsByDepartment = asyncHandler(async (req, res, next) => {
 // @route   GET /api/boards/:id/workflow-complete
 // @access  Private
 export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'project', req.params.id, 'project.view');
   const { id: projectId } = req.params;
 
+  const subtaskScope = await resourceReadFilter(req, 'subtask', projectId);
+  const nanoScope = await resourceReadFilter(req, 'nano', projectId);
   // Fetch board and lists in parallel
   // Also fetch subtasks and nanos to aggregate complete team
   const [board, lists, subtasks, nanos] = await Promise.all([
@@ -186,50 +108,16 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
     List.find({ board: projectId, isArchived: false })
       .sort('position')
       .lean(),
-    Subtask.find({ board: projectId }).select('assignees').lean(),
-    SubtaskNano.find({ board: projectId }).select('assignees').lean()
+    Subtask.find({ $and: [{ board: projectId }, subtaskScope] }).select('assignees').lean(),
+    SubtaskNano.find({ $and: [{ board: projectId }, nanoScope] }).select('assignees').lean()
   ]);
 
   if (!board || board.isDeleted) {
     return next(new ErrorResponse('Board not found', 404));
   }
 
-  // Employees are always forced to assignment-based scope regardless of stored accessType
-  const isEmployee = userHasCapability(req.user, CAPABILITIES.FORCE_ASSIGNMENT_SCOPE);
-  const accessType = isEmployee ? 'assigned_tasks' : (req.user.accessType || 'full_department');
-
-  // ── Level 1: Project Visibility ──────────────────────────────────────────
-  // Can this user access this board at all?
-  let hasAccess =
-    board.owner?._id?.toString() === req.user.id ||
-    board.members?.some((m) => m?._id?.toString() === req.user.id) ||
-    board.visibility === 'public' ||
-    req.user.role === 'admin';
-
-  // For employees: also grant access when assigned to any task/subtask/nano in this board
-  if (!hasAccess && accessType === 'assigned_tasks') {
-    const assignedBoardIds = await getAssignmentBasedBoardIds(req.user.id);
-    hasAccess = assignedBoardIds.some(id => id.toString() === board._id.toString());
-  }
-
-  if (!hasAccess) {
-    return next(new ErrorResponse('Not authorized to access this board', 403));
-  }
-
-  // For selected_projects users: enforce the allowed-project whitelist
-  if (req.user.role !== 'admin' && accessType === 'selected_projects') {
-    const allowed = (req.user.allowedProjects || []).map(p => p.toString());
-    if (!allowed.includes(board._id.toString())) {
-      return next(new ErrorResponse('Not authorized to access this board', 403));
-    }
-  }
-
-  // ── Level 2: Workflow Visibility ─────────────────────────────────────────
-  // Once project access is granted, the employee sees the FULL workflow board.
-  // No card-level assignee filtering — that would hide other members' cards and
-  // break collaborative visibility.
   const listIds = lists.map(l => l._id);
-  const cardFilter = { list: { $in: listIds }, isArchived: false };
+  const cardFilter = { $and: [{ list: { $in: listIds }, isArchived: false }, await resourceReadFilter(req, 'task', projectId)] };
   const cards = await Card.find(cardFilter)
     .select('title list description position status priority labels assignees board coverImage startDate dueDate estimation start_date end_date subtaskStats loggedTime')
     .populate('assignees', 'name email avatar role')
@@ -354,6 +242,7 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
 // @route   GET /api/boards/workflow/:departmentId/:projectId
 // @access  Private
 export const getWorkflowData = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'project', req.params.projectId, 'project.view');
   const { departmentId, projectId } = req.params;
 
   const board = await Board.findById(projectId)
@@ -374,18 +263,6 @@ export const getWorkflowData = asyncHandler(async (req, res, next) => {
 
   if (!boardDepartmentId || boardDepartmentId.toString() !== departmentId) {
     return next(new ErrorResponse("This project does not belong to the specified department", 403));
-  }
-
-  // Check access
-  const hasAccess =
-    board.owner?._id?.toString() === req.user.id ||
-    board.members?.some((m) => m?._id?.toString() === req.user.id) ||
-    board.visibility === "public" ||
-    req.user.role === "admin" ||
-    (req.user.department && req.user.department.toString() === departmentId);
-
-  if (!hasAccess) {
-    return next(new ErrorResponse("Not authorized to access this project workflow", 403));
   }
 
   res.status(200).json({
@@ -514,6 +391,7 @@ async function _legacyCanUserAccessBoard(board, user, accessFacts = null) {
 // @route   GET /api/boards/:id
 // @access  Private
 export const getBoard = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'project', req.params.id, 'project.view');
   const board = await Board.findById(req.params.id)
     .populate("owner", "name email avatar")
     .populate("team", "name")
@@ -533,7 +411,7 @@ export const getBoard = asyncHandler(async (req, res, next) => {
   }
 
   // Calculate progress based on active (non-archived) cards only
-  const cards = await Card.find({ board: board._id, isArchived: false }).select('status');
+  const cards = await Card.find({ $and: [{ board: board._id, isArchived: false }, await resourceReadFilter(req, 'task', board._id)] }).select('status');
   const totalCards = cards.length;
   const completedCards = cards.filter(card => card.status === 'done').length;
   const progress = totalCards > 0 ? Math.round((completedCards / totalCards) * 100) : 0;
@@ -557,6 +435,7 @@ export const getBoard = asyncHandler(async (req, res, next) => {
 // @route   POST /api/boards
 // @access  Private
 export const createBoard = asyncHandler(async (req, res, next) => {
+  await requireProjectPermission(req, 'project.create');
   // The effective type includes the existing schema default for API callers.
   const clientErrors = validateProjectClient(req.body.projectType || 'Hired Client', req.body.clientDetails);
   if (Object.keys(clientErrors).length) {
@@ -805,6 +684,7 @@ export const createBoard = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/boards/:id
 // @access  Private
 export const updateBoard = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'project', req.params.id, 'project.update');
   let board = await Board.findById(req.params.id);
 
   if (!board) {
@@ -1101,8 +981,9 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
 // @route   GET /api/boards/:id/activity
 // @access  Private
 export const getProjectActivity = asyncHandler(async (req, res) => {
+  await authorizeProjectResource(req, 'project', req.params.id, 'task.view');
   const { id } = req.params;
-  const limit = parseInt(req.query.limit || '50', 10);
+  const limit = boundedInteger(req.query.limit, 50, 100);
 
   const activity = await Activity.find({ board: id })
     .populate('user', 'name avatar')
@@ -1120,6 +1001,7 @@ export const getProjectActivity = asyncHandler(async (req, res) => {
 // @route   DELETE /api/boards/:id
 // @access  Private
 export const deleteBoard = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'project', req.params.id, 'project.delete');
   const board = await Board.findById(req.params.id);
 
   if (!board) {
@@ -1147,70 +1029,8 @@ export const deleteBoard = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Not authorized to delete this board", 403));
   }
 
-  // Send notifications before deletion
-  await notificationService.notifyTaskDeleted(board, req.user.id, true); // true for project deletion
-
-  // Get all cards for this board (needed for cascade delete of card-related data)
-  const cards = await Card.find({ board: board._id }).select('_id').lean();
-  const cardIds = cards.map(c => c._id);
-
-  // Delete all reminders for this project
-  await Reminder.deleteMany({ project: board._id });
-
-  // Delete all labels for this board
-  await Label.deleteMany({ board: board._id });
-
-  // Delete all subtasks and their nano subtasks for this board
-  const subtasks = await Subtask.find({ board: board._id });
-  const subtaskIds = subtasks.map(s => s._id);
-  await SubtaskNano.deleteMany({ subtask: { $in: subtaskIds } });
-  await Subtask.deleteMany({ board: board._id });
-
-  // Delete all comments for cards in this project
-  await Comment.deleteMany({ card: { $in: cardIds } });
-
-  // Purge project cover image from Cloudinary
-  if (board.coverImage?.publicId && typeof deleteProjectCover === 'function') {
-    deleteProjectCover(board.coverImage.publicId).catch(err => console.error('Error purging board cover:', err));
-  }
-
-  // Find and purge all project and card attachments from Cloudinary
-  try {
-    if (typeof Attachment.find === 'function') {
-      const attachmentsToPurge = await Attachment.find({
-        $or: [{ card: { $in: cardIds } }, { board: board._id }]
-      }).select('cloudinaryPublicId').lean();
-      const publicIds = (attachmentsToPurge || []).map(a => a.cloudinaryPublicId).filter(Boolean);
-      if (publicIds.length > 0 && typeof deleteMultipleFromCloudinary === 'function') {
-        deleteMultipleFromCloudinary(publicIds).catch(err => console.error('Error purging board attachments:', err));
-      }
-    }
-  } catch (purgeErr) {
-    console.error('Error finding attachments for Cloudinary cleanup:', purgeErr);
-  }
-
-  // Delete all attachments (both card-level and project-level)
-  await Attachment.deleteMany({ $or: [{ card: { $in: cardIds } }, { board: board._id }] });
-
-  // Delete all recurring tasks for cards in this project
-  await RecurringTask.deleteMany({ card: { $in: cardIds } });
-
-  // Delete all lists and cards
-  const lists = await List.find({ board: board._id });
-  for (const list of lists) {
-    await Card.deleteMany({ list: list._id });
-  }
-  await List.deleteMany({ board: board._id });
-  await Activity.deleteMany({ board: board._id });
-
-  // Remove board from department's projects array if department exists
-  if (board.department) {
-    await Department.findByIdAndUpdate(board.department, {
-      $pull: { projects: board._id }
-    });
-  }
-
-  await board.deleteOne();
+  await deleteResource('board', board._id, { actor: req.user });
+  await notificationService.notifyTaskDeleted(board, req.user.id, true).catch(() => {});
 
   // Notify ChatApp only after the project deletion succeeds.
   chatHooks.onProjectDeleted(board, req.user).catch(console.error);
@@ -1229,6 +1049,7 @@ export const deleteBoard = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/boards/:id/cover
 // @access  Private (Admin/Manager only)
 export const uploadCoverImage = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'project', req.params.id, 'project.update');
   const board = await Board.findById(req.params.id);
 
   if (!board) {
@@ -1315,6 +1136,7 @@ export const uploadCoverImage = asyncHandler(async (req, res, next) => {
 // @route   DELETE /api/boards/:id/cover
 // @access  Private (Admin/Manager only)
 export const removeCoverImage = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'project', req.params.id, 'project.update');
   const board = await Board.findById(req.params.id);
 
   if (!board) {
@@ -1333,8 +1155,8 @@ export const removeCoverImage = asyncHandler(async (req, res, next) => {
   const previousCover = { ...board.coverImage };
 
   try {
-    // Delete from Cloudinary
-    await deleteProjectCover(board.coverImage.publicId);
+    // Keep the asset while restore history still refers to it. Project purge
+    // records a durable cleanup job for current and historical covers.
 
     // Move to history before clearing (for undo functionality)
     const newHistory = [
@@ -1371,6 +1193,7 @@ export const removeCoverImage = asyncHandler(async (req, res, next) => {
 // @route   POST /api/boards/:id/cover/restore/:versionIndex
 // @access  Private (Admin/Manager only)
 export const restoreCoverImage = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'project', req.params.id, 'project.update');
   const { id, versionIndex } = req.params;
   const index = parseInt(versionIndex, 10);
 
@@ -1457,6 +1280,8 @@ export const bulkDeleteBoards = asyncHandler(async (req, res, next) => {
   if (invalidIds.length > 0) {
     return next(new ErrorResponse(`Invalid project IDs: ${invalidIds.join(', ')}`, 400));
   }
+
+  for (const projectId of projectIds) await authorizeProjectResource(req, 'project', projectId, 'project.delete');
 
   // Fetch all boards in one query
   const boards = await Board.find({
@@ -1553,6 +1378,9 @@ export const undoBulkDeleteBoards = asyncHandler(async (req, res, next) => {
   if (!projectIds || !Array.isArray(projectIds) || projectIds.length === 0) {
     return next(new ErrorResponse("projectIds must be a non-empty array", 400));
   }
+
+  if (projectIds.length > 50) throw new ErrorResponse('Cannot restore more than 50 projects at once', 400);
+  for (const projectId of projectIds) await authorizeProjectResource(req, 'project', projectId, 'project.restore');
 
   const UNDO_WINDOW_MS = 30 * 1000; // 30 seconds to undo
   const undoThreshold = new Date(Date.now() - UNDO_WINDOW_MS);

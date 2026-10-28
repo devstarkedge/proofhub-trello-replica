@@ -1,3 +1,4 @@
+import { sessionFetch as fetch } from './sessionFetch';
 const baseURL = import.meta.env.VITE_BACKEND_URL;
 
 class TrashService {

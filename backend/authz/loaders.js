@@ -17,6 +17,12 @@ export async function loadResource(ctx, type, resourceId) {
   if (type === 'project' || type === 'department') return resource;
   let boardId = resource.board || resource.boardId;
   let taskId = resource.task || resource.card;
+  if (type === 'attachment' && !taskId && (resource.subtask || resource.nanoSubtask || resource.comment)) {
+    const parentType = resource.subtask ? 'subtask' : resource.nanoSubtask ? 'nano' : 'comment';
+    const parent = await loadResource(ctx, parentType, resource.subtask || resource.nanoSubtask || resource.comment);
+    if (!parent || boardId && id(parent.project?._id) !== id(boardId)) return null;
+    return { ...resource, project: parent.project, taskResource: parent.taskResource };
+  }
   if (!boardId && type === 'attachment') {
     if (resource.contextType === 'board') return loadResource(ctx, 'project', resource.contextRef);
     const parentType = { card: 'task', task: 'task', subtask: 'subtask', nano: 'nano', nanoSubtask: 'nano', subtaskNano: 'nano' }[resource.contextType];

@@ -12,24 +12,46 @@ reports/
 *.md
 !backend/REDIS_AUDIT.md
 backend/modules/hubspot/README.md
-!backend/tests/
-backend/tests/*
-!backend/tests/tracking/
-!backend/tests/tracking/*.test.js
-!desktopApp/electron/tests/
-desktopApp/electron/tests/*
-!desktopApp/electron/tests/tracking.test.cjs
-!desktopApp/electron/tests/screenshot-encoder.test.cjs
-!backend/tests/attendance/
-backend/tests/attendance/*
-!backend/tests/attendance/smartCheckoutPolicy.test.js
-!backend/tests/attendance/smartCheckoutIntegration.test.js
-!desktopApp/electron/tests/tracking-lifecycle.test.cjs
-!backend/tests/attendance/smartCheckout.browser.mjs
-!backend/tests/attendance/smartCheckout.electron.cjs
+!REMEDIATION.md
 
-!backend/tests/tracking/performance.browser.mjs
-!desktopApp/electron/tests/tracking-runtime.test.cjs
+# Tests and their execution fixtures stay local by project preference.
+*.test.*
+*.spec.*
+/backend/testSafetySetup.js
+/backend/vitest.config.js
+/backend/realtime/renderer.fixture.jsx
+/backend/realtime/renderer.electron.cjs
+/backend/modules/hubspot/renderer.fixture.jsx
+/backend/modules/hubspot/renderer.electron.cjs
 
-!backend/tests/tracking/navigation.browser.mjs
-!backend/tests/tracking/createTask.browser.mjs
+# Local configuration and credentials
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Generated logs, caches and test output
+*.log
+*.log.*
+logs/
+.cache/
+.vite/
+*.tsbuildinfo
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+
+# Disposable local validation and desktop packaging output
+/work/
+/backend/work/
+/desktopApp/artifacts/
+/desktopApp/release/
+/desktopApp/build/
+
+# Operating-system metadata
+.DS_Store
+Thumbs.db
+Desktop.ini

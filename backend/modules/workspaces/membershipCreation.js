@@ -29,6 +29,10 @@ import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 export async function createOrRestoreMembership({
   workspaceId, userId, role, roleId, invitedBy, department = [], employeeId = '', session = null
 }) {
+  // In a transaction, an E11000 aborts the transaction and cannot be
+  // recovered by reading in that same session. Avoid the expected collision.
+  const current = await WorkspaceMembership.findOne({ workspace: workspaceId, user: userId }).session(session);
+  if (current && current.status !== 'removed') return { outcome: 'already_member', membership: current };
   try {
     const result = await WorkspaceMembership.findOneAndUpdate(
       { workspace: workspaceId, user: userId, status: 'removed' },
@@ -53,6 +57,7 @@ export async function createOrRestoreMembership({
     return { outcome, membership: result.value };
   } catch (err) {
     if (err.code === 11000) {
+      if (session?.inTransaction()) throw err;
       const existing = await WorkspaceMembership.findOne({ workspace: workspaceId, user: userId }).session(session).lean();
       return { outcome: 'already_member', membership: existing };
     }

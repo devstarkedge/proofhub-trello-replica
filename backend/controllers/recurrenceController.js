@@ -1,3 +1,5 @@
+import { executeRecurrence } from '../services/recurrenceExecution.js';
+import { authorizeProjectResource } from '../services/projectAuthorization.js';
 import mongoose from 'mongoose';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
@@ -13,62 +15,12 @@ import {
   rescheduleOccurrence,
 } from '../schedulers/recurringTaskScheduler.js';
 
-// Helper: Generate subtask from recurring task
-const generateRecurringSubtask = async (recurringTask, userId) => {
-  const card = await Card.findById(recurringTask.card).populate('board', 'name');
-  if (!card) {
-    throw new Error('Parent card not found');
-  }
-
-  const currentCount = await Subtask.countDocuments({ task: recurringTask.card });
-  
-  // Calculate dates based on template
-  let subtaskDueDate = recurringTask.nextOccurrence;
-  let subtaskStartDate = null;
-  
-  if (recurringTask.startDate && recurringTask.dueDate) {
-    const daysDiff = Math.ceil((new Date(recurringTask.dueDate) - new Date(recurringTask.startDate)) / (1000 * 60 * 60 * 24));
-    subtaskStartDate = new Date(subtaskDueDate);
-    subtaskStartDate.setDate(subtaskStartDate.getDate() - daysDiff);
-  }
-
-  const template = recurringTask.subtaskTemplate || {};
-  const parentTitle = card.title || 'Task';
-  
-  // Filter tags to ensure only valid ObjectIds are included
-  const validTags = (template.tags || []).filter(tag => {
-    // Check if tag is a valid ObjectId or can be converted to one
-    return tag && mongoose.Types.ObjectId.isValid(tag);
-  });
-  
-  const subtask = await Subtask.create({
-    task: recurringTask.card,
-    board: recurringTask.board,
-    title: template.title || `${parentTitle} - Recurring Instance`,
-    description: template.description || '',
-    status: 'todo',
-    priority: template.priority || 'medium',
-    assignees: template.assignees || [],
-    tags: validTags,
-    dueDate: subtaskDueDate,
-    startDate: subtaskStartDate,
-    order: currentCount,
-    createdBy: userId,
-    isRecurring: true,
-    recurringTaskId: recurringTask._id,
-    breadcrumbs: {
-      project: card.board?.name || '',
-      task: card.title || ''
-    }
-  });
-
-  return subtask;
-};
-
 // @desc    Create recurrence for a card
 // @route   POST /api/recurrence
 // @access  Private
 export const createRecurrence = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'task', req.body.cardId, 'task.update');
+  await authorizeProjectResource(req, 'task', req.body.cardId, 'task.create');
   const {
     cardId,
     scheduleType,
@@ -101,8 +53,7 @@ export const createRecurrence = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Active recurrence already exists for this card', 400));
   }
 
-  // Create recurring task
-  const recurringTask = await RecurringTask.create({
+  const recurringData = { _id: new mongoose.Types.ObjectId(), workspaceId: req.workspaceId,
     card: cardId,
     board: card.board._id || card.board,
     createdBy: req.user.id,
@@ -128,42 +79,23 @@ export const createRecurrence = asyncHandler(async (req, res, next) => {
       assignees: card.assignees || [],
       tags: card.labels || []
     }
-  });
-
-  // Calculate and set next occurrence
-  const nextOccurrence = recurringTask.calculateNextOccurrence(new Date(dueDate || Date.now()));
-  recurringTask.nextOccurrence = nextOccurrence;
-  await recurringTask.save();
-
-  // Create first recurring subtask immediately
+  };
+  const session = await mongoose.startSession();
+  let recurringTask, firstSubtask;
   try {
-    const firstSubtask = await generateRecurringSubtask(recurringTask, req.user.id);
-    recurringTask.generatedSubtasks.push(firstSubtask._id);
-    recurringTask.completedOccurrences = 1;
-    recurringTask.lastOccurrence = new Date();
-    
-    // Calculate next occurrence after first creation
-    recurringTask.nextOccurrence = recurringTask.calculateNextOccurrence();
-    await recurringTask.save();
-
-    // Refresh card hierarchy stats
-    await refreshCardHierarchyStats(cardId);
-
-    // Emit real-time update
-    emitToBoard(recurringTask.board.toString(), 'recurrence-created', {
-      cardId,
-      recurrence: recurringTask,
-      subtask: firstSubtask
+    await session.withTransaction(async () => {
+      if (await RecurringTask.exists({ card: cardId, isActive: true }).session(session)) throw new ErrorResponse('Active recurrence already exists for this card', 409);
+      recurringTask = new RecurringTask(recurringData);
+      recurringTask.nextOccurrence = new Date(dueDate || Date.now());
+      await recurringTask.save({ session });
+      const result = await executeRecurrence(recurringTask._id, { occurrenceKey: 'initial', actorId: req.user.id, session });
+      if (result.skipped) throw new ErrorResponse('The recurrence has already ended', 400);
+      recurringTask = result.recurrence; firstSubtask = result.subtask;
     });
-
-    emitToBoard(recurringTask.board.toString(), 'hierarchy-subtask-changed', {
-      type: 'created',
-      taskId: cardId,
-      subtask: firstSubtask
-    });
-  } catch (error) {
-    console.error('Error creating first recurring subtask:', error);
-  }
+  } finally { await session.endSession(); }
+  await refreshCardHierarchyStats(cardId);
+  emitToBoard(recurringTask.board.toString(), 'recurrence-created', { cardId, recurrence: recurringTask, subtask: firstSubtask });
+  emitToBoard(recurringTask.board.toString(), 'hierarchy-subtask-changed', { type: 'created', taskId: cardId, subtask: firstSubtask });
 
   // Schedule the next occurrence as a delayed BullMQ job
   scheduleNextOccurrence(recurringTask).catch(err =>
@@ -200,6 +132,7 @@ export const createRecurrence = asyncHandler(async (req, res, next) => {
 // @route   GET /api/recurrence/card/:cardId
 // @access  Private
 export const getRecurrenceByCard = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'task', req.params.cardId, 'task.view');
   const { cardId } = req.params;
 
   const recurrence = await RecurringTask.findOne({ card: cardId, isActive: true })
@@ -223,6 +156,7 @@ export const getRecurrenceByCard = asyncHandler(async (req, res, next) => {
 // @route   GET /api/recurrence/:id
 // @access  Private
 export const getRecurrenceById = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'recurrence', req.params.id, 'task.view');
   const recurrence = await RecurringTask.findById(req.params.id)
     .populate('card', 'title')
     .populate('board', 'name')
@@ -248,6 +182,7 @@ export const getRecurrenceById = asyncHandler(async (req, res, next) => {
 // @route   GET /api/recurrence/all/:boardId
 // @access  Private
 export const getAllRecurrences = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'project', req.params.boardId, 'task.view');
   const { boardId } = req.params;
   const { includeInactive } = req.query;
 
@@ -274,6 +209,7 @@ export const getAllRecurrences = asyncHandler(async (req, res, next) => {
 // @route   PATCH /api/recurrence/:id
 // @access  Private
 export const updateRecurrence = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'recurrence', req.params.id, 'task.update');
   let recurrence = await RecurringTask.findById(req.params.id);
 
   if (!recurrence) {
@@ -370,6 +306,7 @@ export const updateRecurrence = asyncHandler(async (req, res, next) => {
 // @route   DELETE /api/recurrence/:id
 // @access  Private
 export const deleteRecurrence = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'recurrence', req.params.id, 'task.update');
   const recurrence = await RecurringTask.findById(req.params.id);
 
   if (!recurrence) {
@@ -415,7 +352,8 @@ export const deleteRecurrence = asyncHandler(async (req, res, next) => {
 // @route   POST /api/recurrence/:id/trigger
 // @access  Private
 export const triggerRecurrence = asyncHandler(async (req, res, next) => {
-  const recurrence = await RecurringTask.findById(req.params.id);
+  await authorizeProjectResource(req, 'recurrence', req.params.id, 'task.create');
+  let recurrence = await RecurringTask.findById(req.params.id);
 
   if (!recurrence) {
     return next(new ErrorResponse('Recurrence not found', 404));
@@ -432,21 +370,14 @@ export const triggerRecurrence = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Recurrence has ended', 400));
   }
 
-  // Generate new subtask
-  const subtask = await generateRecurringSubtask(recurrence, req.user.id);
-  
-  // Update recurrence
-  recurrence.generatedSubtasks.push(subtask._id);
-  recurrence.completedOccurrences += 1;
-  recurrence.lastOccurrence = new Date();
-  recurrence.nextOccurrence = recurrence.calculateNextOccurrence();
-  
-  // Check if should end after this occurrence
-  if (recurrence.shouldEnd()) {
-    recurrence.isActive = false;
-  }
-  
-  await recurrence.save();
+  const expectedOccurrence = recurrence.nextOccurrence;
+  const result = await executeRecurrence(recurrence._id, {
+    occurrenceKey: expectedOccurrence && recurrence.recurBehavior === 'onSchedule' ? `scheduled:${new Date(expectedOccurrence).toISOString()}` : `manual:${recurrence.completedOccurrences}`,
+    expectedOccurrence, actorId: req.user.id
+  });
+  if (result.skipped) throw new ErrorResponse('Recurrence changed; refresh and retry', 409);
+  const { subtask } = result;
+  recurrence = result.recurrence;
 
   // Refresh card hierarchy stats
   await refreshCardHierarchyStats(recurrence.card);
@@ -475,6 +406,3 @@ export const triggerRecurrence = asyncHandler(async (req, res, next) => {
     }
   });
 });
-
-// Export helper for scheduler
-export { generateRecurringSubtask };

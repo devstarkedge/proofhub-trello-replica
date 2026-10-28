@@ -73,13 +73,6 @@ import WorkspaceModuleGate from "./components/Workspace/WorkspaceModuleGate";
 import CreateWorkspacePublicPage from './pages/CreateWorkspacePublicPage';
 import ContactSalesPage from './pages/ContactSalesPage';
 
-// PM Sheet Pages
-const PMSheetDashboard = lazy(() => import('./pages/PMSheetDashboard'));
-const MonthWisePMReport = lazy(() => import('./pages/MonthWisePMReport'));
-const ProjectCoordinatorReport = lazy(() => import('./pages/ProjectCoordinatorReport'));
-const ApproachPage = lazy(() => import('./pages/ApproachPage'));
-import PMSheetLayout from "./layouts/PMSheetLayout";
-
 // Finance Module Pages
 import FinanceLayout from "./pages/Finance/FinanceLayout";
 const FinanceDashboard = lazy(() => import('./pages/Finance/FinanceDashboard'));
@@ -301,20 +294,6 @@ function App() {
                   }
                 />
 
-                {/* PM Sheet Routes - Admin and Manager only */}
-                <Route
-                  path="/pm-sheet"
-                  element={
-                    <PrivateRoute requiredRole={["Manager", "Admin"]}>
-                      <WorkspaceModuleGate module="finance"><PMSheetLayout /></WorkspaceModuleGate>
-                    </PrivateRoute>
-                  }
-                >
-                  <Route index element={<PMSheetDashboard />} />
-                  <Route path="month-wise" element={<MonthWisePMReport />} />
-                  <Route path="coordinator" element={<ProjectCoordinatorReport />} />
-                  <Route path="approach" element={<ApproachPage />} />
-                </Route>
 
                 {/* Finance Module Routes - Admin and Manager only */}
                 <Route

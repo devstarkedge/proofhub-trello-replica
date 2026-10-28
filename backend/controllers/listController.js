@@ -1,3 +1,5 @@
+import { deleteResource } from '../services/resourceDeletion.js';
+import { authorizeProjectResource } from '../services/projectAuthorization.js';
 import List from '../models/List.js';
 import Card from '../models/Card.js';
 import Board from '../models/Board.js';
@@ -10,6 +12,7 @@ import { strictUpdate, LIST_UPDATE_FIELDS } from '../utils/strictUpdate.js';
 // @route   GET /api/lists/board/:boardId
 // @access  Private
 export const getLists = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'project', req.params.boardId, 'project.view');
   const { boardId } = req.params;
   
   const lists = await List.find({ 
@@ -30,6 +33,7 @@ export const getLists = asyncHandler(async (req, res, next) => {
 // @route   POST /api/lists
 // @access  Private
 export const createList = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'project', req.body.board, 'task.create');
   const { title, board, position, color } = req.body;
 
   // Verify board access
@@ -67,6 +71,7 @@ export const createList = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/lists/:id
 // @access  Private
 export const updateList = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'list', req.params.id, 'task.update');
   const list = await List.findByIdAndUpdate(req.params.id, strictUpdate(req.body, LIST_UPDATE_FIELDS), {
     new: true,
     runValidators: true
@@ -95,6 +100,7 @@ export const updateList = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/lists/:id/position
 // @access  Private
 export const updateListPosition = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'list', req.params.id, 'task.move');
   const { newPosition } = req.body;
   const list = await List.findById(req.params.id);
 
@@ -141,16 +147,14 @@ export const updateListPosition = asyncHandler(async (req, res, next) => {
 // @route   DELETE /api/lists/:id
 // @access  Private
 export const deleteList = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'list', req.params.id, 'task.delete');
   const list = await List.findById(req.params.id);
 
   if (!list) {
     return next(new ErrorResponse('List not found', 404));
   }
 
-  // Delete all cards in the list
-  await Card.deleteMany({ list: list._id });
-
-  await list.deleteOne();
+  await deleteResource('list', list._id, { actor: req.user });
 
   res.status(200).json({
     success: true,

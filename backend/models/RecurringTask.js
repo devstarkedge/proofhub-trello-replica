@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
+import tenantReferencesPlugin from '../modules/workspaces/tenantReferences.plugin.js';
 
 const recurringTaskSchema = new mongoose.Schema({
   workspaceId: {
@@ -247,6 +248,8 @@ recurringTaskSchema.index({ workspaceId: 1, nextOccurrence: 1, isActive: 1 });
 recurringTaskSchema.index({ workspaceId: 1, createdBy: 1 });
 
 recurringTaskSchema.plugin(workspaceScopePlugin);
+recurringTaskSchema.plugin(tenantReferencesPlugin, { members: ['subtaskTemplate.assignees'], references: { card: 'Card', board: 'Board', 'subtaskTemplate.tags': 'Label' }, parent: { field: 'card', model: 'Card' } });
+recurringTaskSchema.index({ workspaceId: 1, card: 1 }, { unique: true, partialFilterExpression: { isActive: true } });
 
 // Calculate next occurrence based on schedule
 recurringTaskSchema.methods.calculateNextOccurrence = function(fromDate = new Date()) {

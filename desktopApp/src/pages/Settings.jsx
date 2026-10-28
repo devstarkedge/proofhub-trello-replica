@@ -139,7 +139,7 @@ const Settings = () => {
       const updatedUser = response.data.data;
 
       // Update context
-      setUser && setUser(prev => ({ ...prev, settings: updatedUser.settings }));
+      setUser && setUser(prev => ({ ...prev, settings: updatedUser.settings, forcePasswordChange: updatedUser.forcePasswordChange }));
 
       // Clear password fields
       setSettingsData(prev => ({

@@ -369,6 +369,7 @@ export const updateSettings = asyncHandler(async (req, res, next) => {
 
   res.status(200).json({
     success: true,
+    ...(newPassword ? await (await import('../services/authSessionService.js')).issueSession(user) : {}),
     data: userResponse
   });
 });

@@ -76,7 +76,7 @@
     "tailwindcss": "^4.1.14",
     "tippy.js": "^6.3.7",
     "uiohook-napi": "1.5.5",
-    "xlsx": "^0.18.5",
+    "xlsx": "file:../vendor/xlsx-0.20.3.tgz",
     "zod": "^4.3.6",
     "zustand": "^5.0.8"
   },
@@ -206,5 +206,8 @@
     "asarUnpack": [
       "node_modules/uiohook-napi/prebuilds/**/*"
     ]
+  },
+  "engines": {
+    "node": "24.22.1"
   }
 }

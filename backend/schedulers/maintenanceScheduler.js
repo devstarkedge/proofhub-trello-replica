@@ -23,6 +23,7 @@ const ONE_HOUR     = 60 * 60 * 1000;
  * Register all maintenance repeat jobs on the cleanup queue.
  */
 export async function registerMaintenanceJobs() {
+  await cleanupQueue.add('cleanup-file-jobs', {}, { repeat: { every: 60000 }, jobId: 'repeat-cleanup-file-jobs', removeOnComplete: true, removeOnFail: { count: 50 } });
   // 1. Queue cleanup — purge old completed/failed jobs from Redis every 8h
   await cleanupQueue.add(
     'cleanup-queues',

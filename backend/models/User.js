@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { isValidPassword, PASSWORD_POLICY_MESSAGE } from '../utils/passwordPolicy.js';
 import bcrypt from 'bcryptjs';
 
 const userSchema = new mongoose.Schema({
@@ -227,13 +228,43 @@ userSchema.index({ isSuperAdmin: 1 }, { partialFilterExpression: { isSuperAdmin:
 userSchema.index({ resetPasswordToken: 1, resetPasswordExpires: 1 });
 
 // Hash password before saving
+userSchema.pre('validate', function () {
+  if (this.isModified('password') && !isValidPassword(this.password)) {
+    this.invalidate('password', PASSWORD_POLICY_MESSAGE);
+  }
+});
 userSchema.pre('save', async function(next) {
+  if (this.isModified('tokenVersion') || this.isModified('forcePasswordChange')) this.$locals.passwordChanged = true;
   if (!this.isModified('password')) {
     return next();
   }
+  if (!this.isNew) {
+    this.tokenVersion = (this.tokenVersion || 0) + 1;
+    this.forcePasswordChange = false;
+  }
+  this.$locals.passwordChanged = true;
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
   next();
+});
+
+userSchema.post('save', async function () {
+  if (!this.$locals.passwordChanged) return;
+  this.$locals.passwordChanged = false;
+  const { invalidateAuthCache } = await import('../middleware/authMiddleware.js');
+  invalidateAuthCache(String(this._id));
+  const { getIO } = await import('../realtime/emitters.js');
+  let io;
+  try { io = getIO(); } catch { return; }
+  if (io) {
+    // The version check is authoritative even if socket delivery is unavailable.
+    try {
+      const sockets = await io.fetchSockets();
+      for (const socket of sockets) {
+        if (String(socket.data.user?.id || socket.data.user?._id) === String(this._id)) socket.disconnect(true);
+      }
+    } catch { /* A realtime outage must not turn a committed password change into an error. */ }
+  }
 });
 
 // Compare password method

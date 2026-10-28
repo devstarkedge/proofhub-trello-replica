@@ -1,3 +1,6 @@
+import { permanentlyDeleteAttachments } from '../services/attachmentDeletion.js';
+import { literalSearch } from '../utils/literalSearch.js';
+import { boundedInteger, pageNumber } from '../utils/pagination.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import Attachment from '../models/Attachment.js';
 import Board from '../models/Board.js';
@@ -29,8 +32,8 @@ const ensureRestorePermission = async (user, board) => {
 export const getProjectTrash = asyncHandler(async (req, res) => {
   const { id } = req.params; // project id (board)
   const { page = 1, limit = 20, q, fileType, deletedBy, startDate, endDate } = req.query;
-  const pageNum = parseInt(page, 10);
-  const limitNum = Math.min(parseInt(limit, 10) || 20, 100);
+  const pageNum = pageNumber(page);
+  const limitNum = boundedInteger(limit, 20, 100);
   const skip = (pageNum - 1) * limitNum;
 
   const board = await Board.findById(id).populate('department', 'name managers').lean();
@@ -43,8 +46,8 @@ export const getProjectTrash = asyncHandler(async (req, res) => {
   const query = { board: id, isDeleted: true };
   if (q) {
     query.$or = [
-      { fileName: { $regex: q, $options: 'i' } },
-      { originalName: { $regex: q, $options: 'i' } }
+      { fileName: literalSearch(q) },
+      { originalName: literalSearch(q) }
     ];
   }
   if (fileType) query.fileType = fileType;
@@ -187,13 +190,7 @@ export const permanentlyDeleteAttachment = asyncHandler(async (req, res) => {
   const role = (req.user.role || '').toLowerCase();
   if (role !== 'admin') throw new ErrorResponse('Only admins can permanently delete attachments', 403);
 
-  try {
-    await deleteFromCloudinary(att.publicId, att.resourceType);
-  } catch (e) {
-    console.error('Cloudinary delete error (permanent):', e.message);
-  }
-
-  await Attachment.deleteOne({ _id: att._id });
+  await permanentlyDeleteAttachments([att._id]);
 
   await Activity.create({
     type: 'attachment_permanently_deleted',
@@ -216,7 +213,7 @@ export const permanentlyDeleteAttachment = asyncHandler(async (req, res) => {
 // POST /attachments/bulk/restore
 export const bulkRestore = asyncHandler(async (req, res) => {
   const { ids } = req.body;
-  if (!Array.isArray(ids) || ids.length === 0) throw new ErrorResponse('ids required', 400);
+  if (!Array.isArray(ids) || ids.length === 0 || ids.length > 100) throw new ErrorResponse('ids required', 400);
   const atts = await Attachment.find({ _id: { $in: ids }, isDeleted: true });
   if (atts.length === 0) return res.status(200).json({ success: true, restored: 0 });
 
@@ -292,7 +289,7 @@ export const bulkRestore = asyncHandler(async (req, res) => {
 // DELETE /attachments/bulk/permanent (Admin only)
 export const bulkPermanentDelete = asyncHandler(async (req, res) => {
   const { ids } = req.body;
-  if (!Array.isArray(ids) || ids.length === 0) throw new ErrorResponse('ids required', 400);
+  if (!Array.isArray(ids) || ids.length === 0 || ids.length > 100) throw new ErrorResponse('ids required', 400);
   const role = (req.user.role || '').toLowerCase();
   if (role !== 'admin') throw new ErrorResponse('Admin only', 403);
 
@@ -307,14 +304,7 @@ export const bulkPermanentDelete = asyncHandler(async (req, res) => {
     byBoard.get(key).push(a);
   }
 
-  const imageIds = atts.filter(a => a.resourceType === 'image').map(a => a.publicId);
-  const rawIds = atts.filter(a => a.resourceType !== 'image').map(a => a.publicId);
-  try {
-    if (imageIds.length) await deleteMultipleFromCloudinary(imageIds, 'image');
-    if (rawIds.length) await deleteMultipleFromCloudinary(rawIds, 'raw');
-  } catch (e) {
-    console.error('Cloudinary bulk permanent delete error:', e);
-  }
+  await permanentlyDeleteAttachments(atts.map(asset => asset._id));
 
   // Create activity logs for bulk delete
   const activities = atts.map(a => ({
@@ -329,7 +319,7 @@ export const bulkPermanentDelete = asyncHandler(async (req, res) => {
   }));
   await Activity.insertMany(activities);
 
-  await Attachment.deleteMany({ _id: { $in: ids } });
+
 
   // Emit socket events per board
   for (const [boardId, list] of byBoard.entries()) {

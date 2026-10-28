@@ -1,3 +1,5 @@
+import { resourceReadFilter } from '../services/resourceReadFilter.js';
+import { authorizeProjectResource, authorizeContext } from '../services/projectAuthorization.js';
 import Comment from '../models/Comment.js';
 import Card from '../models/Card.js';
 import Board from '../models/Board.js';
@@ -49,6 +51,7 @@ const getContextDetails = async ({ cardId, subtaskId, nanoId }) => {
     throw new ErrorResponse('Card context is required', 400);
   }
   const card = await Card.findById(cardId).populate('board');
+  if (!card) throw new ErrorResponse('Card not found', 404);
   return {
     boardId: card.board,
     cardId,
@@ -67,8 +70,8 @@ const checkCommentPermission = async (user, action) => {
   }
   
   // Check role-based permissions
-  if (user.roleRef) {
-    const role = await Role.findById(user.roleRef);
+  if (user.roleId) {
+    const role = await Role.findById(user.roleId);
     if (role) {
       const permissionMap = {
         comment: role.permissions?.canComment ?? true,
@@ -96,6 +99,7 @@ const checkCommentPermission = async (user, action) => {
 // CREATE COMMENT
 // ============================================================================
 export const createComment = asyncHandler(async (req, res) => {
+  await authorizeContext(req, 'comment.create');
   const { htmlContent, card, subtask, subtaskNano, attachments } = req.body;
 
   const { boardId, cardId, subtaskId, nanoId, contextType, contextRef } = await getContextDetails({
@@ -167,6 +171,7 @@ export const createComment = asyncHandler(async (req, res) => {
 // CREATE THREADED REPLY
 // ============================================================================
 export const createReply = asyncHandler(async (req, res) => {
+  await authorizeProjectResource(req, 'comment', req.params.id, 'comment.create');
   const { id: parentCommentId } = req.params;
   const { htmlContent, attachments } = req.body;
 
@@ -274,12 +279,14 @@ export const createReply = asyncHandler(async (req, res) => {
 // GET REPLIES FOR A COMMENT
 // ============================================================================
 export const getReplies = asyncHandler(async (req, res) => {
+  await authorizeProjectResource(req, 'comment', req.params.id, 'task.view');
   const { id: parentCommentId } = req.params;
   const { page = 1, limit = 10 } = req.query;
 
   const result = await Comment.getReplies(parentCommentId, {
     page: parseInt(page),
-    limit: parseInt(limit)
+    limit: parseInt(limit),
+    filter: await resourceReadFilter(req, 'comment')
   });
 
   res.status(200).json({
@@ -292,11 +299,12 @@ export const getReplies = asyncHandler(async (req, res) => {
 // GET PAGINATED COMMENTS
 // ============================================================================
 export const getCommentsByCard = asyncHandler(async (req, res) => {
+  await authorizeProjectResource(req, 'task', req.params.cardId, 'task.view');
   const { cardId } = req.params;
   const { page = 1, limit = 20 } = req.query;
 
   const result = await Comment.getPaginatedComments(
-    { card: cardId, contextType: 'card' },
+    { ...await resourceReadFilter(req, 'comment'), card: cardId, contextType: 'card' },
     { page: parseInt(page), limit: parseInt(limit) }
   );
 
@@ -309,11 +317,12 @@ export const getCommentsByCard = asyncHandler(async (req, res) => {
 });
 
 export const getCommentsBySubtask = asyncHandler(async (req, res) => {
+  await authorizeProjectResource(req, 'subtask', req.params.subtaskId, 'task.view');
   const { subtaskId } = req.params;
   const { page = 1, limit = 20 } = req.query;
 
   const result = await Comment.getPaginatedComments(
-    { subtask: subtaskId, contextType: 'subtask' },
+    { ...await resourceReadFilter(req, 'comment'), subtask: subtaskId, contextType: 'subtask' },
     { page: parseInt(page), limit: parseInt(limit) }
   );
 
@@ -326,11 +335,12 @@ export const getCommentsBySubtask = asyncHandler(async (req, res) => {
 });
 
 export const getCommentsByNano = asyncHandler(async (req, res) => {
+  await authorizeProjectResource(req, 'nano', req.params.nanoId, 'task.view');
   const { nanoId } = req.params;
   const { page = 1, limit = 20 } = req.query;
 
   const result = await Comment.getPaginatedComments(
-    { subtaskNano: nanoId, contextType: 'subtaskNano' },
+    { ...await resourceReadFilter(req, 'comment'), subtaskNano: nanoId, contextType: 'subtaskNano' },
     { page: parseInt(page), limit: parseInt(limit) }
   );
 
@@ -346,6 +356,7 @@ export const getCommentsByNano = asyncHandler(async (req, res) => {
 // ADD REACTION
 // ============================================================================
 export const addReaction = asyncHandler(async (req, res) => {
+  await authorizeProjectResource(req, 'comment', req.params.id, 'comment.create');
   const { id: commentId } = req.params;
   const { emoji } = req.body;
 
@@ -423,6 +434,7 @@ export const addReaction = asyncHandler(async (req, res) => {
 // REMOVE REACTION
 // ============================================================================
 export const removeReaction = asyncHandler(async (req, res) => {
+  await authorizeProjectResource(req, 'comment', req.params.id, 'comment.create');
   const { id: commentId, emoji } = req.params;
 
   const comment = await Comment.findById(commentId);
@@ -459,6 +471,7 @@ export const removeReaction = asyncHandler(async (req, res) => {
 // PIN COMMENT
 // ============================================================================
 export const pinComment = asyncHandler(async (req, res) => {
+  await authorizeProjectResource(req, 'comment', req.params.id, 'comment.moderate');
   const { id: commentId } = req.params;
 
   // Check permission
@@ -540,6 +553,7 @@ export const pinComment = asyncHandler(async (req, res) => {
 // UNPIN COMMENT
 // ============================================================================
 export const unpinComment = asyncHandler(async (req, res) => {
+  await authorizeProjectResource(req, 'comment', req.params.id, 'comment.moderate');
   const { id: commentId } = req.params;
 
   // Check permission
@@ -577,6 +591,7 @@ export const unpinComment = asyncHandler(async (req, res) => {
 // UPDATE COMMENT
 // ============================================================================
 export const updateComment = asyncHandler(async (req, res) => {
+  await authorizeProjectResource(req, 'comment', req.params.id, 'comment.create');
   const { text, htmlContent } = req.body;
 
   const comment = await Comment.findById(req.params.id).populate('card');
@@ -694,6 +709,7 @@ export const updateComment = asyncHandler(async (req, res) => {
 // DELETE COMMENT
 // ============================================================================
 export const deleteComment = asyncHandler(async (req, res) => {
+  await authorizeProjectResource(req, 'comment', req.params.id, 'comment.create');
   const comment = await Comment.findById(req.params.id).populate('card');
   if (!comment) {
     return res.status(404).json({ message: 'Comment not found' });
@@ -763,6 +779,7 @@ export const deleteComment = asyncHandler(async (req, res) => {
 // GET COMMENT BY ID (for deep linking)
 // ============================================================================
 export const getCommentById = asyncHandler(async (req, res) => {
+  await authorizeProjectResource(req, 'comment', req.params.id, 'task.view');
   const { id: commentId } = req.params;
 
   const comment = await Comment.findById(commentId)

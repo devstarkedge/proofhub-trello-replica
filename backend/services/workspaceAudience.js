@@ -5,6 +5,14 @@ import { getActiveWorkspaceId } from '../modules/workspaces/workspaceContext.js'
 import Department from '../models/Department.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 
+export async function workspacePerson(userId, workspaceId = getActiveWorkspaceId()) {
+  if (!workspaceId) return null;
+  const membership = await WorkspaceMembership.findOne({ user: userId, workspace: workspaceId, status: 'active' }).lean();
+  if (!membership) return null;
+  const user = await User.findOne({ _id: userId, isActive: true }).select('_id name email').lean();
+  return user ? { ...user, workspaceId, role: membership.role, roleId: membership.roleId, department: membership.department || [], team: membership.team, accessType: membership.accessType, allowedProjects: membership.allowedProjects || [] } : null;
+}
+
 export async function workspaceMemberIds(filter = {}, workspaceId = getActiveWorkspaceId()) {
   if (!workspaceId) return [];
   return WorkspaceMembership.distinct('user', { ...filter, workspace: workspaceId, status: 'active', kind: { $ne: 'guest' } });

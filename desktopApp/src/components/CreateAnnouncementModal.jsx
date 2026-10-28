@@ -1,3 +1,4 @@
+import { sessionFetch as fetch } from '../services/sessionFetch';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Upload, Calendar, Clock, Users, Pin, Sparkles, Send, FileText, Image, File as FileIcon, AlertCircle, CheckCircle, RefreshCw, HardDrive, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';

@@ -1,3 +1,4 @@
+import { sessionFetch as fetch } from './sessionFetch';
 // Attachment service for Cloudinary-based file management
 const baseURL = import.meta.env.VITE_BACKEND_URL;
 

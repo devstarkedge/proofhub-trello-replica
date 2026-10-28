@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
+import optimisticWritesPlugin from '../modules/workspaces/optimisticWrites.plugin.js';
 
 const salesRowSchema = new mongoose.Schema({
   workspaceId: {
@@ -216,6 +217,7 @@ salesRowSchema.index({ workspaceId: 1, 'bidLink.type': 1, date: -1 });
 salesRowSchema.index({ workspaceId: 1, 'bidLink.isValid': 1, date: -1 });
 
 salesRowSchema.plugin(workspaceScopePlugin);
+salesRowSchema.plugin(optimisticWritesPlugin);
 
 // Pre-validate hook to auto-generate month name from date (must run before validation
 // so the required monthName field is set when date is present)

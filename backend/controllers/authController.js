@@ -1,5 +1,5 @@
 import { requestEmailChange, confirmEmailChange } from '../services/emailChangeService.js';
-import jwt from 'jsonwebtoken';
+import { issueSession, rotateSession, revokeSession } from '../services/authSessionService.js';
 import crypto from 'crypto';
 import mongoose from 'mongoose';
 import User from '../models/User.js';
@@ -28,13 +28,6 @@ import { createDefaultSubscription } from '../modules/superAdmin/subscriptionSer
 import { isSuperAdminEmailAllowed } from '../middleware/requireSuperAdmin.js';
 import { recordSuperAdminAuditLog } from '../modules/superAdmin/superAdminAuditService.js';
 import { publishUserProfileUpdate } from '../services/chat/userProfileSync.js';
-
-// Generate JWT Token
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRE || '7d'
-  });
-};
 
 // @desc    Register user. Requires a valid `inviteToken` — public
 //          self-registration is not supported (enterprise B2B pattern:
@@ -123,11 +116,12 @@ export const register = asyncHandler(async (req, res, next) => {
   }
 
   // Generate token
-  const token = generateToken(user._id);
+  const { token, refreshToken: sessionRefreshToken } = await issueSession(user);
   const membership = acceptOutcome === 'joined' ? await WorkspaceMembership.findOne({ user: user._id, workspace: targetWorkspaceId, status: 'active' }).lean() : null;
   res.status(201).json({
     success: true,
     token,
+    refreshToken: sessionRefreshToken,
     outcome: acceptOutcome, // 'joined' | 'pending_approval' — see invitationService.js#acceptInvitation
     user: {
       id: user._id,
@@ -316,11 +310,12 @@ export const registerAndCreateWorkspace = asyncHandler(async (req, res, next) =>
     console.error('Failed to create default subscription for new workspace:', { workspaceId: workspace._id, error: err.message });
   });
 
-  const token = generateToken(createdUser._id);
+  const { token, refreshToken: sessionRefreshToken } = await issueSession(createdUser);
 
   res.status(201).json({
     success: true,
     token,
+    refreshToken: sessionRefreshToken,
     user: {
       id: createdUser._id,
       name: createdUser.name,
@@ -389,7 +384,7 @@ export const login = asyncHandler(async (req, res, next) => {
   await user.save();
 
   // Generate token
-  const token = generateToken(user._id);
+  const { token, refreshToken: sessionRefreshToken } = await issueSession(user);
 
   // Effective, not raw: both the DB role AND the current SUPER_ADMIN_EMAILS
   // allowlist must hold (see requireSuperAdmin.js) — returning the raw DB
@@ -414,6 +409,7 @@ export const login = asyncHandler(async (req, res, next) => {
   res.status(200).json({
     success: true,
     token,
+    refreshToken: sessionRefreshToken,
     user: {
       id: user._id,
       name: user.name,
@@ -526,11 +522,12 @@ export const updatePassword = asyncHandler(async (req, res, next) => {
   user.password = req.body.newPassword;
   await user.save();
 
-  const token = generateToken(user._id);
+  const { token, refreshToken: sessionRefreshToken } = await issueSession(user);
 
   res.status(200).json({
     success: true,
-    token
+    token,
+    refreshToken: sessionRefreshToken
   });
 });
 
@@ -556,20 +553,13 @@ export const checkEmail = asyncHandler(async (req, res, next) => {
 // @desc    Refresh JWT token
 // @route   POST /api/auth/refresh
 // @access  Private
-export const refreshToken = asyncHandler(async (req, res, next) => {
-  const user = await User.findById(req.user.id);
+export const refreshToken = asyncHandler(async (req, res) => {
+  res.status(200).json({ success: true, ...await rotateSession(req.body.refreshToken) });
+});
 
-  if (!user) {
-    return next(new ErrorResponse('User not found', 404));
-  }
-
-  // Generate new token
-  const token = generateToken(user._id);
-
-  res.status(200).json({
-    success: true,
-    token
-  });
+export const logout = asyncHandler(async (req, res) => {
+  await revokeSession(req.body.refreshToken);
+  res.status(200).json({ success: true });
 });
 
 // @desc    Forgot password — send reset email
@@ -668,11 +658,12 @@ export const resetPassword = asyncHandler(async (req, res, next) => {
   await user.save();
 
   // Generate fresh JWT for auto-login
-  const token = generateToken(user._id);
+  const { token, refreshToken: sessionRefreshToken } = await issueSession(user);
 
   res.status(200).json({
     success: true,
     token,
+    refreshToken: sessionRefreshToken,
     user: {
       id: user._id,
       name: user.name,

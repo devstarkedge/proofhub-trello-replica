@@ -20,7 +20,7 @@ import {
   reorderFinancePages
 } from '../controllers/financePageController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
-import { checkFinanceAccess } from '../middleware/financePermissionMiddleware.js';
+import { checkFinanceAccess, requireFinancePermission } from '../middleware/financePermissionMiddleware.js';
 
 
 const router = express.Router();
@@ -39,22 +39,22 @@ router.use(checkFinanceAccess);
 // ============================================
 
 // Dashboard summary - All key metrics
-router.get('/summary', getFinanceSummary);
+router.get('/summary', requireFinancePermission('revenueAnalytics'), getFinanceSummary);
 
 // User-centric finance data (Users tab)
-router.get('/users', getUserFinanceData);
+router.get('/users', requireFinancePermission('billingDetails'), getUserFinanceData);
 
 // Project-centric finance data (Projects tab)
-router.get('/projects', getProjectFinanceData);
+router.get('/projects', requireFinancePermission('billingDetails'), getProjectFinanceData);
 
 // Weekly report data
-router.get('/weekly', getWeeklyReportData);
+router.get('/weekly', requireFinancePermission('billingDetails'), getWeeklyReportData);
 
 // Year-wide weekly report data (for week-wise reporting mode)
-router.get('/weekly-report/year', getYearWideWeeklyData);
+router.get('/weekly-report/year', requireFinancePermission('billingDetails'), getYearWideWeeklyData);
 
 // User contributions per project
-router.get('/projects/:projectId/contributions', getUserContributions);
+router.get('/projects/:projectId/contributions', requireFinancePermission('billingDetails'), getUserContributions);
 
 // Get all departments for filtering
 router.get('/departments', getFinanceDepartments);

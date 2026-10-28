@@ -14,7 +14,7 @@ const groups = {
   time: 'log', tracking: 'log view_reports view_screenshots manage_policy', comment: 'create moderate', attachment: 'upload manage purge',
   category: 'manage', project_option: 'manage',
   analytics: 'view_self view_team team_time schedule_reports export_external',
-  pm_sheet: 'view update_status', reminder: 'manage',
+  reminder: 'manage',
   announcement: 'view create moderate view_engagement',
   finance: 'view revenue_analytics billing_details manage_pages approve_pages',
   sales: 'view create update delete export import manage_options view_logs manage_tabs',
@@ -27,7 +27,7 @@ const sensitive = new Set(['workspace.manage_settings', 'access.view', 'access.m
 const guestAllowed = new Set(['project.view', 'task.view', 'task.create', 'task.update', 'task.move', 'comment.create', 'attachment.upload']);
 const management = new Set(['tracking.view_reports', 'tracking.view_screenshots', 'leave.approve', 'leave.view_team', 'attendance.view_team', 'attendance.approve_wfh', 'attendance.approve_regularization', 'analytics.view_team', 'analytics.team_time', 'member.view_directory', 'member.assign_department', 'member.set_access_scope', 'department.update', 'department.manage_members']);
 const workspaceOnlyModules = new Set(['workspace', 'access', 'audit', 'integration', 'chat', 'project_option']);
-const resourceTypes = { tracking: 'member', project: 'project', task: 'task', time: 'task', comment: 'comment', attachment: 'attachment', category: 'department', department: 'department', team: 'team', member: 'member', announcement: 'announcement', finance: 'finance', sales: 'sales', leave: 'member', attendance: 'member', analytics: 'member', pm_sheet: 'project', reminder: 'project' };
+const resourceTypes = { tracking: 'member', project: 'project', task: 'task', time: 'task', comment: 'comment', attachment: 'attachment', category: 'department', department: 'department', team: 'team', member: 'member', announcement: 'announcement', finance: 'finance', sales: 'sales', leave: 'member', attendance: 'member', analytics: 'member', reminder: 'project' };
 
 export const CATALOG = Object.freeze(Object.fromEntries(Object.entries(groups).flatMap(([module, actions]) => actions.split(' ').map(action => {
   const key = `${module}.${action}`;

@@ -1,7 +1,7 @@
 import { confirmAccountEmailChange } from '../controllers/authController.js';
 import express from 'express';
 import { body } from 'express-validator';
-import { register, login, getMe, updateDetails, updatePassword, refreshToken, checkEmail, forgotPassword, verifyResetToken, resetPassword, registerAndCreateWorkspace } from '../controllers/authController.js';
+import { register, login, logout, getMe, updateDetails, updatePassword, refreshToken, checkEmail, forgotPassword, verifyResetToken, resetPassword, registerAndCreateWorkspace } from '../controllers/authController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
 import { rateLimiter } from '../middleware/rateLimiter.js';
@@ -60,7 +60,8 @@ router.post('/confirm-email-change', protect, rateLimiter({ windowMs: 15 * 60 * 
 router.get('/me', protect, getMe);
 router.put('/updatedetails', protect, updateDetails);
 router.put('/updatepassword', protect, updatePassword);
-router.post('/refresh', protect, refreshToken);
+router.post('/refresh', rateLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 60 }), refreshToken);
+router.post('/logout', rateLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 60 }), logout);
 router.get('/verify', protect, getMe);
 
 export default router;

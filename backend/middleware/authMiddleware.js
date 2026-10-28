@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { mediaResponse } from '../services/attachmentDelivery.js';
 import User from '../models/User.js';
 import Role from '../models/Role.js';
 import WorkspaceMembership from '../models/WorkspaceMembership.js';
@@ -8,6 +9,9 @@ import config from '../config/index.js';
 import { ensureDefaultWorkspace } from '../modules/permissions/workspaceService.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 import logger from '../utils/logger.js';
+import { guardOfflineMutation } from './offlineMutation.js';
+import { rateLimiter } from './rateLimiter.js';
+const authenticatedBudget = rateLimiter({ ...config.rateLimit.global, keyFn: req => String(req.user._id || req.user.id), allowReadFallback: true });
 
 // ─── Auth Cache ─────────────────────────────────────────────────────────────
 // In-memory LRU cache for authenticated user lookups.
@@ -40,24 +44,12 @@ function writeCache(cache, key, value) {
 }
 
 async function getMembership(userId, workspaceId) {
-  const key = cacheKey(workspaceId, 'membership', userId);
-  let membership = readCache(membershipCache, key);
-  if (!membership) {
-    const doc = await WorkspaceMembership.findOne({
-      user: userId,
-      workspace: workspaceId,
-      status: 'active'
-    }).lean();
-    if (!doc) return null;
-    // Deactivating a workspace (workspaceController.deactivateWorkspace)
-    // leaves membership rows in place — reject here so a stale header or
-    // lastActiveWorkspace can't keep using an owner-deactivated workspace.
-    const workspaceDoc = await Workspace.findById(workspaceId).select('isActive').lean();
-    if (!workspaceDoc || !workspaceDoc.isActive) return null;
-    membership = doc;
-    writeCache(membershipCache, key, doc);
-  }
-  return membership;
+  // Authorization state must be current across all server instances.
+  const [membership, workspace] = await Promise.all([
+    WorkspaceMembership.findOne({ user: userId, workspace: workspaceId, status: 'active' }).lean(),
+    Workspace.findById(workspaceId).select('isActive status').lean()
+  ]);
+  return workspace?.isActive && !['suspended', 'archived'].includes(workspace.status) ? membership : null;
 }
 
 /**
@@ -146,14 +138,20 @@ export const protect = async (req, res, next) => {
         writeCache(authCache, userCacheKey, userObj);
       }
 
-      if (userObj.tokenVersion !== undefined && decoded.tokenVersion !== undefined) {
-        if (decoded.tokenVersion !== userObj.tokenVersion) {
+      // Revocation state is fresh on every request, including other instances.
+      const sessionAccount = await User.findById(userId).select('tokenVersion forcePasswordChange isActive').lean();
+      if (!sessionAccount?.isActive || decoded.type !== 'access' || !Number.isInteger(decoded.tokenVersion) || decoded.tokenVersion !== (sessionAccount.tokenVersion || 0)) {
           invalidateAuthCache(userId);
           return res.status(401).json({
             success: false,
             message: 'Session invalidated. Please log in again.'
           });
-        }
+      }
+      userObj = { ...userObj, ...sessionAccount };
+      const passwordRoute = String(req.originalUrl || req.url || '').split('?')[0];
+      const passwordRecoveryRoutes = ['/api/auth/me', '/api/auth/verify', '/api/auth/updatepassword', '/api/users/profile', '/api/users/settings', '/api/admin/settings'];
+      if (userObj.forcePasswordChange && !passwordRecoveryRoutes.includes(passwordRoute)) {
+        return res.status(403).json({ success: false, code: 'PASSWORD_CHANGE_REQUIRED', message: 'Change your password to continue' });
       }
 
       if (!userObj.isActive) {
@@ -246,11 +244,16 @@ export const protect = async (req, res, next) => {
         team: membership.team,
         accessType: membership.accessType,
         allowedProjects: membership.allowedProjects,
+        restriction: membership.restriction,
+        kind: membership.kind,
         workspaceId: requestedWorkspaceId
       };
       req.workspaceId = requestedWorkspaceId;
+      req.workspaceMembership = membership;
 
-      workspaceContext.run({ workspaceId: requestedWorkspaceId, actorId: req.user.id || req.user._id }, next);
+      workspaceContext.run({ workspaceId: requestedWorkspaceId, actorId: req.user.id || req.user._id }, () => {
+        mediaResponse(req, res, () => authenticatedBudget(req, res, () => guardOfflineMutation(req, res, next).catch(next)).catch(next));
+      });
     } catch (error) {
       return res.status(401).json({
         success: false,

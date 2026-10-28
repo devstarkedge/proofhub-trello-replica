@@ -42,7 +42,7 @@ export const handleTaskCompletion = async (subtaskId, newStatus) => {
       }
 
       // Enqueue via BullMQ delayed job instead of processing in-line
-      await enqueueCompletionTriggered(recurrence._id, delayMs);
+      await enqueueCompletionTriggered(recurrence._id, delayMs, subtaskId);
     }
   } catch (error) {
     console.error('Error handling task completion for recurrence:', error);

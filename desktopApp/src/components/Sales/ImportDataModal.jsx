@@ -1,5 +1,6 @@
+import { readSpreadsheet } from '../../services/spreadsheetWorkerClient.mjs';
 
-import { useState, useCallback, useEffect, useMemo, useContext } from 'react';
+import { useState, useCallback, useEffect, useMemo, useContext, useRef } from 'react';
 import { X, Upload, AlertCircle, Plus, Check } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import * as XLSX from 'xlsx';
@@ -15,6 +16,8 @@ import AuthContext from '../../context/AuthContext';
 const ImportDataModal = ({ isOpen, onClose }) => {
   const { importRows, customColumns, fetchCustomColumns, fetchRows, fetchDropdownOptions } = useSalesStore();
   const { user } = useContext(AuthContext);
+  const parsing = useRef(null);
+  useEffect(() => { if (!isOpen) parsing.current?.abort(); return () => parsing.current?.abort(); }, [isOpen]);
   const [step, setStep] = useState(1); // 1: Upload, 2: Map, 3: Preview, 4: Importing, 5: Complete
   const [fileName, setFileName] = useState('');
   const [columns, setColumns] = useState([]);
@@ -51,11 +54,18 @@ const ImportDataModal = ({ isOpen, onClose }) => {
     setSuccess('');
     if (!acceptedFiles.length) return;
     const file = acceptedFiles[0];
+    parsing.current?.abort();
+    const controller = new AbortController();
+    parsing.current = controller;
+    if (file.size > 5 * 1024 * 1024) { setError('Choose a spreadsheet smaller than 5 MB'); return; }
+    setStep(1);
     setFileName(file.name);
     const reader = new FileReader();
     reader.onload = async (e) => {
+      try {
       const data = new Uint8Array(e.target.result);
-      const workbook = XLSX.read(data, { type: 'array', cellDates: false, raw: true });
+      const workbook = await readSpreadsheet(data, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
 
@@ -267,6 +277,7 @@ const ImportDataModal = ({ isOpen, onClose }) => {
 
       const json = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, defval: '' });
       if (!json.length) {
+        if (controller.signal.aborted) return;
         setError('No data found in file.');
         return;
       }
@@ -296,8 +307,12 @@ const ImportDataModal = ({ isOpen, onClose }) => {
         });
       });
 
+      if (controller.signal.aborted) return;
+
       setColumns(filteredHeader);
+      if (controller.signal.aborted) return;
       setRows(filteredBody);
+      if (controller.signal.aborted) return;
       setCellHyperlinks(hyperlinkData);
 
       // Log hyperlink mapping results
@@ -309,6 +324,7 @@ const ImportDataModal = ({ isOpen, onClose }) => {
       }
       
       // Auto-map columns after a small delay to ensure salesFields is populated
+      if (controller.signal.aborted) return;
       setTimeout(() => {
         try {
           const normalize = (s) => (s === null || s === undefined) ? '' : String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -359,6 +375,7 @@ const ImportDataModal = ({ isOpen, onClose }) => {
           });
 
           if (Object.keys(autoMap).length > 0) {
+            if (controller.signal.aborted) return;
             setColumnMap(autoMap);
           }
 
@@ -371,14 +388,19 @@ const ImportDataModal = ({ isOpen, onClose }) => {
               type: 'text', // Default type; user can change
               enabled: true
             }));
+          if (controller.signal.aborted) return;
           setNewColumnsToCreate(detectedNewCols);
         } catch (e) {
           // ignore mapping errors and allow manual mapping
         }
       }, 100);
       
+      if (controller.signal.aborted) return;
+
       setStep(2);
+      } catch (error) { if (!controller.signal.aborted) { setError(error.message || 'Could not read spreadsheet'); setStep(1); } }
     };
+    reader.onerror = () => { if (!controller.signal.aborted) setError('Could not read this file'); };
     reader.readAsArrayBuffer(file);
   }, []);
 

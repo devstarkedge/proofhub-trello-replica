@@ -64,6 +64,7 @@ function init(httpServer) {
       }
 
       const decodedUser = jwt.verify(token, config.jwt.secret);
+      if (decodedUser.type !== 'access' || !Number.isInteger(decodedUser.tokenVersion)) return next(new Error('Invalid session'));
       socket.data.tokenExpiresAt = decodedUser.exp ? decodedUser.exp * 1000 : null;
       const userId = decodedUser?.id || decodedUser?._id;
       if (!userId) {
@@ -99,8 +100,8 @@ function init(httpServer) {
         // payload — the JWT here carries only {id}, and trusting a
         // decodedUser.role-style claim is exactly the mistake that already
         // left ROOM.admin(socketWorkspaceId)/ROOM.managers(socketWorkspaceId) unreachable elsewhere in this file.
-        const dbUser = await User.findById(userId).select('isSuperAdmin isActive email').lean();
-        if (dbUser?.isActive && dbUser.isSuperAdmin === true && isSuperAdminEmailAllowed(dbUser.email)) {
+        const dbUser = await User.findById(userId).select('isSuperAdmin isActive email tokenVersion forcePasswordChange').lean();
+        if (dbUser?.isActive && !dbUser.forcePasswordChange && decodedUser.tokenVersion === (dbUser.tokenVersion || 0) && dbUser.isSuperAdmin === true && isSuperAdminEmailAllowed(dbUser.email)) {
           socket.data.user = decodedUser;
           socket.data.workspaceId = null;
           socket.data.isSuperAdmin = true;
@@ -109,8 +110,8 @@ function init(httpServer) {
         return next(new Error('Not a member of this workspace'));
       }
 
-      const [account, workspace] = await Promise.all([User.findById(userId).select('isActive').lean(), Workspace.findById(requestedWorkspaceId).select('isActive').lean()]);
-      if (!account?.isActive || !workspace?.isActive || membership.kind === 'guest') return next(new Error('Inactive account or workspace'));
+      const [account, workspace] = await Promise.all([User.findById(userId).select('isActive tokenVersion forcePasswordChange').lean(), Workspace.findById(requestedWorkspaceId).select('isActive status').lean()]);
+      if (!account?.isActive || account.forcePasswordChange || decodedUser.tokenVersion !== (account.tokenVersion || 0) || !workspace?.isActive || ['suspended', 'archived'].includes(workspace.status) || membership.kind === 'guest') return next(new Error('Inactive account, session or workspace'));
       socket.data.tokenExpiresAt = decodedUser.exp ? decodedUser.exp * 1000 : null;
       socket.data.membership = membership;
       socket.data.user = decodedUser;

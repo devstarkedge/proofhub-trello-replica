@@ -1,5 +1,9 @@
 import { workspacePeople } from '../workspaceAudience.js';
-import { hasResourceAction } from '../../modules/permissions/permissionEngine.js';
+import { aggregateFinanceTime, aggregateLastActivity, aggregateMilestoneFinance } from './timeAggregation.js';
+import mongoose from 'mongoose';
+import { ErrorResponse } from '../../middleware/errorHandler.js';
+import { resolveResourceAccessBatch } from '../../modules/permissions/permissionEngine.js';
+import { getActiveWorkspaceId } from '../../modules/workspaces/workspaceContext.js';
 import Board from '../../models/Board.js';
 import Card from '../../models/Card.js';
 import Subtask from '../../models/Subtask.js';
@@ -222,8 +226,8 @@ const buildUserNameMap = async (items = [], milestoneApprovals = []) => {
 
 export const getFinancePermittedUserIds = async () => {
   const users = await workspacePeople();
-  const permitted = await Promise.all(users.map(async user => await hasResourceAction(user, 'finance', 'view') ? String(user._id) : null));
-  return new Set(permitted.filter(Boolean));
+  const permissions = await resolveResourceAccessBatch(users, 'finance', getActiveWorkspaceId());
+  return new Set(users.filter(user => permissions.get(String(user._id))?.actions?.view).map(user => String(user._id)));
 };
 
 const buildProjectMatch = (filters, includeBillingType = true) => {
@@ -260,6 +264,11 @@ const groupByBoard = (items = []) => {
 
 const buildDataContext = async (rawFilters = {}) => {
   const filters = normalizeFinanceFilters(rawFilters);
+  if (filters.projectStatus && (typeof filters.projectStatus !== 'string' || filters.projectStatus.length > 64)) throw new ErrorResponse('Invalid project status', 400);
+  for (const field of ['departmentId', 'projectId', 'userId']) if (filters[field] && !mongoose.isValidObjectId(filters[field])) throw new ErrorResponse(`Invalid ${field}`, 400);
+  for (const field of ['startDate', 'endDate']) if (filters[field] && (!/^\d{4}-\d{2}-\d{2}$/.test(filters[field]) || Number.isNaN(new Date(filters[field]).getTime()) || new Date(filters[field]).toISOString().slice(0, 10) !== filters[field])) throw new ErrorResponse(`Invalid ${field}`, 400);
+  if (!Number.isInteger(filters.year) || filters.year < 1970 || filters.year > 2100 || filters.month !== null && (!Number.isInteger(filters.month) || filters.month < 0 || filters.month > 11)) throw new ErrorResponse('Invalid report year or month', 400);
+  if (filters.startDate && filters.endDate && filters.startDate > filters.endDate) throw new ErrorResponse('Start date must precede end date', 400);
   const permittedUserIds = await getFinancePermittedUserIds();
   const baseProjectMatch = buildProjectMatch(filters, false);
   const projectMatch = buildProjectMatch(filters, true);
@@ -270,31 +279,23 @@ const buildDataContext = async (rawFilters = {}) => {
       .populate('department', 'name')
       .populate('members', 'name email avatar')
       .populate('owner', 'name email avatar')
+      .select('name department members owner startDate dueDate createdAt estimatedTime projectSource upworkId projectCategory billingCycle hourlyPrice fixedPrice totalProjectBudgetCents status clientDetails')
       .sort({ createdAt: -1 })
+      .limit(10001)
       .lean()
   ]);
+  if (projects.length > 10000) throw new ErrorResponse('Select a project or department to narrow this report', 413);
 
   const projectIds = projects.map((project) => project._id);
-  const [cards, subtasks, nanos, milestones, milestoneApprovals] = projectIds.length > 0
+  const [cards, subtasks, nanos, milestoneData] = projectIds.length > 0
     ? await Promise.all([
-      Card.find({ board: { $in: projectIds }, isArchived: { $ne: true } })
-        .select('board billedTime loggedTime title updatedAt')
-        .lean(),
-      Subtask.find({ board: { $in: projectIds } })
-        .select('board task billedTime loggedTime title updatedAt')
-        .lean(),
-      SubtaskNano.find({ board: { $in: projectIds } })
-        .select('board subtask billedTime loggedTime title updatedAt')
-        .lean(),
-      Milestone.find({ board: { $in: projectIds } })
-        .select('board title amountCents approvedAmountCents status paidAt revenueRecognizedAt order')
-        .sort({ board: 1, order: 1 })
-        .lean(),
-      MilestoneApproval.find({ board: { $in: projectIds } })
-        .select('board milestone amountCents approvedBy approvedAt')
-        .lean()
+      Promise.all([aggregateFinanceTime(Card, projectIds, filters, { cards: true }), aggregateLastActivity(Card, projectIds, 'task', true)]).then(parts => parts.flat()),
+      Promise.all([aggregateFinanceTime(Subtask, projectIds, filters), aggregateLastActivity(Subtask, projectIds, 'subtask')]).then(parts => parts.flat()),
+      Promise.all([aggregateFinanceTime(SubtaskNano, projectIds, filters), aggregateLastActivity(SubtaskNano, projectIds, 'nano-subtask')]).then(parts => parts.flat()),
+      aggregateMilestoneFinance(projectIds, filters)
     ])
-    : [[], [], [], [], []];
+    : [[], [], [], { approvals: [], stats: new Map(), lifetime: new Map() }];
+  const milestoneApprovals = milestoneData.approvals;
 
   const usersById = await buildUserNameMap([...cards, ...subtasks, ...nanos], milestoneApprovals);
 
@@ -306,7 +307,9 @@ const buildDataContext = async (rawFilters = {}) => {
     cardsByBoard: groupByBoard(cards),
     subtasksByBoard: groupByBoard(subtasks),
     nanosByBoard: groupByBoard(nanos),
-    milestonesByBoard: groupByBoard(milestones),
+    milestonesByBoard: new Map(),
+    milestoneStatsByBoard: milestoneData.stats,
+    lifetimeMilestoneByBoard: milestoneData.lifetime,
     milestoneApprovalsByBoard: groupByBoard(milestoneApprovals),
     diagnostics: {
       totalProjectsBeforeFiltering,
@@ -367,7 +370,7 @@ export const buildProjectMetric = (project, context, rangeFilters = context.filt
     ? calculateMilestoneRevenue(milestoneApprovals, rangeFilters)
     : 0;
   const lifetimeMilestoneRevenue = billingType === BILLING_TYPES.MILESTONE
-    ? calculateMilestoneRevenue(milestoneApprovals, {})
+    ? context.lifetimeMilestoneByBoard ? fromCents(context.lifetimeMilestoneByBoard.get(projectId) || 0) : calculateMilestoneRevenue(milestoneApprovals, {})
     : 0;
   const milestoneRevenueByApprover = billingType === BILLING_TYPES.MILESTONE
     ? allocateMilestoneRevenueByApprover(milestoneApprovals, rangeFilters)
@@ -404,6 +407,8 @@ export const buildProjectMetric = (project, context, rangeFilters = context.filt
     hasActivityInRange,
     users,
     milestones,
+    milestoneCount: context.milestoneStatsByBoard?.get(projectId)?.total ?? milestones.length,
+    paidMilestoneCount: context.milestoneStatsByBoard?.get(projectId)?.paid ?? milestones.filter(milestone => milestone.status === 'paid').length,
     milestoneApprovals,
     lastActivity: getLastActivity(entities)
   };
@@ -633,8 +638,8 @@ export const buildProjectFinanceReport = async (rawFilters = {}) => {
     remainingProjectAmount: metric.billingType === BILLING_TYPES.MILESTONE
       ? Math.max(0, fromCents(metric.project.totalProjectBudgetCents) - metric.lifetimeMilestoneRevenue)
       : 0,
-    milestoneCount: metric.milestones.length,
-    paidMilestoneCount: metric.milestones.filter((milestone) => milestone.status === 'paid').length,
+    milestoneCount: metric.milestoneCount,
+    paidMilestoneCount: metric.paidMilestoneCount,
     totalRevenue: metric.totalRevenue,
     status: metric.project.status,
     clientInfo: metric.project.clientDetails,
@@ -866,7 +871,9 @@ export const buildWeekWiseRevenue = (context, weeks, viewType = 'users') => (
 );
 
 export const buildWeeklyFinanceReport = async (rawFilters = {}) => {
-  const context = await buildDataContext(rawFilters);
+  const range = normalizeFinanceFilters(rawFilters);
+  const month = range.month ?? new Date().getMonth();
+  const context = await buildDataContext({ ...rawFilters, startDate: toDateString(new Date(range.year, month, 1)), endDate: toDateString(new Date(range.year, month + 1, 0)) });
   const targetYear = context.filters.year || new Date().getFullYear();
   const targetMonth = context.filters.month ?? new Date().getMonth();
   const weeks = getWeeksOfMonth(targetYear, targetMonth);
@@ -979,7 +986,8 @@ const buildMonthFromWeeklyData = (month, year, weeklyData) => {
 };
 
 export const buildYearWideWeeklyReport = async (rawFilters = {}) => {
-  const context = await buildDataContext(rawFilters);
+  const range = normalizeFinanceFilters(rawFilters);
+  const context = await buildDataContext({ ...rawFilters, startDate: toDateString(new Date(range.year, range.month ?? 0, 1)), endDate: toDateString(new Date(range.year, range.month === null ? 12 : range.month + 1, 0)) });
   const targetYear = context.filters.year || new Date().getFullYear();
   const monthsToProcess = context.filters.month !== null
     ? [context.filters.month]

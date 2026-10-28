@@ -1,3 +1,5 @@
+import { lazy, Suspense } from 'react';
+import Loading from './components/Loading';
 
 import { Navigate, Routes, Route } from "react-router-dom";
 import { ToastContainer } from 'react-toastify';
@@ -14,88 +16,81 @@ import GlobalPushPrompt from "./components/GlobalPushPrompt";
 import useThemeStore from "./store/themeStore";
 import "./App.css";
 
-// Direct imports for instant navigation (no lazy loading)
-import WorkFlow from "./pages/WorkFlow";
-import LoginPage from "./pages/LoginPage";
-import ForgotPasswordPage from "./pages/ForgotPasswordPage";
-import ResetPasswordPage from "./pages/ResetPasswordPage";
-import ConfirmEmailChange from './pages/ConfirmEmailChange';
-import VerifyPending from "./pages/VerifyPending";
-import TeamManagement from "./pages/TeamManagement";
-import Search from "./pages/Search";
+// Load feature routes on demand; the desktop bridge stays mounted.
+const WorkFlow = lazy(() => import('./pages/WorkFlow'));
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
+const ConfirmEmailChange = lazy(() => import('./pages/ConfirmEmailChange'));
+const VerifyPending = lazy(() => import('./pages/VerifyPending'));
+const TeamManagement = lazy(() => import('./pages/TeamManagement'));
+const Search = lazy(() => import('./pages/Search'));
 import ListViewLayout from "./layouts/ListViewLayout";
 import MainLayout from "./layouts/MainLayout";
-import ListViewTasks from "./pages/ListViewTasks";
-import ListViewTeams from "./pages/ListViewTeams";
-import CalendarView from "./pages/CalendarView";
-import GanttView from "./pages/GanttView";
-import AdminSettings from "./pages/AdminSettings";
-import HRPanel from "./pages/HRPanel";
-import Analytics from "./pages/Analytics";
-import HomePage from "./pages/HomePage";
-import Profile from "./pages/Profile";
-import Settings from "./pages/Settings";
-import Announcements from "./pages/Announcements";
-import RemindersPage from "./pages/RemindersPage";
-import ClientReminderCalendarPage from "./pages/ClientReminderCalendarPage";
+const ListViewTasks = lazy(() => import('./pages/ListViewTasks'));
+const ListViewTeams = lazy(() => import('./pages/ListViewTeams'));
+const CalendarView = lazy(() => import('./pages/CalendarView'));
+const GanttView = lazy(() => import('./pages/GanttView'));
+const AdminSettings = lazy(() => import('./pages/AdminSettings'));
+const HRPanel = lazy(() => import('./pages/HRPanel'));
+const Analytics = lazy(() => import('./pages/Analytics'));
+const HomePage = lazy(() => import('./pages/HomePage'));
+const Profile = lazy(() => import('./pages/Profile'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Announcements = lazy(() => import('./pages/Announcements'));
+const RemindersPage = lazy(() => import('./pages/RemindersPage'));
+const ClientReminderCalendarPage = lazy(() => import('./pages/ClientReminderCalendarPage'));
 import PrivateRoute from "./components/PrivateRoute";
 import FinanceRouteGuard from "./components/FinanceRouteGuard";
 import AccessControlRouteGuard from "./components/AccessControlRouteGuard";
-import AccessControlPage from "./pages/AccessControlPage";
+const AccessControlPage = lazy(() => import('./pages/AccessControlPage'));
 import JoinRequestsRouteGuard from "./components/JoinRequestsRouteGuard";
-import JoinRequestsPage from "./pages/JoinRequestsPage";
-import LeaveDashboardPage from "./pages/Leave/LeaveDashboardPage";
-import MyLeavePage from "./pages/Leave/MyLeavePage";
-import ApprovalQueuePage from "./pages/Leave/ApprovalQueuePage";
-import LeaveCalendarPage from "./pages/Leave/LeaveCalendarPage";
-import LeaveReportsPage from "./pages/Leave/LeaveReportsPage";
-import LeaveSettingsPage from "./pages/Leave/LeaveSettingsPage";
+const JoinRequestsPage = lazy(() => import('./pages/JoinRequestsPage'));
+const LeaveDashboardPage = lazy(() => import('./pages/Leave/LeaveDashboardPage'));
+const MyLeavePage = lazy(() => import('./pages/Leave/MyLeavePage'));
+const ApprovalQueuePage = lazy(() => import('./pages/Leave/ApprovalQueuePage'));
+const LeaveCalendarPage = lazy(() => import('./pages/Leave/LeaveCalendarPage'));
+const LeaveReportsPage = lazy(() => import('./pages/Leave/LeaveReportsPage'));
+const LeaveSettingsPage = lazy(() => import('./pages/Leave/LeaveSettingsPage'));
 import LeaveLayout from "./layouts/LeaveLayout";
 import LeaveSettingsLayout from "./layouts/LeaveSettingsLayout";
-import MyAttendancePage from "./pages/Attendance/MyAttendancePage";
-import TeamAttendancePage from "./pages/Attendance/TeamAttendancePage";
-import AttendanceApprovalsPage from "./pages/Attendance/AttendanceApprovalsPage";
-import AttendanceSettingsPage from "./pages/Attendance/AttendanceSettingsPage";
+const MyAttendancePage = lazy(() => import('./pages/Attendance/MyAttendancePage'));
+const TeamAttendancePage = lazy(() => import('./pages/Attendance/TeamAttendancePage'));
+const AttendanceApprovalsPage = lazy(() => import('./pages/Attendance/AttendanceApprovalsPage'));
+const AttendanceSettingsPage = lazy(() => import('./pages/Attendance/AttendanceSettingsPage'));
 import AttendanceLayout from "./layouts/AttendanceLayout";
 import AttendanceSettingsLayout from "./layouts/AttendanceSettingsLayout";
 import PermissionConfirmModal from "./components/AccessControl/PermissionConfirmModal";
-import ProjectTrash from "./pages/ProjectTrash";
+const ProjectTrash = lazy(() => import('./pages/ProjectTrash'));
 import ProjectWorkspaceGate from "./components/ProjectWorkspaceGate";
-import SelectWorkspacePage from "./pages/SelectWorkspacePage";
-import NoWorkspacePage from "./pages/NoWorkspacePage";
-import InvitePage from "./pages/InvitePage";
-import TimeTrackingPage from "./pages/TimeTrackingPage";
-import WorkspaceSettingsPage from "./pages/WorkspaceSettingsPage";
-import CreateWorkspacePublicPage from './pages/CreateWorkspacePublicPage';
-import ContactSalesPage from './pages/ContactSalesPage';
-
-// PM Sheet Pages
-import PMSheetDashboard from "./pages/PMSheetDashboard";
-import MonthWisePMReport from "./pages/MonthWisePMReport";
-import ProjectCoordinatorReport from "./pages/ProjectCoordinatorReport";
-import ApproachPage from "./pages/ApproachPage";
-import PMSheetLayout from "./layouts/PMSheetLayout";
+const SelectWorkspacePage = lazy(() => import('./pages/SelectWorkspacePage'));
+const NoWorkspacePage = lazy(() => import('./pages/NoWorkspacePage'));
+const InvitePage = lazy(() => import('./pages/InvitePage'));
+const TimeTrackingPage = lazy(() => import('./pages/TimeTrackingPage'));
+const WorkspaceSettingsPage = lazy(() => import('./pages/WorkspaceSettingsPage'));
+const CreateWorkspacePublicPage = lazy(() => import('./pages/CreateWorkspacePublicPage'));
+const ContactSalesPage = lazy(() => import('./pages/ContactSalesPage'));
 
 // Finance Module Pages
-import FinanceLayout from "./pages/Finance/FinanceLayout";
-import FinanceDashboard from "./pages/Finance/FinanceDashboard";
-import UsersTab from "./pages/Finance/UsersTab";
-import ProjectsTab from "./pages/Finance/ProjectsTab";
-import WeeklyTab from "./pages/Finance/WeeklyTab";
-import FinancePagesManager from "./pages/Finance/FinancePagesManager";
-import CreateFinancePage from "./pages/Finance/CreateFinancePage";
-import ViewFinancePage from "./pages/Finance/ViewFinancePage";
-import MyShortcutsPage from "./pages/MyShortcutsPage";
-import SalesPage from "./pages/SalesPage";
+const FinanceLayout = lazy(() => import('./pages/Finance/FinanceLayout'));
+const FinanceDashboard = lazy(() => import('./pages/Finance/FinanceDashboard'));
+const UsersTab = lazy(() => import('./pages/Finance/UsersTab'));
+const ProjectsTab = lazy(() => import('./pages/Finance/ProjectsTab'));
+const WeeklyTab = lazy(() => import('./pages/Finance/WeeklyTab'));
+const FinancePagesManager = lazy(() => import('./pages/Finance/FinancePagesManager'));
+const CreateFinancePage = lazy(() => import('./pages/Finance/CreateFinancePage'));
+const ViewFinancePage = lazy(() => import('./pages/Finance/ViewFinancePage'));
+const MyShortcutsPage = lazy(() => import('./pages/MyShortcutsPage'));
+const SalesPage = lazy(() => import('./pages/SalesPage'));
 
 // Super Admin Dashboard — platform-level context, deliberately NOT nested
 // inside MainLayout/PrivateRoute's workspace-scoped tree (see SuperAdminRouteGuard).
 import SuperAdminRouteGuard from "./components/SuperAdminRouteGuard";
-import SuperAdminLayout from "./pages/SuperAdmin/SuperAdminLayout";
-import SuperAdminOverviewPage from "./pages/SuperAdmin/SuperAdminOverviewPage";
-import SuperAdminWorkspacesPage from "./pages/SuperAdmin/SuperAdminWorkspacesPage";
-import SuperAdminWorkspaceDetailPage from "./pages/SuperAdmin/SuperAdminWorkspaceDetailPage";
-import SuperAdminAuditLogPage from "./pages/SuperAdmin/SuperAdminAuditLogPage";
+const SuperAdminLayout = lazy(() => import('./pages/SuperAdmin/SuperAdminLayout'));
+const SuperAdminOverviewPage = lazy(() => import('./pages/SuperAdmin/SuperAdminOverviewPage'));
+const SuperAdminWorkspacesPage = lazy(() => import('./pages/SuperAdmin/SuperAdminWorkspacesPage'));
+const SuperAdminWorkspaceDetailPage = lazy(() => import('./pages/SuperAdmin/SuperAdminWorkspaceDetailPage'));
+const SuperAdminAuditLogPage = lazy(() => import('./pages/SuperAdmin/SuperAdminAuditLogPage'));
 
 import DesktopTrackingBridge from './components/Tracking/DesktopTrackingBridge';
 
@@ -108,6 +103,7 @@ function App() {
         <TeamProvider>
           <NotificationProvider>
             <ClientInfoProvider>
+              <Suspense fallback={<Loading size="lg" text="Loading FlowTask..." />}>
               <Routes>
         <Route path="/confirm-email-change" element={<ConfirmEmailChange />} />
               <Route path="/login" element={<LoginPage />} />
@@ -292,20 +288,6 @@ function App() {
                   }
                 />
 
-                {/* PM Sheet Routes - Admin and Manager only */}
-                <Route
-                  path="/pm-sheet"
-                  element={
-                    <PrivateRoute requiredRole={["Manager", "Admin"]}>
-                      <PMSheetLayout />
-                    </PrivateRoute>
-                  }
-                >
-                  <Route index element={<PMSheetDashboard />} />
-                  <Route path="month-wise" element={<MonthWisePMReport />} />
-                  <Route path="coordinator" element={<ProjectCoordinatorReport />} />
-                  <Route path="approach" element={<ApproachPage />} />
-                </Route>
 
                 {/* Finance Module Routes - Admin and Manager only */}
                 <Route
@@ -346,6 +328,7 @@ function App() {
 
               <Route path="*" element={<GlobalFallback type="404" />} />
               </Routes>
+              </Suspense>
             </ClientInfoProvider>
             <ToastContainer
               position="top-right"

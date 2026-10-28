@@ -1,3 +1,10 @@
+import { resourceReadFilter } from '../services/resourceReadFilter.js';
+import { copyTaskHierarchy } from '../services/taskCopy.js';
+import { authorizeDestination, moveTaskHierarchy } from '../services/taskMovement.js';
+import { deleteResource } from '../services/resourceDeletion.js';
+import { boundedInteger, pageNumber } from '../utils/pagination.js';
+import { boardAccessFilter } from '../utils/boardAccess.js';
+import { authorizeProjectResource, authorizeTaskPatch, prepareTaskCreation } from '../services/projectAuthorization.js';
 import Card from "../models/Card.js";
 import User from "../models/User.js";
 import Label from "../models/Label.js";
@@ -100,15 +107,18 @@ const emitCardTimeTrackingWebhook = async ({ operation, entryType, card, actor, 
 // @route   GET /api/cards/list/:listId
 // @access  Private
 export const getCards = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'list', req.params.listId, 'project.view');
   const { listId } = req.params;
   const { page = 1, limit = 50 } = req.query;
 
-  const pageNum = parseInt(page, 10);
-  const limitNum = parseInt(limit, 10);
+  const pageNum = pageNumber(page);
+  const limitNum = boundedInteger(limit, 20, 100);
   const skip = (pageNum - 1) * limitNum;
 
   // Use aggregation pipeline for single query with recurrence status
+  const readScope = await resourceReadFilter(req, 'task');
   const pipeline = [
+    { $match: readScope },
     { $match: { list: new mongoose.Types.ObjectId(listId), isArchived: false } },
     { $sort: { position: 1 } },
     { $skip: skip },
@@ -211,7 +221,7 @@ export const getCards = asyncHandler(async (req, res, next) => {
 
   const [cards, countResult] = await Promise.all([
     Card.aggregate(pipeline),
-    Card.countDocuments({ list: listId })
+    Card.countDocuments({ $and: [{ list: listId, isArchived: false }, readScope] })
   ]);
 
   res.status(200).json({
@@ -231,15 +241,18 @@ export const getCards = asyncHandler(async (req, res, next) => {
 // @route   GET /api/cards/board/:boardId
 // @access  Private
 export const getCardsByBoard = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'project', req.params.boardId, 'project.view');
   const { boardId } = req.params;
   const { page = 1, limit = 100 } = req.query;
 
-  const pageNum = parseInt(page, 10);
-  const limitNum = parseInt(limit, 10);
+  const pageNum = pageNumber(page);
+  const limitNum = boundedInteger(limit, 20, 100);
   const skip = (pageNum - 1) * limitNum;
 
   // Use aggregation pipeline for single query with recurrence status - EXCLUDE ARCHIVED CARDS
+  const readScope = await resourceReadFilter(req, 'task', boardId);
   const pipeline = [
+    { $match: readScope },
     { $match: { board: new mongoose.Types.ObjectId(boardId), isArchived: false } },
     { $sort: { position: 1 } },
     { $skip: skip },
@@ -342,7 +355,7 @@ export const getCardsByBoard = asyncHandler(async (req, res, next) => {
 
   const [cards, countResult] = await Promise.all([
     Card.aggregate(pipeline),
-    Card.countDocuments({ board: boardId, isArchived: false })
+    Card.countDocuments({ $and: [{ board: boardId, isArchived: false }, readScope] })
   ]);
 
   res.status(200).json({
@@ -365,26 +378,16 @@ export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
   const { departmentId } = req.params;
   const { page = 1, limit = 200 } = req.query;
   const user = req.user;
+  const pageNum = pageNumber(page), limitNum = boundedInteger(limit, 100, 100);
+  const readScope = await resourceReadFilter(req, 'task');
 
-  let departmentMatch = {};
-  if (departmentId === 'all') {
-    // Get all departments user has access to
-    const Department = mongoose.model('Department');
-    let departmentQuery = {};
-    if (user.role === 'manager') {
-      departmentQuery._id = user.department;
-    } else if (user.role !== 'admin') {
-      departmentQuery.members = user._id;
-    }
-    const accessibleDepartments = await Department.find(departmentQuery);
-    const departmentIds = accessibleDepartments.map(d => d._id);
-    departmentMatch = { 'boardInfo.department': { $in: departmentIds } };
-  } else {
-    departmentMatch = { 'boardInfo.department': new mongoose.Types.ObjectId(departmentId) };
-  }
+  if (departmentId !== 'all' && !mongoose.isValidObjectId(departmentId)) throw new ErrorResponse('Invalid department', 400);
+  const departmentMatch = departmentId === 'all' ? {} : { 'boardInfo.department': new mongoose.Types.ObjectId(departmentId) };
 
   // Use aggregation pipeline for better performance
+  const visibleBoards = await Board.distinct('_id', await boardAccessFilter(req.user));
   const pipeline = [
+    { $match: { $and: [{ board: { $in: visibleBoards }, isArchived: false }, readScope] } },
     {
       $lookup: {
         from: 'boards',
@@ -528,15 +531,16 @@ export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
       $sort: { updatedAt: -1 }
     },
     {
-      $skip: (parseInt(page, 10) - 1) * parseInt(limit, 10)
+      $skip: (pageNum - 1) * limitNum
     },
     {
-      $limit: parseInt(limit, 10)
+      $limit: limitNum
     }
   ];
 
   const cards = await Card.aggregate(pipeline);
   const totalCount = await Card.aggregate([
+    { $match: { $and: [{ board: { $in: visibleBoards }, isArchived: false }, readScope] } },
     {
       $lookup: {
         from: 'boards',
@@ -559,10 +563,10 @@ export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
     success: true,
     count: total,
     pagination: {
-      currentPage: parseInt(page, 10),
-      totalPages: Math.ceil(total / parseInt(limit, 10)),
-      hasNext: parseInt(page, 10) * parseInt(limit, 10) < total,
-      hasPrev: parseInt(page, 10) > 1
+      currentPage: pageNum,
+      totalPages: Math.ceil(total / limitNum),
+      hasNext: pageNum * limitNum < total,
+      hasPrev: pageNum > 1
     },
     data: cards,
   });
@@ -572,6 +576,7 @@ export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
 // @route   GET /api/cards/:id
 // @access  Private
 export const getCard = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'task', req.params.id, 'task.view');
   // Use aggregation to get card with recurrence status in single query
   const pipeline = [
     { $match: { _id: new mongoose.Types.ObjectId(req.params.id) } },
@@ -791,6 +796,8 @@ export const getCard = asyncHandler(async (req, res, next) => {
 // @route   POST /api/cards
 // @access  Private
 export const createCard = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'project', req.body.board, 'task.create');
+  prepareTaskCreation(req);
   if (req.body.description) req.body.description = sanitizeHtml(req.body.description);
   const {
     title,
@@ -927,6 +934,7 @@ export const createCard = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/cards/:id
 // @access  Private
 export const updateCard = asyncHandler(async (req, res, next) => {
+  await authorizeTaskPatch(req, 'task', req.params.id);
   const { strictUpdate, TASK_UPDATE_FIELDS } = await import('../utils/strictUpdate.js');
   req.body = strictUpdate(req.body, TASK_UPDATE_FIELDS);
   if (req.body.description !== undefined) req.body.description = sanitizeHtml(req.body.description);
@@ -1018,6 +1026,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
   card = await Card.findByIdAndUpdate(req.params.id, req.body, {
     new: true,
     runValidators: true,
+    expectedRevision: req.expectedRevision,
   })
     .populate({ path: "assignees", select: "name email avatar department", populate: { path: "department", select: "name" } })
     .populate("members", "name email avatar")
@@ -1518,6 +1527,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/cards/:id/move
 // @access  Private
 export const moveCard = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'task', req.params.id, 'task.move');
   const { destinationListId, newPosition } = req.body;
   const card = await Card.findById(req.params.id)
     .populate('list', 'title')
@@ -1692,6 +1702,7 @@ export const moveCard = asyncHandler(async (req, res, next) => {
 // @route   DELETE /api/cards/:id
 // @access  Private
 export const deleteCard = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'task', req.params.id, 'task.delete');
   const card = await Card.findById(req.params.id).select('board title assignees members list').lean();
 
   if (!card) {
@@ -1704,8 +1715,10 @@ export const deleteCard = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Not authorized to delete this card", 403));
   }
 
-  // Send notifications before deletion
-  await notificationService.notifyTaskDeleted(card, req.user.id);
+  await deleteResource('card', card._id, { actor: req.user });
+
+  // Publish side effects only after the cascade commits
+  await notificationService.notifyTaskDeleted(card, req.user.id).catch(() => {});
 
   // Dispatch chat webhook before deletion
   const boardForDelete = await Board.findById(card.board).select('name department').lean();
@@ -1730,14 +1743,6 @@ export const deleteCard = asyncHandler(async (req, res, next) => {
     }
   });
 
-  await Promise.all([
-    Subtask.deleteMany({ card: card._id }),
-    SubtaskNano.deleteMany({ task: card._id }),
-    Comment.deleteMany({ card: card._id }),
-    Attachment.deleteMany({ card: card._id })
-  ]);
-  await Card.findByIdAndDelete(card._id);
-
   cancelDueDateJobs(card._id).catch(console.error);
 
   res.status(200).json({
@@ -1750,6 +1755,7 @@ export const deleteCard = asyncHandler(async (req, res, next) => {
 // @route   GET /api/cards/:id/activity
 // @access  Private
 export const getCardActivity = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'task', req.params.id, 'task.view');
   const { id } = req.params;
   const { limit = 100, page = 1 } = req.query;
 
@@ -1763,8 +1769,8 @@ export const getCardActivity = asyncHandler(async (req, res, next) => {
   const activities = await Activity.find({ card: id, contextType: 'task' })
     .populate("user", "name email avatar")
     .sort({ createdAt: -1 })
-    .limit(parseInt(limit))
-    .skip((parseInt(page) - 1) * parseInt(limit))
+    .limit(boundedInteger(limit, 100, 200))
+    .skip((pageNumber(page) - 1) * boundedInteger(limit, 100, 200))
     .lean();
 
   const total = await Activity.countDocuments({ card: id, contextType: 'task' });
@@ -1773,8 +1779,8 @@ export const getCardActivity = asyncHandler(async (req, res, next) => {
     success: true,
     count: activities.length,
     total,
-    page: parseInt(page),
-    pages: Math.ceil(total / parseInt(limit)),
+    page: pageNumber(page),
+    pages: Math.ceil(total / boundedInteger(limit, 100, 200)),
     data: activities,
   });
 });
@@ -1783,6 +1789,7 @@ export const getCardActivity = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/cards/:id/archive
 // @access  Private
 export const archiveCard = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'task', req.params.id, 'task.archive');
   const card = await Card.findById(req.params.id);
 
   if (!card) {
@@ -1830,6 +1837,7 @@ export const archiveCard = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/cards/:id/restore
 // @access  Private
 export const restoreCard = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'task', req.params.id, 'task.archive');
   const card = await Card.findById(req.params.id);
 
   if (!card) {
@@ -1892,14 +1900,15 @@ export const restoreCard = asyncHandler(async (req, res, next) => {
 // @route   GET /api/cards/list/:listId/archived
 // @access  Private
 export const getArchivedCards = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'list', req.params.listId, 'task.view');
   const { listId } = req.params;
   const { boardId } = req.query;
   const { page = 1, limit = 50 } = req.query;
 
   const now = new Date();
 
-  const pageNum = parseInt(page, 10);
-  const limitNum = parseInt(limit, 10);
+  const pageNum = pageNumber(page);
+  const limitNum = boundedInteger(limit, 20, 100);
   const skip = (pageNum - 1) * limitNum;
 
   // Use aggregation pipeline for archived cards
@@ -2013,6 +2022,7 @@ export const getArchivedCards = asyncHandler(async (req, res, next) => {
 // @route   POST /api/cards/:id/time-tracking
 // @access  Private
 export const addTimeEntry = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'task', req.params.id, 'time.log');
   const { id } = req.params;
   const { type, entry } = req.body;
 
@@ -2100,6 +2110,7 @@ export const addTimeEntry = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/cards/:id/time-tracking/:entryId
 // @access  Private
 export const updateTimeEntry = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'task', req.params.id, 'time.log');
   const { id, entryId } = req.params;
   const { type, updates } = req.body;
 
@@ -2185,6 +2196,7 @@ export const updateTimeEntry = asyncHandler(async (req, res, next) => {
 // @route   DELETE /api/cards/:id/time-tracking/:entryId
 // @access  Private
 export const deleteTimeEntry = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'task', req.params.id, 'time.log');
   const { id, entryId } = req.params;
   const { type } = req.query; // Pass type as query param
 
@@ -2309,285 +2321,27 @@ const updateRecentDestinations = async (userId, destination) => {
 // @desc    Copy a card to another board/list
 // @route   POST /api/cards/:id/copy
 // @access  Private (Admin/Manager)
-export const copyCard = asyncHandler(async (req, res, next) => {
+export const copyCard = asyncHandler(async (req, res) => {
+  await authorizeProjectResource(req, 'task', req.params.id, 'task.copy_move_cross');
   const { destinationBoardId, destinationListId, options = {} } = req.body;
-  const {
-    copyComments = true,
-    copyAttachments = true,
-    copyChecklist = true,
-    copyAssignees = true,
-    copyDueDates = true
-  } = options;
-
-  // Load source card
-  const sourceCard = await Card.findById(req.params.id).lean();
-  if (!sourceCard) {
-    return next(new ErrorResponse("Card not found", 404));
-  }
-
-  // Validate destination
-  const destBoard = await Board.findById(destinationBoardId).lean();
-  if (!destBoard) {
-    return next(new ErrorResponse("Destination project not found", 404));
-  }
-
-  const destList = await List.findById(destinationListId);
-  if (!destList) {
-    return next(new ErrorResponse("Destination list not found", 404));
-  }
-
-  // Get position (append to end of destination list)
-  const maxPosCard = await Card.findOne({ list: destinationListId, isArchived: false })
-    .sort({ position: -1 }).select('position').lean();
-  const newPosition = (maxPosCard?.position ?? -1) + 1;
-
-  // Re-map labels to destination board
-  const newLabels = await remapLabels(sourceCard.labels, sourceCard.board, destinationBoardId);
-
-  // Build new card data
-  const newCardData = {
-    title: `${sourceCard.title}`,
-    description: sourceCard.description || '',
-    descriptionMentions: sourceCard.descriptionMentions || [],
-    list: destinationListId,
-    board: destinationBoardId,
-    position: newPosition,
-    assignees: copyAssignees ? (sourceCard.assignees || []) : [],
-    members: copyAssignees ? (sourceCard.members || []) : [],
-    labels: newLabels,
-    priority: sourceCard.priority,
-    status: destList.title.toLowerCase().replace(/\s+/g, '-'),
-    dueDate: copyDueDates ? sourceCard.dueDate : null,
-    startDate: copyDueDates ? sourceCard.startDate : null,
-    subtaskStats: { total: 0, completed: 0, nanoTotal: 0, nanoCompleted: 0 },
-    // Skip all time entries
-    estimationTime: [],
-    loggedTime: [],
-    billedTime: [],
-    // Reset archive state
-    isArchived: false,
-    archivedAt: null,
-    autoDeleteAt: null,
-    createdBy: req.user.id,
-    createdFrom: 'board'
-  };
-
-  // Copy embedded attachments if requested
-  if (copyAttachments && sourceCard.attachments?.length > 0) {
-    newCardData.attachments = sourceCard.attachments.map(att => ({
-      filename: att.filename,
-      originalName: att.originalName,
-      mimetype: att.mimetype,
-      size: att.size,
-      url: att.url,
-      uploadedBy: att.uploadedBy,
-      isCover: false,
-      createdAt: new Date()
-    }));
-  }
-
-  const newCard = await Card.create(newCardData);
-
-  // Populate for response
-  const populatedCard = await Card.findById(newCard._id)
-    .populate({ path: 'assignees', select: 'name email avatar department', populate: { path: 'department', select: 'name' } })
-    .populate('members', 'name email avatar')
-    .populate('createdBy', 'name email avatar')
-    .lean();
-
-  // Send response immediately (optimistic for client)
-  res.status(201).json({
-    success: true,
-    data: populatedCard,
-    message: 'Task copied successfully'
-  });
-
-  // ===== Background async processing =====
-  (async () => {
-    try {
-      // 1. Copy comments if requested
-      if (copyComments) {
-        const comments = await Comment.find({ card: sourceCard._id, contextType: 'card' }).lean();
-        if (comments.length > 0) {
-          const commentDocs = comments.map(c => ({
-            text: c.text,
-            htmlContent: c.htmlContent,
-            card: newCard._id,
-            contextType: 'card',
-            contextRef: newCard._id,
-            user: c.user,
-            mentions: c.mentions || [],
-            attachments: c.attachments || [],
-            isEdited: false,
-            editHistory: [],
-            reactions: [],
-            isPinned: false,
-            replyCount: 0
-          }));
-          await Comment.insertMany(commentDocs);
-        }
-      }
-
-      // 2. Copy attachments (Attachment model records) if requested
-      if (copyAttachments) {
-        const attachments = await Attachment.find({
-          contextRef: sourceCard._id,
-          contextType: 'card',
-          isDeleted: false
-        }).lean();
-        if (attachments.length > 0) {
-          const attDocs = attachments.map(a => ({
-            fileName: a.fileName,
-            originalName: a.originalName,
-            fileType: a.fileType,
-            mimeType: a.mimeType,
-            fileSize: a.fileSize,
-            url: a.url,
-            secureUrl: a.secureUrl,
-            publicId: a.publicId,
-            resourceType: a.resourceType,
-            format: a.format,
-            thumbnailUrl: a.thumbnailUrl,
-            previewUrl: a.previewUrl,
-            contextType: 'card',
-            contextRef: newCard._id,
-            card: newCard._id,
-            board: destinationBoardId,
-            uploadedBy: a.uploadedBy,
-            width: a.width,
-            height: a.height,
-            duration: a.duration,
-            pages: a.pages,
-            fileExtension: a.fileExtension,
-            isCover: false,
-            isDeleted: false,
-            departmentId: destBoard.department
-          }));
-          await Attachment.insertMany(attDocs);
-        }
-      }
-
-      // 3. Copy subtasks (checklist) if requested
-      if (copyChecklist) {
-        const subtasks = await Subtask.find({ task: sourceCard._id }).lean();
-        if (subtasks.length > 0) {
-          for (const st of subtasks) {
-            const newSubtask = await Subtask.create({
-              task: newCard._id,
-              board: destinationBoardId,
-              title: st.title,
-              description: st.description,
-              status: st.status,
-              priority: st.priority,
-              assignees: copyAssignees ? (st.assignees || []) : [],
-              watchers: [],
-              tags: await remapLabels(st.tags, sourceCard.board, destinationBoardId),
-              dueDate: copyDueDates ? st.dueDate : null,
-              startDate: copyDueDates ? st.startDate : null,
-              attachments: copyAttachments ? (st.attachments || []) : [],
-              colorToken: st.colorToken,
-              estimationTime: [],
-              loggedTime: [],
-              billedTime: [],
-              order: st.order,
-              createdBy: req.user.id,
-              breadcrumbs: { project: destBoard.name, task: newCard.title }
-            });
-
-            // Copy nano-subtasks
-            const nanos = await SubtaskNano.find({ subtask: st._id }).lean();
-            if (nanos.length > 0) {
-              const nanoDocs = await Promise.all(nanos.map(async n => ({
-                subtask: newSubtask._id,
-                task: newCard._id,
-                board: destinationBoardId,
-                title: n.title,
-                description: n.description,
-                status: n.status,
-                priority: n.priority,
-                assignees: copyAssignees ? (n.assignees || []) : [],
-                dueDate: copyDueDates ? n.dueDate : null,
-                startDate: copyDueDates ? n.startDate : null,
-                tags: await remapLabels(n.tags, sourceCard.board, destinationBoardId),
-                attachments: copyAttachments ? (n.attachments || []) : [],
-                colorToken: n.colorToken,
-                estimationTime: [],
-                loggedTime: [],
-                billedTime: [],
-                order: n.order,
-                createdBy: req.user.id,
-                breadcrumbs: { project: destBoard.name, task: newCard.title, subtask: newSubtask.title }
-              })));
-              await SubtaskNano.insertMany(nanoDocs);
-            }
-          }
-
-          // Update subtask stats
-          const totalSubtasks = await Subtask.countDocuments({ task: newCard._id });
-          const completedSubtasks = await Subtask.countDocuments({ task: newCard._id, status: { $in: ['done', 'closed'] } });
-          const totalNanos = await SubtaskNano.countDocuments({ task: newCard._id });
-          const completedNanos = await SubtaskNano.countDocuments({ task: newCard._id, status: { $in: ['done', 'closed'] } });
-          
-          await Card.findByIdAndUpdate(newCard._id, {
-            subtaskStats: { total: totalSubtasks, completed: completedSubtasks, nanoTotal: totalNanos, nanoCompleted: completedNanos }
-          });
-        }
-      }
-
-      // 4. Log activity
-      await Activity.create({
-        type: 'card_copied',
-        description: `Copied card "${sourceCard.title}" to "${destBoard.name}"`,
-        user: req.user.id,
-        board: destinationBoardId,
-        card: newCard._id,
-        list: destinationListId,
-        contextType: 'task',
-        metadata: {
-          sourceCardId: sourceCard._id,
-          sourceBoardId: sourceCard.board,
-          destinationBoardId,
-          destinationListId
-        }
-      });
-
-      // 5. Emit socket events
-      emitToBoard(destinationBoardId.toString(), 'task-copied', {
-        card: populatedCard,
-        listId: destinationListId,
-        copiedBy: { id: req.user.id, name: req.user.name },
-        sourceBoardId: sourceCard.board.toString()
-      });
-
-      // 6. Update recent destinations
-      await updateRecentDestinations(req.user.id, {
-        departmentId: destBoard.department,
-        departmentName: (await Department.findById(destBoard.department).select('name').lean())?.name || '',
-        projectId: destinationBoardId,
-        projectName: destBoard.name,
-        listId: destinationListId,
-        listName: destList.title
-      });
-
-      await chatHooks.onProjectMembershipChanged(
-        destinationBoardId,
-        req.user,
-        'task_copied',
-      );
-
-    } catch (bgError) {
-      console.error('Error in copyCard background tasks:', bgError);
-    }
-  })();
+  const { project, list } = await authorizeDestination(req, destinationBoardId, destinationListId);
+  const { card, source } = await copyTaskHierarchy('card', req.params.id, { boardId: destinationBoardId, listId: destinationListId, options, actor: req.user });
+  const populatedCard = await Card.findById(card._id).populate('assignees', 'name email avatar').populate('members', 'name email avatar').populate('createdBy', 'name email avatar').lean();
+  emitToBoard(destinationBoardId, 'task-copied', { card: populatedCard, listId: destinationListId, copiedBy: { id: req.user.id, name: req.user.name }, sourceBoardId: String(source.board) });
+  res.status(201).json({ success: true, data: populatedCard, message: 'Task copied successfully' });
+  await updateRecentDestinations(req.user.id, { departmentId: project.department, projectId: project._id, projectName: project.name, listId: list._id, listName: list.title });
+  chatHooks.onProjectMembershipChanged(destinationBoardId, req.user, 'task_copied').catch(console.error);
 });
 
 // @desc    Move card across boards (cross-project move)
 // @route   PUT /api/cards/:id/cross-move
 // @access  Private (Admin/Manager)
 export const crossMoveCard = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'task', req.params.id, 'task.copy_move_cross');
   const { destinationBoardId, destinationListId, newPosition } = req.body;
+  await authorizeDestination(req, destinationBoardId, destinationListId);
 
-  const card = await Card.findById(req.params.id)
+  let card = await Card.findById(req.params.id)
     .populate('list', 'title')
     .populate('board', 'name department');
 
@@ -2621,40 +2375,10 @@ export const crossMoveCard = asyncHandler(async (req, res, next) => {
   const sourceBoardName = card.board.name;
   const oldPosition = card.position;
 
-  // Decrement positions in source list
-  await Card.updateMany(
-    { list: sourceListId, position: { $gt: oldPosition }, isArchived: false },
-    { $inc: { position: -1 } }
-  );
-
-  // Calculate destination position
-  let destPosition = newPosition;
-  if (destPosition === undefined || destPosition === null) {
-    const maxPos = await Card.findOne({ list: destinationListId, isArchived: false })
-      .sort({ position: -1 }).select('position').lean();
-    destPosition = (maxPos?.position ?? -1) + 1;
-  } else {
-    // Make room at destination
-    await Card.updateMany(
-      { list: destinationListId, position: { $gte: destPosition }, isArchived: false },
-      { $inc: { position: 1 } }
-    );
-  }
-
-  // Re-map labels if cross-board
   const isCrossBoard = sourceBoardId.toString() !== destinationBoardId.toString();
-  let newLabels = card.labels;
-  if (isCrossBoard) {
-    newLabels = await remapLabels(card.labels, sourceBoardId, destinationBoardId);
-  }
-
-  // Update the card
-  card.board = destinationBoardId;
-  card.list = destinationListId;
-  card.position = destPosition;
-  card.status = normalizeStatusFromListTitle(destList.title);
-  card.labels = newLabels;
-  await card.save();
+  card = await moveTaskHierarchy(card._id, { boardId: destinationBoardId, listId: destinationListId, position: newPosition, status: normalizeStatusFromListTitle(destList.title) });
+  const destPosition = card.position;
+  originalState.userId = String(req.user.id); originalState.workspaceId = String(req.workspaceId); originalState.revision = card.__v;
 
   const statusChange = await dispatchTaskStatusChange({
     card,
@@ -2670,14 +2394,6 @@ export const crossMoveCard = asyncHandler(async (req, res, next) => {
 
   // Update child entities if cross-board
   if (isCrossBoard) {
-    await Promise.all([
-      Subtask.updateMany({ task: card._id }, { board: destinationBoardId }),
-      SubtaskNano.updateMany({ task: card._id }, { board: destinationBoardId }),
-      Attachment.updateMany(
-        { card: card._id, isDeleted: false },
-        { board: destinationBoardId, departmentId: destBoard.department }
-      )
-    ]);
     chatHooks.onProjectMembershipChanged(
       sourceBoardId,
       req.user,
@@ -2778,6 +2494,7 @@ export const crossMoveCard = asyncHandler(async (req, res, next) => {
 // @route   POST /api/cards/:id/undo-move
 // @access  Private
 export const undoMove = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'task', req.params.id, 'task.move');
   const { undoToken } = req.body;
   const cardId = req.params.id;
 
@@ -2790,14 +2507,14 @@ export const undoMove = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Undo window has expired", 410));
   }
 
-  // Consume the token
-  undoTokenStore.delete(undoToken);
+  if (originalState.userId !== String(req.user.id) || originalState.workspaceId !== String(req.workspaceId)) throw new ErrorResponse('Invalid move receipt', 403);
+  await authorizeDestination(req, originalState.sourceBoardId, originalState.sourceListId);
 
   if (originalState.cardId !== cardId) {
     return next(new ErrorResponse("Token does not match this card", 400));
   }
 
-  const card = await Card.findById(cardId);
+  let card = await Card.findById(cardId);
   if (!card) {
     return next(new ErrorResponse("Card not found", 404));
   }
@@ -2806,41 +2523,12 @@ export const undoMove = asyncHandler(async (req, res, next) => {
   const currentBoardId = card.board;
   const currentPosition = card.position;
 
-  // Decrement positions in current list
-  await Card.updateMany(
-    { list: currentListId, position: { $gt: currentPosition }, isArchived: false },
-    { $inc: { position: -1 } }
-  );
-
-  // Make room in original list
-  await Card.updateMany(
-    { list: originalState.sourceListId, position: { $gte: originalState.sourcePosition }, isArchived: false },
-    { $inc: { position: 1 } }
-  );
-
   const isCrossBoard = currentBoardId.toString() !== originalState.sourceBoardId;
-
-  // Restore labels if cross-board
-  let restoredLabels = card.labels;
-  if (isCrossBoard) {
-    restoredLabels = await remapLabels(card.labels, currentBoardId, originalState.sourceBoardId);
-  }
-
-  // Restore card
-  card.board = originalState.sourceBoardId;
-  card.list = originalState.sourceListId;
-  card.position = originalState.sourcePosition;
-  card.status = originalState.sourceStatus;
-  card.labels = restoredLabels;
-  await card.save();
+  card = await moveTaskHierarchy(card._id, { boardId: originalState.sourceBoardId, listId: originalState.sourceListId, position: originalState.sourcePosition, status: originalState.sourceStatus, expectedRevision: originalState.revision });
+  undoTokenStore.delete(undoToken);
 
   // Restore child entities if cross-board
   if (isCrossBoard) {
-    await Promise.all([
-      Subtask.updateMany({ task: card._id }, { board: originalState.sourceBoardId }),
-      SubtaskNano.updateMany({ task: card._id }, { board: originalState.sourceBoardId }),
-      Attachment.updateMany({ card: card._id, isDeleted: false }, { board: originalState.sourceBoardId })
-    ]);
     chatHooks.onProjectMembershipChanged(
       currentBoardId,
       req.user,
@@ -2906,7 +2594,7 @@ export const getCopyMoveProjects = asyncHandler(async (req, res) => {
     department: departmentId,
     isArchived: { $ne: true },
     isDeleted: { $ne: true }
-  }).select('name').sort({ name: 1 }).lean();
+  }).and([await boardAccessFilter(req.user)]).select('name').sort({ name: 1 }).lean();
 
   res.status(200).json({ success: true, data: boards });
 });
@@ -2915,6 +2603,7 @@ export const getCopyMoveProjects = asyncHandler(async (req, res) => {
 // @route   GET /api/cards/copy-move/lists/:boardId
 // @access  Private
 export const getCopyMoveLists = asyncHandler(async (req, res) => {
+  await authorizeProjectResource(req, 'project', req.params.boardId, 'task.view');
   const { boardId } = req.params;
 
   const lists = await List.find({

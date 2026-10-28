@@ -1,4 +1,6 @@
+import { boundedInteger } from '../utils/pagination.js';
 import mongoose from 'mongoose';
+import { protectAttachmentMetadata } from '../services/attachmentDelivery.js';
 import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const attachmentSchema = new mongoose.Schema({
@@ -54,6 +56,7 @@ const attachmentSchema = new mongoose.Schema({
     enum: ['image', 'video', 'raw', 'auto'],
     default: 'auto'
   },
+  deliveryType: { type: String, enum: ['upload', 'private', 'authenticated'], default: 'upload' },
   format: {
     type: String
   },
@@ -194,7 +197,8 @@ const attachmentSchema = new mongoose.Schema({
     description: 'User who restored the attachment'
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  toJSON: { transform: (_doc, ret) => protectAttachmentMetadata(ret) }
 });
 
 // Compound indexes for efficient querying
@@ -207,6 +211,11 @@ attachmentSchema.index({ workspaceId: 1, board: 1, isDeleted: 1, deletedAt: -1 }
 attachmentSchema.index({ workspaceId: 1, board: 1, deletedAt: -1, fileType: 1 });
 
 attachmentSchema.plugin(workspaceScopePlugin);
+attachmentSchema.pre('validate', function () {
+  // Persist stable application references. This also protects projections
+  // which intentionally omit storage metadata, such as task cover images.
+  if (this.isNew && this.deliveryType === 'authenticated') protectAttachmentMetadata(this);
+});
 
 // Virtual for formatted file size
 attachmentSchema.virtual('formattedSize').get(function() {
@@ -235,9 +244,7 @@ attachmentSchema.statics.findByCard = function(cardId, options = {}) {
     .populate('uploadedBy', 'name avatar')
     .sort({ createdAt: -1 });
     
-  if (options.limit) {
-    q = q.limit(options.limit);
-  }
+  q = q.limit(boundedInteger(options.limit, 50, 100));
   if (options.skip) {
     q = q.skip(options.skip);
   }
@@ -250,13 +257,13 @@ attachmentSchema.statics.findByCard = function(cardId, options = {}) {
 
 // Static method to find active attachments by context
 attachmentSchema.statics.findByContext = function(contextType, contextRef, options = {}) {
-  const query = { contextType, contextRef, isDeleted: false };
+  const query = { ...options.filter, contextType, contextRef, isDeleted: false };
   
   let q = this.find(query)
     .populate('uploadedBy', 'name avatar')
     .sort({ createdAt: -1 });
     
-  if (options.limit) q = q.limit(options.limit);
+  q = q.limit(boundedInteger(options.limit, 50, 100));
   if (options.skip) q = q.skip(options.skip);
   if (options.lean) q = q.lean();
   
@@ -271,7 +278,7 @@ attachmentSchema.statics.findBySubtask = function(subtaskId, options = {}) {
     .populate('uploadedBy', 'name avatar')
     .sort({ createdAt: -1 });
     
-  if (options.limit) q = q.limit(options.limit);
+  q = q.limit(boundedInteger(options.limit, 50, 100));
   if (options.skip) q = q.skip(options.skip);
   if (options.lean) q = q.lean();
   
@@ -286,7 +293,7 @@ attachmentSchema.statics.findByNanoSubtask = function(nanoSubtaskId, options = {
     .populate('uploadedBy', 'name avatar')
     .sort({ createdAt: -1 });
     
-  if (options.limit) q = q.limit(options.limit);
+  q = q.limit(boundedInteger(options.limit, 50, 100));
   if (options.skip) q = q.skip(options.skip);
   if (options.lean) q = q.lean();
   

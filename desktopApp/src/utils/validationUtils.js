@@ -1,3 +1,4 @@
+import { sessionFetch as fetch } from '../services/sessionFetch';
 // Shared validation utilities for authentication forms
 export const validationRules = {
   name: {

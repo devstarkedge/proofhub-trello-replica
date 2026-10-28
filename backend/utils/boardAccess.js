@@ -24,11 +24,6 @@ import { userHasCapability, CAPABILITIES, getAssignmentBasedBoardIds } from '../
 export async function canUserAccessBoard(boardOrId, user, accessFacts = null) {
   if (!boardOrId || !user) return false;
 
-  // 1. Admin or capability VIEW_ALL_PROJECTS
-  if (user.role === 'admin' || userHasCapability(user, CAPABILITIES.VIEW_ALL_PROJECTS)) {
-    return true;
-  }
-
   const userId = (user._id || user.id)?.toString();
   if (!userId) return false;
 
@@ -37,11 +32,35 @@ export async function canUserAccessBoard(boardOrId, user, accessFacts = null) {
   if (typeof boardOrId === 'string' || boardOrId instanceof mongoose.Types.ObjectId) {
     if (!mongoose.Types.ObjectId.isValid(boardOrId)) return false;
     board = await Board.findById(boardOrId)
-      .select('owner members visibility isDeleted department team')
+      .select('workspaceId owner members visibility isDeleted department team')
       .lean();
   }
 
   if (!board || board.isDeleted) return false;
+  if (board.workspaceId && user.workspaceId && String(board.workspaceId) !== String(user.workspaceId)) return false;
+  if (process.env.AUTHZ_V2 === 'enforce') {
+    const { buildContext } = await import('../authz/context.js');
+    const { loadAssignments } = await import('../authz/loaders.js');
+    const { can } = await import('../authz/engine.js');
+    const ctx = await buildContext(userId, user.workspaceId || board.workspaceId);
+    if (ctx.restriction?.type === 'assigned_only') await loadAssignments(ctx);
+    return can(ctx, 'project.view', board);
+  }
+
+  // Access restrictions intersect every visibility path, including public,
+  // department and explicit membership. They must never be OR alternatives.
+  const boardId = String(board._id);
+  const restriction = user.restriction?.type || user.accessType;
+  if (restriction === 'selected_projects') {
+    return (user.restriction?.projectIds || user.allowedProjects || []).some(value => String(value?._id || value) === boardId);
+  }
+  if (restriction === 'assigned_only' || restriction === 'assigned_tasks' || userHasCapability(user, CAPABILITIES.FORCE_ASSIGNMENT_SCOPE)) {
+    if (String(board.owner?._id || board.owner) === userId || (board.members || []).some(value => String(value?._id || value) === userId)) return true;
+    if (user.role !== 'employee' && board.team && String(board.team?._id || board.team) === String(user.team?._id || user.team)) return true;
+    const assigned = accessFacts?.assignedBoardIds || new Set((await getAssignmentBasedBoardIds(userId)).map(String));
+    return assigned.has(boardId);
+  }
+  if (user.role === 'admin' || userHasCapability(user, CAPABILITIES.VIEW_ALL_PROJECTS)) return true;
 
   // 2. Direct owner
   const ownerId = (typeof board.owner === 'object' ? board.owner?._id : board.owner)?.toString();
@@ -136,3 +155,31 @@ export async function canUserAccessBoard(boardOrId, user, accessFacts = null) {
 }
 
 export default canUserAccessBoard;
+
+/** Indexed visibility predicate for list/search paths; additional filters AND it. */
+export async function boardAccessFilter(user) {
+  if (!user?._id && !user?.id) return { _id: { $in: [] } };
+  if (process.env.AUTHZ_V2 === 'enforce') {
+    const { buildContext } = await import('../authz/context.js');
+    const { loadAssignments } = await import('../authz/loaders.js');
+    const { projectAccessFilter, can } = await import('../authz/engine.js');
+    const ctx = await buildContext(user._id || user.id, user.workspaceId);
+    await loadAssignments(ctx);
+    if (!can(ctx, 'project.view')) return { _id: { $in: [] } };
+    return projectAccessFilter(ctx);
+  }
+  const actor = user._id || user.id;
+  const restriction = user.restriction?.type || user.accessType;
+  const selected = user.restriction?.projectIds || user.allowedProjects || [];
+  if (restriction === 'selected_projects') return { isDeleted: { $ne: true }, _id: { $in: selected } };
+  if (user.role === 'admin' && !['assigned_only', 'assigned_tasks'].includes(restriction)) return { isDeleted: { $ne: true } };
+  const assigned = await getAssignmentBasedBoardIds(actor);
+  const alternatives = [{ owner: actor }, { members: actor }, { _id: { $in: assigned } }];
+  if (user.role !== 'employee' && user.team) alternatives.push({ team: user.team?._id || user.team });
+  if (!['assigned_only', 'assigned_tasks'].includes(restriction) && !userHasCapability(user, CAPABILITIES.FORCE_ASSIGNMENT_SCOPE)) {
+    const roster = await Department.distinct('_id', { $or: [{ members: actor }, { managers: actor }] });
+    const departments = Array.isArray(user.department) ? user.department : user.department ? [user.department] : [];
+    alternatives.push({ visibility: 'public' }, { department: { $in: [...departments, ...roster] } });
+  }
+  return { isDeleted: { $ne: true }, $or: alternatives };
+}

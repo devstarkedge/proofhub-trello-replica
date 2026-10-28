@@ -1,3 +1,7 @@
+import mongoose from 'mongoose';
+import { boundedInteger, pageNumber } from '../utils/pagination.js';
+import Subtask from '../models/Subtask.js';
+import { authorizeVersion } from '../services/projectAuthorization.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import VersionHistory from '../models/VersionHistory.js';
 import Card from '../models/Card.js';
@@ -9,11 +13,12 @@ import { emitToBoard } from '../realtime/index.js';
 // @route   GET /api/versions/:entityType/:entityId
 // @access  Private
 export const getVersionHistory = asyncHandler(async (req, res) => {
+  await authorizeVersion(req, false);
   const { entityType, entityId } = req.params;
   const { page = 1, limit = 10 } = req.query;
 
-  const pageNum = parseInt(page, 10);
-  const limitNum = parseInt(limit, 10);
+  const pageNum = pageNumber(page);
+  const limitNum = boundedInteger(limit, 20, 100);
   const skip = (pageNum - 1) * limitNum;
 
   // Validate entity type
@@ -44,6 +49,7 @@ export const getVersionHistory = asyncHandler(async (req, res) => {
 // @route   GET /api/versions/:entityType/:entityId/version/:versionNumber
 // @access  Private
 export const getSpecificVersion = asyncHandler(async (req, res) => {
+  await authorizeVersion(req, false);
   const { entityType, entityId, versionNumber } = req.params;
 
   const version = await VersionHistory.getVersion(entityType, entityId, parseInt(versionNumber, 10));
@@ -62,6 +68,7 @@ export const getSpecificVersion = asyncHandler(async (req, res) => {
 // @route   POST /api/versions/:entityType/:entityId/rollback/:versionNumber
 // @access  Private
 export const rollbackToVersion = asyncHandler(async (req, res) => {
+  await authorizeVersion(req, true);
   const { entityType, entityId, versionNumber } = req.params;
 
   // Validate entity type
@@ -79,6 +86,11 @@ export const rollbackToVersion = asyncHandler(async (req, res) => {
       throw new ErrorResponse('Card not found', 404);
     }
     board = card.board;
+  } else if (entityType === 'subtask_description') {
+    const subtask = await Subtask.findById(entityId);
+    if (!subtask) throw new ErrorResponse('Subtask not found', 404);
+    card = subtask.task;
+    board = subtask.board;
   } else if (entityType === 'comment') {
     const comment = await Comment.findById(entityId).populate('card');
     if (!comment) {
@@ -88,29 +100,19 @@ export const rollbackToVersion = asyncHandler(async (req, res) => {
     board = comment.card.board;
   }
 
-  // Perform rollback
-  const { rollbackVersion, restoredContent, restoredHtmlContent } = await VersionHistory.rollbackToVersion(
-    entityType,
-    entityId,
-    parseInt(versionNumber, 10),
-    req.user.id,
-    board,
-    card
-  );
-
-  // Update the actual entity with restored content
-  if (entityType === 'card_description') {
-    await Card.findByIdAndUpdate(entityId, {
-      description: restoredHtmlContent || restoredContent
+  const targetNumber = Number(versionNumber);
+  if (!Number.isSafeInteger(targetNumber) || targetNumber < 1) throw new ErrorResponse('Invalid version number', 400);
+  const session = await mongoose.startSession();
+  let rollbackVersion, restoredContent, restoredHtmlContent;
+  try {
+    await session.withTransaction(async () => {
+      ({ rollbackVersion, restoredContent, restoredHtmlContent } = await VersionHistory.rollbackToVersion(entityType, entityId, targetNumber, req.user.id, board, card, { session }));
+      const Model = entityType === 'card_description' ? Card : entityType === 'subtask_description' ? Subtask : Comment;
+      const patch = entityType === 'comment' ? { htmlContent: restoredHtmlContent || restoredContent, text: restoredContent, isEdited: true, editedAt: new Date() } : { description: restoredHtmlContent || restoredContent };
+      const updated = await Model.findByIdAndUpdate(entityId, patch, { session, new: true });
+      if (!updated) throw new ErrorResponse('Entity no longer exists', 404);
     });
-  } else if (entityType === 'comment') {
-    await Comment.findByIdAndUpdate(entityId, {
-      htmlContent: restoredHtmlContent || restoredContent,
-      text: restoredContent,
-      isEdited: true,
-      editedAt: new Date()
-    });
-  }
+  } finally { await session.endSession(); }
 
   // Emit real-time update
   if (board) {
@@ -142,6 +144,7 @@ export const rollbackToVersion = asyncHandler(async (req, res) => {
 // @route   GET /api/versions/:entityType/:entityId/compare/:v1/:v2
 // @access  Private
 export const compareVersions = asyncHandler(async (req, res) => {
+  await authorizeVersion(req, false);
   const { entityType, entityId, v1, v2 } = req.params;
 
   const [version1, version2] = await Promise.all([
@@ -166,6 +169,7 @@ export const compareVersions = asyncHandler(async (req, res) => {
 // @route   GET /api/versions/:entityType/:entityId/count
 // @access  Private
 export const getVersionCount = asyncHandler(async (req, res) => {
+  await authorizeVersion(req, false);
   const { entityType, entityId } = req.params;
 
   const count = await VersionHistory.getVersionCount(entityType, entityId);
@@ -180,6 +184,7 @@ export const getVersionCount = asyncHandler(async (req, res) => {
 // @route   GET /api/versions/:entityType/:entityId/latest
 // @access  Private
 export const getLatestVersion = asyncHandler(async (req, res) => {
+  await authorizeVersion(req, false);
   const { entityType, entityId } = req.params;
 
   const latestVersionNumber = await VersionHistory.getLatestVersionNumber(entityType, entityId);
