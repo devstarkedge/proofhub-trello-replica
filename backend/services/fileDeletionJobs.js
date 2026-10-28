@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import FileDeletionJob from '../models/FileDeletionJob.js';
 import Attachment from '../models/Attachment.js';
+import AttachmentQuarantine from '../models/AttachmentQuarantine.js';
 import { run, runUnscoped } from '../modules/workspaces/workspaceContext.js';
 import { deleteFromCloudinary } from '../utils/cloudinary.js';
 
@@ -20,7 +21,7 @@ async function processBatch({ limit = 50 } = {}) {
     if (!job) return;
     try {
       // A shared asset is kept until its last metadata reference is removed.
-      const retained = await Attachment.exists({ publicId: job.publicId });
+      const retained = await runUnscoped(async () => await Attachment.exists({ publicId: job.publicId }) || await AttachmentQuarantine.exists({ publicId: job.publicId }));
       if (!retained) await deleteFromCloudinary(job.publicId, job.resourceType, { type: job.deliveryType, invalidate: true, timeout: 15000 });
       await FileDeletionJob.updateOne({ _id: job._id, leaseToken }, { $set: { state: 'completed', expiresAt: new Date(Date.now() + 30 * 86400000) }, $unset: { leaseToken: 1, leaseUntil: 1, lastErrorCode: 1 } });
     } catch (error) {

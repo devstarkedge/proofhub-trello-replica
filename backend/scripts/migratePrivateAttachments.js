@@ -6,18 +6,13 @@ import Attachment from '../models/Attachment.js';
 import { attachmentPath } from '../services/attachmentDelivery.js';
 import { runUnscoped } from '../modules/workspaces/workspaceContext.js';
 import '../utils/cloudinary.js';
+import { resolveAttachmentParents, isAnnouncementAttachment } from './attachmentMigrationReferences.js';
 
-export function parseOwnedCloudinaryURL(value, cloudName = cloudinary.config().cloud_name) {
-  let url; try { url = new URL(value); } catch { return null; }
-  if (url.hostname !== 'res.cloudinary.com') return null; // External links retain their external access policy.
-  const parts = url.pathname.split('/').filter(Boolean);
-  if (parts[0] !== cloudName || !['image', 'video', 'raw'].includes(parts[1])) throw new Error('Legacy media belongs to an unrecognized cloud account; reconcile its ownership first.');
-  const version = parts.findIndex((part, index) => index > 2 && /^v\d+$/.test(part));
-  if (version < 0) throw new Error('Legacy media has no unambiguous versioned storage path; provide a reviewed mapping first.');
-  const publicPath = decodeURIComponent(parts.slice(version + 1).join('/'));
-  const format = publicPath.split('.').pop();
-  return { publicId: parts[1] === 'raw' ? publicPath : publicPath.replace(/\.[^.\/]+$/, ''), resourceType: parts[1], deliveryType: parts[2], format };
-}
+import { parseOwnedCloudinaryURL, resolveStorageMetadata } from './attachmentStorageMigration.js';
+import { prepareAttachmentQuarantine, preserveOrphanAttachment, isOrphanReferenceError } from './attachmentQuarantine.js';
+import { createMigrationProgress } from './migrationProgress.js';
+import { cloudinaryMigrationRequest, migrationErrorDetails } from './migrationErrors.js';
+export { parseOwnedCloudinaryURL } from './attachmentStorageMigration.js';
 
 async function importEmbeddedFiles(apply, cloud) {
   let embedded = 0;
@@ -49,24 +44,85 @@ async function importEmbeddedFiles(apply, cloud) {
 
 // Explicit maintenance operation: dry run by default. Public CDN invalidation
 // is asynchronous; operators must verify old URLs before reopening traffic.
-export async function migratePrivateAttachments({ apply = false, cloud = cloudinary } = {}) {
-  const embedded = await importEmbeddedFiles(apply, cloud);
-  let checked = 0, migrated = 0;
-  const cursor = Attachment.collection.find({ $or: [{ deliveryType: { $ne: 'authenticated' } }, { url: { $not: /^\/api\/attachments\/[^/]+\/content$/ } }] });
-  for await (const asset of cursor) {
+const pendingFiles = { $or: [{ deliveryType: { $ne: 'authenticated' } }, { url: { $not: /^\/api\/attachments\/[^/]+\/content$/ } }] };
+async function reconcileAttachment(asset, cloud) {
+  const patch = await resolveAttachmentParents(asset);
+  const storage = resolveStorageMetadata(asset, cloud);
+  Object.assign(patch, storage.patch);
+  const resolved = { ...asset, ...patch };
+  return { resolved, patch, fields: Object.keys(patch).filter(key => String(asset[key] ?? '') !== String(patch[key] ?? '')) };
+}
+export async function migratePrivateAttachments({ apply = false, quarantineOrphans = false, cloud = cloudinary, onProgress = () => {} } = {}) {
+  let embedded = 0, checked = 0, migrated = 0, recoverable = 0, blocked = 0, nonProject = 0, quarantineCandidates = 0, quarantined = 0;
+  const issues = [], reconciliation = [], quarantineSamples = [];
+  onProgress({ phase: 'preflight', checked, stage: 'counting candidate records (read-only)' });
+  const total = await Attachment.collection.countDocuments(pendingFiles);
+  const progress = (phase, extra = {}) => onProgress({ phase, total, checked, recoverable, quarantineCandidates, blocked, migrated, quarantined, ...extra });
+  progress('preflight', { stage: 'checking embedded files (read-only)', force: true });
+  // Preflight is entirely read-only. Even --apply must finish it before any
+  // embedded metadata, editor content or cloud delivery is changed.
+  try { embedded = await importEmbeddedFiles(false, cloud); }
+  catch (error) { blocked += 1; issues.push({ phase: 'embedded', reason: error.message }); }
+  for await (const asset of Attachment.collection.find(pendingFiles)) {
     checked += 1;
-    if (!asset.workspaceId || !asset.board || !asset.publicId) throw new Error(`Attachment ${asset._id} has no reliable tenant/parent/storage reference; reconcile it first.`);
-    if (!apply) continue;
-    const resourceType = asset.resourceType === 'auto' ? 'raw' : asset.resourceType || 'raw';
+    progress('preflight', { attachmentId: String(asset._id), stage: 'checking ownership and saved references (read-only)' });
+    try {
+      if (await isAnnouncementAttachment(asset)) { nonProject += 1; continue; }
+      const { fields } = await reconcileAttachment(asset, cloud);
+      if (fields.length) {
+        recoverable += 1;
+        if (reconciliation.length < 100) reconciliation.push({ attachmentId: String(asset._id), fields });
+      }
+    } catch (error) {
+      if (quarantineOrphans && isOrphanReferenceError(error)) {
+        try {
+          const plan = await prepareAttachmentQuarantine(asset, cloud);
+          quarantineCandidates += 1;
+          if (quarantineSamples.length < 100) quarantineSamples.push({ attachmentId: String(asset._id), reason: plan.reason, metadataOnly: plan.metadataOnly });
+          continue;
+        } catch (quarantineError) { error = quarantineError; }
+      }
+      blocked += 1;
+      if (issues.length < 100) issues.push({ attachmentId: String(asset._id), missingFields: ['workspaceId', 'board', 'publicId'].filter(key => !asset[key]), reason: error.message });
+    }
+  }
+  const report = { apply, quarantineOrphans, checked, migrated, embedded, recoverable, blocked, nonProject, quarantineCandidates, quarantined, issues, reconciliation, quarantineSamples, sampleLimit: 100 };
+  progress('preflight-complete', { message: blocked ? 'Blocked: no migration writes started' : apply ? 'Checks passed; starting requested apply' : 'Read-only preview complete' });
+  if (blocked) {
+    const error = new Error('Private file preflight is blocked. No migration writes were started. Resolve the reported references before applying.');
+    error.report = report; throw error;
+  }
+  if (!apply) { progress('complete', { message: 'Read-only preview; no changes applied' }); return report; }
+  progress('applying', { processed: 0, stage: 'importing embedded file metadata' });
+  await importEmbeddedFiles(true, cloud);
+  let processed = 0;
+  for await (const original of Attachment.collection.find(pendingFiles)) {
+    processed += 1;
+    const attachmentId = String(original._id);
+    progress('applying', { processed, attachmentId, stage: 'resolving current attachment' });
+    if (await isAnnouncementAttachment(original)) continue;
+    let resolution;
+    try { resolution = await reconcileAttachment(original, cloud); }
+    catch (error) {
+      if (!quarantineOrphans || !isOrphanReferenceError(error)) throw error;
+      await preserveOrphanAttachment(original, cloud, event => progress('applying', { processed, attachmentId, ...event }));
+      quarantined += 1;
+      progress('applying', { processed, attachmentId, stage: 'quarantine committed', force: true });
+      continue;
+    }
+    const { resolved: asset, patch } = resolution;
+    const resourceType = asset.resourceType;
+    progress('applying', { processed, attachmentId, stage: 'Cloudinary conversion (request timeout 45s)', force: true });
     try {
       if (asset.deliveryType !== 'authenticated') {
-      await cloud.uploader.rename(asset.publicId, asset.publicId, { resource_type: resourceType, type: asset.deliveryType || 'upload', to_type: 'authenticated', invalidate: true, overwrite: false });
+        await cloudinaryMigrationRequest('convert to authenticated delivery', () => cloud.uploader.rename(asset.publicId, asset.publicId, { resource_type: resourceType, type: asset.deliveryType || 'upload', to_type: 'authenticated', invalidate: true, overwrite: false, timeout: 45000 }));
       }
     } catch (error) {
       // Resume safely if storage conversion succeeded before a DB interruption.
       if (Number(error.http_code) !== 404) throw error;
-      await cloud.api.resource(asset.publicId, { resource_type: resourceType, type: 'authenticated' });
+      await cloudinaryMigrationRequest('check authenticated storage', () => cloud.api.resource(asset.publicId, { resource_type: resourceType, type: 'authenticated', timeout: 45000 }));
     }
+    progress('applying', { processed, attachmentId, stage: 'updating editor links and attachment metadata', force: true });
     const stable = attachmentPath(asset._id);
     const oldURLs = [...new Set([asset.url, asset.secureUrl, asset.thumbnailUrl, asset.previewUrl].filter(Boolean))];
     const entityIds = [asset.card, asset.subtask, asset.nanoSubtask, asset.comment].filter(Boolean);
@@ -74,12 +130,30 @@ export async function migratePrivateAttachments({ apply = false, cloud = cloudin
       const parents = collection === 'versionhistories' ? { entityId: { $in: entityIds } } : collection === 'comments' ? { $or: [{ _id: { $in: entityIds } }, { contextRef: { $in: entityIds } }] } : { _id: { $in: entityIds } };
       for (const field of fields) for (const url of oldURLs) await mongoose.connection.db.collection(collection).updateMany({ workspaceId: asset.workspaceId, ...parents, [field]: { $type: 'string' } }, [{ $set: { [field]: { $replaceAll: { input: `$${field}`, find: { $literal: url }, replacement: { $literal: stable } } } } }]);
     }
-    await Attachment.collection.updateOne({ _id: asset._id, workspaceId: asset.workspaceId }, { $set: { deliveryType: 'authenticated', resourceType, url: stable, secureUrl: stable, thumbnailUrl: stable, previewUrl: stable } });
+    const updated = await Attachment.collection.updateOne({ _id: asset._id, workspaceId: original.workspaceId ?? null, board: original.board ?? null, publicId: original.publicId ?? null }, { $set: { ...patch, deliveryType: 'authenticated', resourceType, url: stable, secureUrl: stable, thumbnailUrl: stable, previewUrl: stable } });
+    if (!updated.matchedCount) throw new Error(`Attachment ${asset._id} changed during maintenance; stop writes and rerun the preflight`);
     migrated += 1;
+    progress('applying', { processed, attachmentId, stage: 'attachment migrated', force: true });
   }
-  return { apply, checked, migrated, embedded };
+  progress('complete', { processed, message: 'Apply completed successfully' });
+  return { ...report, checked: processed, migrated, quarantined };
 }
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
-  try { await mongoose.connect(process.env.MONGO_URI, { autoIndex: false }); console.log(JSON.stringify(await runUnscoped(() => migratePrivateAttachments({ apply: process.argv.includes('--apply') })))); }
-  finally { await mongoose.disconnect(); }
+  const output = createMigrationProgress();
+  let latestProgress = {};
+  try {
+    const allowed = new Set(['--apply', '--quarantine-orphans']);
+    if (process.argv.slice(2).some(flag => !allowed.has(flag))) throw new Error('Supported options: --quarantine-orphans (read-only preview), --apply (write changes).');
+    output.report({ phase: 'connecting', message: 'Connecting to MongoDB; server selection timeout 15s' });
+    await mongoose.connect(process.env.MONGO_URI, { autoIndex: false, autoCreate: false, serverSelectionTimeoutMS: 15000, connectTimeoutMS: 15000, socketTimeoutMS: 45000, waitQueueTimeoutMS: 15000, maxPoolSize: 5 });
+    output.report({ phase: 'connected', message: process.argv.includes('--apply') ? 'APPLY mode requested' : 'Read-only preview mode' });
+    console.log(JSON.stringify(await runUnscoped(() => migratePrivateAttachments({ apply: process.argv.includes('--apply'), quarantineOrphans: process.argv.includes('--quarantine-orphans'), onProgress: event => { latestProgress = event; output.report(event); } })), null, 2));
+  }
+  catch (error) {
+    output.report({ ...latestProgress, phase: 'failed', message: 'Stopped; completed records are retained. Resolve the error, then resume the same apply command.' });
+    if (error?.report) console.error(JSON.stringify(error.report, null, 2));
+    console.error(JSON.stringify({ attachmentId: latestProgress.attachmentId, stage: latestProgress.stage, ...migrationErrorDetails(error) }, null, 2));
+    process.exitCode = 1;
+  }
+  finally { output.close(); await mongoose.disconnect(); }
 }
