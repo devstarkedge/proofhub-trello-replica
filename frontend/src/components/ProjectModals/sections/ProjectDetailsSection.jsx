@@ -1,6 +1,6 @@
 import { memo, useState, useRef, useEffect } from 'react';
 import { Briefcase, DollarSign, Clock, Link2, Tag, ChevronDown, Trash2, Plus } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import FormField from './FormField';
 import ProjectOptionsDropdown from '../../ProjectOptionsDropdown';
 import MilestoneScheduleEditor from '../../MilestoneScheduleEditor';
@@ -235,7 +235,7 @@ const ProjectDetailsSection = memo(({
         <FormField label="Technology" icon={Tag} error={errors?.technologies}>
           <ProjectOptionsDropdown optionType="technology" value={technologies}
             onChange={value => handleDropdownChange('technologies', value)}
-            multiple searchable allowManage={canCreate} allowDelete={false}
+            multiple searchable allowManage={canCreate} allowDelete={canCreate}
             addLabel="Add Technology" placeholder="Select technologies" showLabel={false} theme="blue" />
         </FormField>
       </div>
@@ -243,7 +243,7 @@ const ProjectDetailsSection = memo(({
       {/* Add Category Form */}
       <AnimatePresence>
         {showAddCategory && (
-          <motion.div
+          <Motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
@@ -285,7 +285,7 @@ const ProjectDetailsSection = memo(({
                 </button>
               </div>
             </div>
-          </motion.div>
+          </Motion.div>
         )}
       </AnimatePresence>
     </section>

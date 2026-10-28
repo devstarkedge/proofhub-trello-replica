@@ -45,10 +45,12 @@ export class HubSpotApi {
         HUBSPOT_VALIDATION: 'HubSpot rejected the contact data or API request.',
         HUBSPOT_UNAVAILABLE: 'HubSpot is temporarily unavailable or the request timed out.',
       };
-      throw new SyncError(code, messages[code], {
+      const safeError = new SyncError(code, messages[code], {
         status, permanent: status === 400 || status === 422,
         retryAfter: retryAfterTime(error.response?.headers?.['retry-after']),
       });
+      safeError.missingScope = status === 403 && error.response?.data?.category === 'MISSING_SCOPES';
+      throw safeError;
     }
   }
   async validate() {
@@ -78,14 +80,18 @@ export class HubSpotApi {
   getContact(id) { return this.request('GET', `/crm/objects/2026-09/contacts/${encodeURIComponent(id)}?properties=${PROPERTIES.join(',')}`, undefined, { missing: true }); }
   getProperty(name) { return this.request('GET', `/crm/properties/2026-09/contacts/${encodeURIComponent(name)}`); }
   async validateOwner(value) {
+    return (await this.getOwnerDetails(value)).ownerValidation;
+  }
+  async getOwnerDetails(value) {
     const id = normalizeOwner(value);
-    if (!id) return 'not_configured';
+    if (!id) return { ownerValidation: 'not_configured', contactOwnerName: '', ownerMissingScopes: [] };
     try {
       const owner = await this.request('GET', `/crm/owners/2026-09/${id}`, undefined, { missing: true });
       if (!owner || owner.archived || String(owner.id) !== id) throw new SyncError('INVALID_OWNER', 'Contact Owner was not found as an active Owner in the connected HubSpot account. Enter an Owner ID, not a User ID.', { permanent: true, status: 400 });
-      return 'verified';
+      const name = [owner.firstName, owner.lastName].filter(part => typeof part === 'string').map(part => part.trim()).filter(Boolean).join(' ').slice(0, 512);
+      return { ownerValidation: 'verified', contactOwnerName: name, ownerMissingScopes: [] };
     } catch (error) {
-      if (error.status === 403) return 'unverified';
+      if (error.status === 403) return { ownerValidation: 'unverified', contactOwnerName: '', ownerMissingScopes: error.missingScope ? ['crm.objects.owners.read'] : [] };
       throw error;
     }
   }

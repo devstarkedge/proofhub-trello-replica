@@ -11,6 +11,8 @@ function tenantModel(name, definition, indexes) {
 export const HubSpotConnection = tenantModel('HubSpotConnection', {
   name: { type: String, maxlength: 100, default: '' },
   contactOwnerId: { type: String, default: '' }, ownerValidation: String,
+  contactOwnerName: { type: String, default: '', maxlength: 512 },
+  ownerMissingScopes: { type: [String], default: [] }, ownerCheckedAt: Date,
   credential: { type: new Schema({ keyVersion: String, iv: String, tag: String, ciphertext: String }, { _id: false }), select: false },
   portalId: { type: String, required: true }, version: { type: Number, default: 1 },
   enabled: { type: Boolean, default: false }, status: { type: String, enum: ['connected', 'error'], default: 'connected' },

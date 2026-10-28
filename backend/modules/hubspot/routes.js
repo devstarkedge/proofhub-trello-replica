@@ -1,9 +1,8 @@
 import express from 'express';
 import { protect } from '../../middleware/authMiddleware.js';
 import { rateLimiter } from '../../middleware/rateLimiter.js';
-import { requireConfigAdmin, publicConnection, approveChange, saveConnection, toggleConnection } from './configService.js';
+import { requireConfigAdmin, publicConnection, approveChange, validateConnection, saveConnection, toggleConnection } from './configService.js';
 import { HubSpotConnection, HubSpotAudit } from './models.js';
-import { HubSpotApi } from './api.js';
 import { SyncError } from './domain.js';
 import { getModuleSettings, updateModuleSettings } from './workspaceModules.js';
 
@@ -40,9 +39,9 @@ router.post('/hubspot/reauth', sensitiveLimit, strictBody(['password', 'action',
   res.setHeader('Cache-Control', 'no-store');
   res.json({ success: true, data: await approveChange(inputFor(req)) });
 }));
-router.post('/hubspot/validate', writeLimit, strictBody(['serviceKey']), wrap(async (req, res) => {
+router.post('/hubspot/validate', writeLimit, strictBody(['serviceKey', 'version', 'contactOwnerId']), wrap(async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  res.json({ success: true, data: await new HubSpotApi(req.body.serviceKey).validate() });
+  res.json({ success: true, data: await validateConnection(inputFor(req)) });
 }));
 router.put('/hubspot', writeLimit, strictBody(['serviceKey', 'name', 'contactOwnerId', 'reconnect', 'version', 'approval']), wrap(async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');

@@ -245,11 +245,12 @@ export const deleteProjectDropdownOption = async (req, res) => {
     if (isInUse) {
       return res.status(409).json({
         success: false,
-        message: 'This option is already used in existing projects and cannot be deleted.'
+        message: type === 'technology' ? 'Remove this technology from saved projects before permanently deleting it from the workspace.' : 'This option is already used in existing projects and cannot be deleted.'
       });
     }
 
-    await ProjectDropdownOption.deleteOne({ _id: id, type, ...scope });
+    const deleted = await ProjectDropdownOption.deleteOne({ _id: id, type, ...scope });
+    if (!deleted.deletedCount) return res.status(404).json({ success: false, message: 'Option not found' });
 
     res.json({
       success: true,

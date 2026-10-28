@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Plus, Check, X, Trash2, Loader } from 'lucide-react';
 import { toast } from 'react-toastify';
 import Database from '../services/database';
@@ -31,7 +31,7 @@ const ProjectOptionsDropdown = ({
   const latestValue = useRef(value);
   latestValue.current = value;
 
-  const fetchOptions = async () => {
+  const fetchOptions = useCallback(async () => {
     setLoading(true);
     setLoadError('');
     try {
@@ -43,11 +43,11 @@ const ProjectOptionsDropdown = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [optionType]);
 
   useEffect(() => {
     fetchOptions();
-  }, [optionType]);
+  }, [fetchOptions]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -120,19 +120,25 @@ const ProjectOptionsDropdown = ({
   };
 
   const handleDeleteOption = async (option) => {
+    if (!allowDelete || deletingId) return;
     if (option?.isSystem || option?.isUsed) {
       toast.error(option?.isSystem ? 'System billing options cannot be deleted' : 'This option is used by existing projects');
       return;
     }
 
-    const confirmed = window.confirm('Delete this option?');
+    const confirmed = window.confirm(optionType === 'technology'
+      ? `Permanently delete technology "${option.label}" from this workspace? This cannot be undone.`
+      : 'Delete this option?');
     if (!confirmed) return;
 
     setDeletingId(option._id);
     try {
       await Database.deleteProjectDropdownOption(optionType, option._id);
       setOptions((prev) => prev.filter((opt) => opt._id !== option._id));
-      if (value === option.value || value === option.label) {
+      if (multiple) {
+        const current = Array.isArray(latestValue.current) ? latestValue.current : [];
+        if (current.includes(option._id)) onChange(current.filter(id => id !== option._id));
+      } else if (latestValue.current === option.value || latestValue.current === option.label) {
         onChange('');
       }
       toast.success('Option deleted');
@@ -235,22 +241,29 @@ const ProjectOptionsDropdown = ({
                       </label>
                     ) : <span>{option.label}</span>}
                     {allowDelete && (
+                      <span
+                        className={`ml-2 inline-flex ${option.isUsed || option.isSystem ? 'cursor-not-allowed' : ''}`}
+                        title={option.isSystem ? 'System options cannot be deleted' : option.isUsed ? `This ${optionType === 'technology' ? 'technology' : 'option'} is in use by saved projects and cannot be deleted. Remove it from those projects first.` : 'Permanently delete option'}
+                        onClick={event => event.stopPropagation()}
+                      >
                       <button
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation();
                           handleDeleteOption(option);
                         }}
-                        disabled={deletingId === option._id || option.isUsed || option.isSystem}
-                        title={option.isSystem ? 'System option' : option.isUsed ? 'Option is used by existing projects' : 'Delete option'}
-                        className={`p-1 rounded-md transition-colors ${
+                        disabled={Boolean(deletingId) || option.isUsed || option.isSystem}
+                        aria-label={`Delete ${optionType === 'technology' ? 'technology' : 'option'} ${option.label}`}
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-md transition-colors disabled:pointer-events-none ${
                           option.isUsed || option.isSystem
                             ? 'text-gray-300 cursor-not-allowed'
-                            : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                            : 'cursor-pointer text-red-600 hover:bg-red-50'
                         }`}
                       >
-                        <Trash2 size={14} />
+                        {deletingId === option._id ? <Loader size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                        {optionType === 'technology' && <span>Delete</span>}
                       </button>
+                      </span>
                     )}
                   </div>
                 );
