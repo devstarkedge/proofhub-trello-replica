@@ -10,6 +10,7 @@ function tenantModel(name, definition, indexes) {
 }
 export const HubSpotConnection = tenantModel('HubSpotConnection', {
   name: { type: String, maxlength: 100, default: '' },
+  contactOwnerId: { type: String, default: '' }, ownerValidation: String,
   credential: { type: new Schema({ keyVersion: String, iv: String, tag: String, ciphertext: String }, { _id: false }), select: false },
   portalId: { type: String, required: true }, version: { type: Number, default: 1 },
   enabled: { type: Boolean, default: false }, status: { type: String, enum: ['connected', 'error'], default: 'connected' },
@@ -19,7 +20,7 @@ export const HubSpotConnection = tenantModel('HubSpotConnection', {
 }, [[{ workspaceId: 1 }, { unique: true }]]);
 export const HubSpotMapping = tenantModel('HubSpotMapping', {
   portalId: { type: String, required: true }, clientKey: { type: String, required: true },
-  hubspotContactId: String, lastSyncedHash: String, lastSyncedAt: Date,
+  hubspotContactId: String, identityHash: String, lastSyncedHash: String, lastSyncedAt: Date,
   pendingCreateEmail: String, createStartedAt: Date,
 }, [
   [{ workspaceId: 1, portalId: 1, clientKey: 1 }, { unique: true }],

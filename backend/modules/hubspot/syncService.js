@@ -1,3 +1,4 @@
+import { clientSnapshot, enrichPayload } from './enrichedPayload.js';
 import mongoose from 'mongoose';
 import Board from '../../models/Board.js';
 import Workspace from '../../models/Workspace.js';
@@ -7,7 +8,7 @@ import { HubSpotApi } from './api.js';
 import { decryptCredential } from './crypto.js';
 import { withHubSpotLock, paceAccount } from './locks.js';
 import { assertHubSpotIndexes } from './readiness.js';
-import { payloadFor, digest, eligible, validatePayload, retryState, MAX_ATTEMPTS, RETRY_MS, SyncError } from './domain.js';
+import { payloadFor, sourceHash, digest, eligible, validatePayload, retryState, MAX_ATTEMPTS, RETRY_MS, SyncError } from './domain.js';
 
 const safety = (code, message) => new SyncError(code, message, { permanent: true });
 export async function claimIdentity(portalId, kind, value, workspaceId, clientKey) {
@@ -51,7 +52,7 @@ async function execute(job, lease, apiFactory, now) {
   await assertHubSpotIndexes();
   const cooldown = await HubSpotLock.findById(lease.key).lean();
   if (+cooldown?.cooldownUntil > now()) return { skipped: 'account_cooldown' };
-  const payload = payloadFor(board), hash = digest(payload);
+  let payload = payloadFor(board); const hash = sourceHash(board);
   const state = board.hubspotSync;
   const sourceFilter = { _id: projectId, workspaceId, 'hubspotSync.version': sourceVersion };
   if (hash !== state.hash) {
@@ -72,18 +73,14 @@ async function execute(job, lease, apiFactory, now) {
     validatePayload(payload);
     // Every source that shares a logical identity must agree. We cannot
     // safely infer a winner for conflicting embedded client records.
-    const conflict = await Board.exists({ workspaceId, _id: { $ne: projectId }, projectType: 'Hired Client', isDeleted: { $ne: true },
-      $or: [{ 'hubspotSync.clientKey': state.clientKey }, { 'hubspotSync.emailHash': digest(payload.email) }],
-      'hubspotSync.hash': { $ne: hash },
-    });
-    if (conflict) throw safety('CLIENT_CONFLICT', 'Eligible projects sharing this client identity have conflicting details. Align their client information.');
+    const snapshot = await clientSnapshot(board, workspaceId);
     let clientKey = state.clientKey;
     // A new project with the CURRENT exact client details may reuse an
     // established identity even after its original email/name changed.
     const emailClaim = await HubSpotClaim.findOne({ portalId, kind: 'email', value: digest(payload.email) }).lean();
     if (emailClaim && String(emailClaim.workspaceId) === String(workspaceId) && emailClaim.clientKey !== clientKey) {
       const existing = await HubSpotMapping.findOne({ workspaceId, portalId, clientKey: emailClaim.clientKey }).lean();
-      if (state.lastSyncedAt || !existing || existing.lastSyncedHash !== hash) throw safety('CLIENT_CONFLICT', 'This email is already mapped to a different FlowTask client.');
+      if (state.lastSyncedAt || !existing || (existing.identityHash || existing.lastSyncedHash) !== digest(payload)) throw safety('CLIENT_CONFLICT', 'This email is already mapped to a different FlowTask client.');
       clientKey = emailClaim.clientKey;
       await Board.updateOne(sourceFilter, { $set: { 'hubspotSync.clientKey': clientKey } });
     }
@@ -98,14 +95,11 @@ async function execute(job, lease, apiFactory, now) {
       await lease.assertOwned();
       const [active, current, activeWorkspace] = await Promise.all([
         HubSpotConnection.exists({ workspaceId, portalId, version: configVersion, enabled: true, status: 'connected' }),
-        Board.findOne(sourceFilter).select('projectType isDeleted clientDetails +hubspotSync').lean(),
+        Board.findOne(sourceFilter).select('projectType isDeleted clientDetails technologies hubspotSync').lean(),
         Workspace.exists({ _id: workspaceId, isActive: true }),
       ]);
-      if (!active || !current || !activeWorkspace || !eligible(current) || digest(payloadFor(current)) !== hash) throw new SyncError('STALE_JOB', 'The project or connection changed before the request.');
-      if (await Board.exists({ workspaceId, _id: { $ne: projectId }, projectType: 'Hired Client', isDeleted: { $ne: true },
-        $or: [{ 'hubspotSync.clientKey': clientKey }, { 'hubspotSync.emailHash': digest(payload.email) }], 'hubspotSync.hash': { $ne: hash } })) {
-        throw safety('CLIENT_CONFLICT', 'Another eligible project has conflicting client details.');
-      }
+      if (!active || !current || !activeWorkspace || !eligible(current) || sourceHash(current) !== hash) throw new SyncError('STALE_JOB', 'The project or connection changed before the request.');
+      if ((await clientSnapshot(current, workspaceId)).fingerprint !== snapshot.fingerprint) throw new SyncError('STALE_JOB', 'Shared client projects changed before the request.');
     };
     await assertCurrent();
     // Reserve attempts BEFORE HTTP. A crash cannot reset the counter. The
@@ -120,6 +114,7 @@ async function execute(job, lease, apiFactory, now) {
     api = apiFactory(decryptCredential(connection.credential, workspaceId, portalId), {
       beforeRequest: async () => { await assertCurrent(); await paceAccount(lease); },
     });
+    payload = await enrichPayload(snapshot, connection, api);
     let contact = mapping.hubspotContactId ? await api.getContact(mapping.hubspotContactId) : null;
     operation = 'match';
     if (mapping.hubspotContactId && (!contact || contact.archived || String(contact.id) !== mapping.hubspotContactId)) {
@@ -169,7 +164,7 @@ async function execute(job, lease, apiFactory, now) {
     const syncedAt = new Date(now());
     // The remote write may have completed while source data changed. Keep
     // its contact ID, but never mark the newer source version synchronized.
-    await HubSpotMapping.updateOne({ _id: mapping._id, workspaceId, portalId, clientKey }, { $set: { lastSyncedHash: hash, lastSyncedAt: syncedAt } });
+    await HubSpotMapping.updateOne({ _id: mapping._id, workspaceId, portalId, clientKey }, { $set: { identityHash: digest(snapshot.identity), lastSyncedHash: digest(payload), lastSyncedAt: syncedAt } });
     await Board.updateOne(sourceFilter, { $set: {
       'hubspotSync.status': 'synced', 'hubspotSync.lastSyncedHash': hash, 'hubspotSync.lastSyncedAt': syncedAt,
       'hubspotSync.nextAttemptAt': null, 'hubspotSync.error': '', 'hubspotSync.errorCode': '',

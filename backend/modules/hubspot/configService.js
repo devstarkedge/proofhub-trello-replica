@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { normalizeOwner } from './contactProperties.js';
 import { randomBytes } from 'node:crypto';
 import Workspace from '../../models/Workspace.js';
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
@@ -24,7 +25,7 @@ export async function requireConfigAdmin(workspaceId, userId) {
 export function publicConnection(connection) {
   if (!connection) return null;
   const { name, portalId, version, enabled, status, readVerified, writeCapability, createdAt, updatedAt, lastSuccessfulSync, lastError } = connection;
-  return { name, portalId, version, enabled, status, readVerified, writeCapability, createdAt, updatedAt, lastSuccessfulSync, lastError, maskedKey: '••••••••••••', configured: true };
+  return { contactOwnerId: connection.contactOwnerId || '', ownerValidation: connection.ownerValidation || 'not_configured', name, portalId, version, enabled, status, readVerified, writeCapability, createdAt, updatedAt, lastSuccessfulSync, lastError, maskedKey: '••••••••••••', configured: true };
 }
 export async function approveChange({ workspaceId, userId, sessionToken, password, action, version }) {
   await requireConfigAdmin(workspaceId, userId);
@@ -57,7 +58,10 @@ export async function saveConnection(input) {
     const previous = await HubSpotConnection.findOne({ workspaceId }).select('+credential').lean();
     if (!Number.isInteger(version) || (previous?.version || 0) !== version) throw new SyncError('CONFIG_CHANGED', 'Configuration changed. Refresh this page.', { status: 409 });
     if (typeof name !== 'string' || name.trim().length > 100 || typeof reconnect !== 'boolean') throw new SyncError('INVALID_REQUEST', 'Enter a connection name of at most 100 characters.', { status: 400 });
-    const validation = await new HubSpotApi(serviceKey, { beforeRequest: () => lease.assertOwned() }).validate();
+    const api = new HubSpotApi(serviceKey, { beforeRequest: () => lease.assertOwned() });
+    const validation = await api.validate();
+    const contactOwnerId = normalizeOwner(input.contactOwnerId ?? (previous?.portalId === validation.portalId ? previous.contactOwnerId : '') ?? '');
+    const ownerValidation = await api.validateOwner(contactOwnerId);
     const changedAccount = previous && previous.portalId !== validation.portalId;
     if (changedAccount && (!reconnect || previous.enabled)) {
       throw new SyncError('RECONNECTION_REQUIRED', 'Disable sync, then explicitly confirm reconnecting to a different HubSpot account. Old account mappings will remain separate.', { status: 409 });
@@ -71,7 +75,7 @@ export async function saveConnection(input) {
       await session.withTransaction(async () => {
         await consumeApproval(input, 'configure', session);
         const values = {
-          ...validation, credential, name: name.trim(), version: version + 1, status: 'connected', lastError: '',
+          ...validation, credential, contactOwnerId, ownerValidation, name: name.trim(), version: version + 1, status: 'connected', lastError: '',
           enabled: changedAccount ? false : (previous?.enabled || false),
           backfillPending: changedAccount ? false : (previous?.enabled || false), backfillCursor: null,
           ...(changedAccount ? { lastSuccessfulSync: null } : {}),

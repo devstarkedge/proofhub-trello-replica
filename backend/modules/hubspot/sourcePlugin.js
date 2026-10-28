@@ -1,6 +1,6 @@
 import { sourceState } from './domain.js';
 
-const relevant = key => ['clientDetails', 'projectType', 'isDeleted'].some(field => key === field || key.startsWith(`${field}.`));
+const relevant = key => ['clientDetails', 'technologies', 'projectType', 'isDeleted'].some(field => key === field || key.startsWith(`${field}.`));
 function applyField(target, path, value) {
   const parts = path.split('.');
   let cursor = target;
@@ -12,14 +12,14 @@ function applyField(target, path, value) {
 // document write. No network calls or external queue publication in these hooks.
 export default function hubspotSourcePlugin(schema) {
   schema.add({ hubspotSync: { type: new schema.constructor({
-    clientKey: String, version: String, hash: String, emailHash: String, eligible: Boolean,
+    clientKey: String, identityHash: String, version: String, hash: String, emailHash: String, eligible: Boolean,
     status: { type: String, enum: ['pending', 'retrying', 'synced', 'failed', 'blocked', 'not_eligible'] },
     attempts: { type: Number, default: 0 }, nextAttemptAt: Date, lastAttemptAt: Date,
     portalId: String, configVersion: Number, lastSyncedHash: String, lastSyncedAt: Date,
     errorCode: String, error: String,
   }, { _id: false }), default: undefined, select: false } });
   schema.pre('save', function () {
-    if (this.isNew || ['clientDetails', 'projectType', 'isDeleted'].some(key => this.isModified(key))) {
+    if (this.isNew || ['clientDetails', 'technologies', 'projectType', 'isDeleted'].some(key => this.isModified(key))) {
       // Existing hydrated documents may have excluded internal state.
       if (!this.isNew && !this.isSelected('hubspotSync')) throw new Error('Select +hubspotSync before saving changed client fields');
       this.hubspotSync = sourceState(this.toObject(), this.hubspotSync?.toObject() || {});
@@ -48,7 +48,7 @@ export default function hubspotSourcePlugin(schema) {
   schema.pre('updateMany', function () {
     const update = this.getUpdate() || {};
     const fields = { ...update, ...update.$set, ...update.$unset };
-    if (Object.keys(fields).some(k => k === 'clientDetails' || k.startsWith('clientDetails.') || k === 'projectType')) {
+    if (Object.keys(fields).some(k => k === 'clientDetails' || k.startsWith('clientDetails.') || k === 'projectType' || k === 'technologies')) {
       throw new Error('Client changes require individual project writes');
     }
     if (Object.hasOwn(fields, 'isDeleted')) {

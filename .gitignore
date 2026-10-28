@@ -55,3 +55,7 @@ test-results/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# HubSpot contact-field implementation documentation and focused validation.
+!backend/modules/hubspot/contactFields.test.js
+!backend/modules/hubspot/README.md

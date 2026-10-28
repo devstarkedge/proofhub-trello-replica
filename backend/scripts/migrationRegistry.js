@@ -20,6 +20,7 @@ import {runTrackingDashboardIndexMigration} from './migrateTrackingDashboardInde
 import mongoose from 'mongoose';
 import { runAuditIntegrityMigration } from './migrateAuditIntegrity.js';
 import { runHubSpotMigration } from './migrateHubSpot.js';
+import { runHubSpotContactFieldsMigration } from './migrateHubSpotContactFields.js';
 import logger from '../utils/logger.js';
 
 // ─── Import migration functions ──────────────────────────────────────────────
@@ -114,6 +115,7 @@ const MIGRATIONS = [
   {name:'smart_checkout_indexes',version:'20261017',description:'Add durable attendance event and approved-leave coverage indexes without changing historical attendance',run:runSmartCheckoutMigration},
   {name:'tracking_dashboard_read_indexes',version:'20261021',description:'Add indexes for paged tracking reads, department capture scope and attendance workday totals',run:runTrackingDashboardIndexMigration},
   { name: 'hubspot_workspace_sync', version: '20261026', description: 'Create isolated HubSpot integration indexes and embedded durable project sync intent', run: runHubSpotMigration },
+  { name: 'hubspot_contact_fields', version: '20261028', description: 'Baseline expanded HubSpot source hashes while preserving retry exhaustion and contact ownership', run: runHubSpotContactFieldsMigration },
   { name: 'audit_integrity_and_private_files', version: '20261027', description: 'Enforce private project files and unique session, recurrence, history and cleanup indexes', run: runAuditIntegrityMigration },
 ];
 

@@ -2,7 +2,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import { EMAIL_REGEX } from '../../../shared/projectClient.mjs';
 
 export const REQUIRED_SCOPES = ['crm.objects.contacts.read', 'crm.objects.contacts.write'];
-export const PROPERTIES = ['email', 'firstname', 'lastname', 'phone'];
+export const PROPERTIES = ['email', 'firstname', 'lastname', 'phone', 'technology', 'hubspot_owner_id'];
+export const technologyIds = board => [...new Set((board.technologies || []).map(value => String(value?._id || value)))].sort();
+export const sourceHash = board => digest({ ...payloadFor(board), technologies: technologyIds(board) });
 export const RETRY_MS = 120_000;
 export const MAX_ATTEMPTS = 4;
 export const digest = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
@@ -35,12 +37,12 @@ export function validatePayload(payload) {
 }
 export function sourceState(board, previous = {}) {
   const payload = payloadFor(board);
-  const hash = digest(payload);
+  const hash = sourceHash(board);
   const isEligible = eligible(board);
   if (previous.version && previous.hash === hash && previous.eligible === isEligible) return previous;
   return {
     ...previous,
-    clientKey: previous.clientKey || hash,
+    clientKey: previous.clientKey || digest(payload), identityHash: digest(payload),
     version: randomUUID(), hash, emailHash: digest(payload.email), eligible: isEligible,
     status: isEligible ? 'pending' : 'not_eligible', attempts: 0,
     nextAttemptAt: new Date(), errorCode: '', error: '',

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { PROPERTIES, REQUIRED_SCOPES, SyncError } from './domain.js';
+import { normalizeOwner } from './contactProperties.js';
 
 export function retryAfterTime(header, now = Date.now()) {
   if (!header) return 0;
@@ -75,6 +76,19 @@ export class HubSpotApi {
     return { portalId: String(account.portalId), readVerified: true, writeCapability };
   }
   getContact(id) { return this.request('GET', `/crm/objects/2026-09/contacts/${encodeURIComponent(id)}?properties=${PROPERTIES.join(',')}`, undefined, { missing: true }); }
+  getProperty(name) { return this.request('GET', `/crm/properties/2026-09/contacts/${encodeURIComponent(name)}`); }
+  async validateOwner(value) {
+    const id = normalizeOwner(value);
+    if (!id) return 'not_configured';
+    try {
+      const owner = await this.request('GET', `/crm/owners/2026-09/${id}`, undefined, { missing: true });
+      if (!owner || owner.archived || String(owner.id) !== id) throw new SyncError('INVALID_OWNER', 'Contact Owner was not found as an active Owner in the connected HubSpot account. Enter an Owner ID, not a User ID.', { permanent: true, status: 400 });
+      return 'verified';
+    } catch (error) {
+      if (error.status === 403) return 'unverified';
+      throw error;
+    }
+  }
   async findByEmail(email) {
     const direct = await this.request('GET', `/crm/objects/2026-09/contacts/${encodeURIComponent(email)}?idProperty=email&properties=${PROPERTIES.join(',')}`, undefined, { missing: true });
     const matches = new Map();

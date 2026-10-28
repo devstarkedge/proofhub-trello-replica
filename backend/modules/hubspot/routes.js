@@ -44,7 +44,7 @@ router.post('/hubspot/validate', writeLimit, strictBody(['serviceKey']), wrap(as
   res.setHeader('Cache-Control', 'no-store');
   res.json({ success: true, data: await new HubSpotApi(req.body.serviceKey).validate() });
 }));
-router.put('/hubspot', writeLimit, strictBody(['serviceKey', 'name', 'reconnect', 'version', 'approval']), wrap(async (req, res) => {
+router.put('/hubspot', writeLimit, strictBody(['serviceKey', 'name', 'contactOwnerId', 'reconnect', 'version', 'approval']), wrap(async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.json({ success: true, data: await saveConnection(inputFor(req)) });
 }));

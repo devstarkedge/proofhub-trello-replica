@@ -26,6 +26,7 @@ function Configs({ workspace }) {
   const [approval, setApproval] = useState(null);
   const [serviceKey, setServiceKey] = useState('');
   const [name, setName] = useState('');
+  const [contactOwnerId, setContactOwnerId] = useState('');
   const [reconnect, setReconnect] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
   const [validation, setValidation] = useState(null);
@@ -35,7 +36,7 @@ function Configs({ workspace }) {
 
   const close = () => { if (busy) return; setDialog(null); setPassword(''); setServiceKey(''); setApproval(null); setValidation(null); setDialogError(''); setAcknowledged(false); setReconnect(false); };
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['workspace-configs', workspaceId] });
-  const open = action => { setDialog({ action, phase: 'verify', version: connection?.version || 0 }); setName(connection?.name || ''); setDialogError(''); };
+  const open = action => { setDialog({ action, phase: 'verify', version: connection?.version || 0 }); setName(connection?.name || ''); setContactOwnerId(connection?.contactOwnerId || ''); setDialogError(''); };
   const verify = async event => {
     event.preventDefault(); setBusy(true); setDialogError('');
     try {
@@ -61,7 +62,7 @@ function Configs({ workspace }) {
     event.preventDefault(); setBusy(true); setDialogError('');
     try {
       if (!approval || Date.now() >= approval.expiresAt) { setDialog({ ...dialog, phase: 'verify' }); setApproval(null); setDialogError('Verification expired. Enter your password again.'); return; }
-      await saveHubSpotConfig(workspaceId, { serviceKey, name, reconnect, version: dialog.version, approval: approval.token });
+      await saveHubSpotConfig(workspaceId, { serviceKey, name, contactOwnerId, reconnect, version: dialog.version, approval: approval.token });
       setServiceKey(''); setApproval(null); setDialog(null); setAcknowledged(false); setValidation(null); setReconnect(false);
       toast.success('HubSpot configuration saved securely'); refresh();
     } catch (failure) { setDialogError(errorMessage(failure)); }
@@ -96,12 +97,12 @@ function Configs({ workspace }) {
           <p className="my-5 text-sm">Only projects with Project Type <strong>Hired Client</strong> are eligible. A valid client email is required. FlowTask manages name, email, and phone in the connected HubSpot account.</p>
           {!connection ? <button type="button" className={buttonClass} onClick={() => open('configure')}>Configure HubSpot</button> : <>
             <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-4 text-sm rounded-xl p-4 bg-[var(--color-bg-muted)]">
-              {[['Connection name', connection.name || 'HubSpot'], ['Service Key', connection.maskedKey], ['HubSpot Portal ID', connection.portalId], ['Configuration version', connection.version], ['Last successful sync', formatDate(connection.lastSuccessfulSync)], ['Permissions', `Contacts read verified · Write ${connection.writeCapability}`], ['Created', formatDate(connection.createdAt)], ['Updated', formatDate(connection.updatedAt)]].map(([label, value]) => <div key={label}><dt className="text-[var(--color-text-muted)]">{label}</dt><dd className="mt-1 font-medium break-words">{value}</dd></div>)}
+              {[['Connection name', connection.name || 'HubSpot'], ['Service Key', connection.maskedKey], ['Contact Owner', connection.contactOwnerId || 'Not configured'], ['Owner validation', connection.ownerValidation || 'Not configured'], ['HubSpot Portal ID', connection.portalId], ['Configuration version', connection.version], ['Last successful sync', formatDate(connection.lastSuccessfulSync)], ['Permissions', `Contacts read verified · Write ${connection.writeCapability}`], ['Created', formatDate(connection.createdAt)], ['Updated', formatDate(connection.updatedAt)]].map(([label, value]) => <div key={label}><dt className="text-[var(--color-text-muted)]">{label}</dt><dd className="mt-1 font-medium break-words">{value}</dd></div>)}
             </dl>
             {connection.writeCapability === 'unverified' && <p className="mt-4 text-sm text-amber-600">Contacts read access and account identity are verified. HubSpot did not provide non-destructive write permission inspection for this key. Ensure it has crm.objects.contacts.write before enabling sync. No test contact was created.</p>}
             {connection.lastError && <p role="alert" className="mt-4 rounded-lg bg-red-500/10 p-3 text-sm text-red-600">{connection.lastError}</p>}
             <div className="mt-5 flex flex-wrap gap-3"><button type="button" className={secondaryClass} onClick={() => open('configure')}>Edit Configuration</button><button type="button" role="switch" aria-checked={connection.enabled} aria-label="Automatic client synchronization" className={connection.enabled ? secondaryClass : buttonClass} onClick={() => open('toggle')}>{connection.enabled ? 'Disable automatic sync' : 'Enable automatic sync'}</button></div>
-            {connection.enabled && <div className="mt-6 border-t border-[var(--color-border-subtle)] pt-5"><h3 className="font-bold mb-3">Field Mapping</h3><p className="text-sm text-[var(--color-text-muted)] mb-3">These mappings are fixed. Names split at the final word; a single name has an empty lastname.</p><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b border-[var(--color-border-subtle)]"><th className="py-2">FlowTask field</th><th>HubSpot property</th></tr></thead><tbody>{[['clientName (all but last word)', 'firstname'], ['clientName (last word)', 'lastname'], ['clientEmail', 'email'], ['clientWhatsappNumber', 'phone']].map(([source, target]) => <tr key={target} className="border-b border-[var(--color-border-subtle)]"><td className="py-3">{source}</td><td><code>{target}</code></td></tr>)}</tbody></table></div><p className="mt-4 text-xs text-[var(--color-text-muted)]">Existing eligible records are discovered automatically. Transient failures allow an initial attempt plus three retries, at least two minutes apart. Exhausted versions stay stopped until their relevant source data changes.</p></div>}
+            {connection.enabled && <div className="mt-6 border-t border-[var(--color-border-subtle)] pt-5"><h3 className="font-bold mb-3">Field Mapping</h3><p className="text-sm text-[var(--color-text-muted)] mb-3">These mappings are fixed. Names split at the final word; a single name has an empty lastname.</p><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b border-[var(--color-border-subtle)]"><th className="py-2">FlowTask field</th><th>HubSpot property</th></tr></thead><tbody>{[['clientName (all but last word)', 'firstname'], ['clientName (last word)', 'lastname'], ['clientEmail', 'email'], ['clientWhatsappNumber', 'phone'], ['Project technologies (combined across eligible projects)', 'technology'], ['Workspace Contact Owner', 'hubspot_owner_id']].map(([source, target]) => <tr key={target} className="border-b border-[var(--color-border-subtle)]"><td className="py-3">{source}</td><td><code>{target}</code></td></tr>)}</tbody></table></div><p className="mt-4 text-xs text-[var(--color-text-muted)]">Existing eligible records are discovered automatically. Transient failures allow an initial attempt plus three retries, at least two minutes apart. Exhausted versions stay stopped until their relevant source data changes.</p></div>}
           </>}
         </section>
       </>}
@@ -117,6 +118,7 @@ function Configs({ workspace }) {
         </form> : <form onSubmit={save} className="space-y-4">
           <label className="block text-sm font-medium" htmlFor="hubspot-name">Connection name (optional)<input id="hubspot-name" autoFocus autoComplete="off" maxLength={100} value={name} onChange={event => setName(event.target.value)} className={`${fieldClass} mt-2`} disabled={busy} /></label>
           <label className="block text-sm font-medium" htmlFor="hubspot-key">HubSpot Service Key<input id="hubspot-key" type="password" autoComplete="new-password" spellCheck={false} required maxLength={2048} value={serviceKey} onChange={event => { setServiceKey(event.target.value); setValidation(null); }} className={`${fieldClass} mt-2`} disabled={busy} /></label>
+          <label className="block text-sm font-medium" htmlFor="hubspot-owner">Contact Owner (optional)<input id="hubspot-owner" type="text" inputMode="numeric" pattern="[1-9][0-9]*" maxLength={20} autoComplete="off" value={contactOwnerId} onChange={event => setContactOwnerId(event.target.value)} className={`${fieldClass} mt-2`} disabled={busy} /><span className="block mt-1 text-xs">Enter the HubSpot Owner ID, not the User ID. Blank preserves existing HubSpot ownership. Owner verification requires crm.objects.owners.read; without it validation is shown as unverified.</span></label>
           <p className="text-xs text-[var(--color-text-muted)]">Required scopes: crm.objects.contacts.read and crm.objects.contacts.write. Do not enter a HubSpot login password.</p>
           {connection && <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={reconnect} onChange={event => setReconnect(event.target.checked)} disabled={busy || connection.enabled} /><span>I confirm reconnecting to a different account, if detected. Sync must be disabled first; old account mappings remain separate.</span></label>}
           <label className="flex items-start gap-2 text-sm"><input type="checkbox" required checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} disabled={busy} /><span>I understand how my Service Key is encrypted and used.</span></label>

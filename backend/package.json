@@ -12,7 +12,7 @@
     "authz:report": "node scripts/authzReport.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:hubspot": "vitest run modules/hubspot/domain.test.js modules/hubspot/hubspot.integration.test.js",
+    "test:hubspot": "vitest run modules/hubspot/contactFields.test.js",
     "hubspot:rotate-encryption": "node scripts/rotateHubSpotEncryption.js"
   },
   "keywords": [],
