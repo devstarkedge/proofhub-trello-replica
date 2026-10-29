@@ -14,5 +14,6 @@ const schema = new mongoose.Schema({
 schema.index({ workspaceId: 1, request: 1, user: 1, dateKey: 1 }, { unique: true });
 schema.index({ workspaceId: 1, availableAt: 1 });
 schema.index({ workspaceId: 1, needsReconcile: -1, _id: 1 });
+schema.index({ workspaceId: 1, dateKey: 1, _id: 1 });
 schema.plugin(workspaceScopePlugin);
 export default mongoose.model('LeaveReportingDelivery', schema);
