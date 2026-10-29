@@ -50,7 +50,10 @@ export async function enqueueAttendanceReport({ action, attendance, work = null,
   const key = action === 'checkout' || action === 'checkin' ? `report-${action}-${attendance._id}` : `report-work-${work._id}-${work.revision}`;
   const sessions = action === 'checkout' ? await reportingWorkSessions(workspaceId, userId, attendance.workDateKey, dbSession) : [];
   const attendanceRows = action === 'checkout' ? await AttendanceSession.find({ workspaceId, user: userId, workDateKey: attendance.workDateKey }).session(dbSession).lean() : [];
+  const initial = action === 'checkin' ? null : await AttendanceEvent.findOne({ key: `report-checkin-${attendance._id}` }).session(dbSession).select('reportPayload').lean();
   const payload = { ...transitionSnapshot({ action, attendance, work, before, at, day, sessions, attendanceRows }),
+    presentationVersion: 2, eventSequence: action === 'checkin' ? 0 : action === 'checkout' ? 1e9 : work.revision + 1,
+    ...(initial ? { initialCheckIn: initial.reportPayload } : {}),
     eventId: key, workspaceId: String(workspaceId), timezone: getWorkspaceTimezone(workspace),
     employee: { flowTaskUserId: String(userId), name: user?.name || 'Employee' },
     departments: departments.map(d => ({ id: String(d._id), name: d.name })) };
@@ -87,7 +90,7 @@ export async function syncReportingDirectory(workspaceId, settings, state) {
   const workspace = await Workspace.findById(workspaceId).select('isActive status authzVersion').lean();
   const overrides = await PermissionOverride.find({ workspace: workspaceId }).select('user permission effect scope scopeIds expiresAt status').sort('_id').lean();
   const legacyOverrides = await AccessOverride.find({ workspace: workspaceId, resource: { $in: ['attendance', 'tracking'] } }).select('user resource effect actions scope scopedResourceIds expiresAt isActive').sort('_id').lean();
-  const hash = crypto.createHash('sha256').update(JSON.stringify([workspace, departments, members, users, roles, overrides, legacyOverrides,
+  const hash = crypto.createHash('sha256').update(JSON.stringify([2, workspace, departments, members, users, roles, overrides, legacyOverrides,
     [...overrides, ...legacyOverrides].filter(o => o.expiresAt && +new Date(o.expiresAt) <= Date.now()).map(o => String(o._id))])).digest('hex');
   if (!state.dirty && state.fingerprint === hash && Date.now() - +new Date(state.syncedAt || 0) < 300000) return;
   const reconcile = !state.syncedAt || Date.now() - +new Date(state.syncedAt) >= 300000;
@@ -131,7 +134,8 @@ export async function syncReportingDirectory(workspaceId, settings, state) {
       !systemRole && !legacyReportDenied && (legacyReportGrant || ctx && ['attendance.view_reports', 'attendance.view_workspace', 'tracking.view_reports'].some(p => can(ctx, p, { workspaceId, departments: [String(d._id)] }))))).map(d => String(d._id));
     await send({ eventType: 'reporting.member_synced', eventId: `report-member-${member.user}-${hash}`,
       workspaceId: String(workspaceId), employee: { flowTaskUserId: String(member.user), name: user?.name || 'Employee' },
-      active, access, reportingAccess: { active, departmentIds: allowed, allDepartments: !!allDepartments },
+      active, access, reportingAccess: { active, departmentIds: allowed, allDepartments: !!allDepartments,
+        historyAdmin: active && ctx?.status === 'active' && ctx?.kind !== 'guest' && systemRole === 'admin' },
     });
   }
   await ReportingDirectoryState.updateOne({ workspaceId, leaseToken: state.leaseToken }, { $set: { fingerprint: hash, syncedAt: new Date(), dirty: false } });
@@ -152,6 +156,7 @@ async function processScopedAttendanceReports(workspaceId, { limit = 20 } = {}) 
   if (!state) return;
   try {
   await syncReportingDirectory(workspaceId, settings, state);
+  await reconcileReportingHistoryReports(workspaceId);
   await reconcileCheckoutReports(workspaceId);
   const blocked = [];
   for (let i = 0; i < limit; i++) {
@@ -179,6 +184,23 @@ async function processScopedAttendanceReports(workspaceId, { limit = 20 } = {}) 
   }
   } catch (error) { logger.warn('Attendance reporting worker will retry', { workspaceId: String(workspaceId), error: error.message }); }
   finally { await ReportingDirectoryState.updateOne({ workspaceId, leaseToken: token }, { $set: { leaseUntil: new Date(0) }, $unset: { leaseToken: 1 } }); }
+}
+
+// Replay existing durable events once with explicit session associations. This
+// changes only the ChatApp projection; source timestamps and event IDs survive.
+export async function reconcileReportingHistoryReports(workspaceId) {
+  const events = await AttendanceEvent.find({ workspaceId, kind: 'CHAT_REPORT',
+    'reportPayload.presentationVersion': { $ne: 2 } }).sort({ _id: 1 }).limit(100).lean();
+  for (const event of events) {
+    const initial = event.reportPayload.eventType === 'attendance.checked_in' ? null : await AttendanceEvent.findOne({
+      workspaceId, key: `report-checkin-${event.attendanceSession}`,
+    }).select('reportPayload').lean();
+    const payload = { ...event.reportPayload, presentationVersion: 2, eventSequence: event.reportOrder,
+      ...(initial ? { initialCheckIn: initial.reportPayload } : {}) };
+    await AttendanceEvent.updateOne({ _id: event._id, workspaceId, 'reportPayload.presentationVersion': { $ne: 2 } }, { $set: {
+      reportPayload: payload, processedAt: null, availableAt: new Date(), claimedUntil: new Date(0),
+    } });
+  }
 }
 
 // Reconcile the original checkout message rather than emit a second daily
