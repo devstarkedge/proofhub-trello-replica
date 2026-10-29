@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import reportingDirectoryInvalidation from '../services/chat/reportingDirectoryInvalidation.plugin.js';
 import { isValidPassword, PASSWORD_POLICY_MESSAGE } from '../utils/passwordPolicy.js';
 import bcrypt from 'bcryptjs';
 
@@ -272,4 +273,5 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
+userSchema.plugin(reportingDirectoryInvalidation, { userIdentity: true, fields: ['name', 'isActive'] });
 export default mongoose.model('User', userSchema);

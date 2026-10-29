@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { enqueueAttendanceReport } from '../../services/chat/attendanceReporting.service.js';
 import AuditLog from '../../models/AuditLog.js';
 import { evaluateCheckout, assertCheckoutConfirmation } from './attendanceCheckout.service.js';
 import { enqueueAttendanceEvent } from './attendanceEvents.service.js';
@@ -417,7 +418,8 @@ export async function checkIn({ workspaceId, userId, membership, workspace, gps 
         calendar: ctx.calendar, leave: ctx.leave, workModeResolution: ctx.workModeResolution, policyVersion: ctx.policyVersion,
         shift: ctx.shift, officeHours: ctx.officeHours, sessions: [...ctx.sessions, created.toObject()], serverNow: ctx.serverNow, dbSession
       });
-      await startWithAttendance({ attendance: created, selection: selectedWork, dbSession });
+      const work = await startWithAttendance({ attendance: created, selection: selectedWork, dbSession });
+      await enqueueAttendanceReport({ action: 'checkin', attendance: created, work, at: created.checkInAt, day, dbSession });
       await enqueueAttendanceEvent({workspaceId,user:userId,key:`checkin-${created._id}`,kind:'CHECKED_IN',attendanceSession:created._id,workDateKey:created.workDateKey},dbSession);
       result = { session: created, replay: false, attendanceDay: day };
     }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
@@ -513,6 +515,7 @@ export async function checkOut({ workspaceId, userId, membership, workspace, gps
       if(!closed)throw codedError('Attendance changed concurrently. Retry checkout.',409,'ATTENDANCE_CHANGED');
       const {day}=await computeAndUpsertDay({...evaluation.context,dbSession});
       await finalizeAttendanceWork(closed,dbSession);
+      await enqueueAttendanceReport({ action: 'checkout', attendance: closed, at: closed.checkOutAt, day, dbSession });
       await AuditLog.create([{workspace:workspaceId,actor:userId,actorName,actorRole:membership.role,action:'ATTENDANCE_CHECKED_OUT',category:'attendance_management',targetType:'AttendanceSession',targetId:closed._id,
         resourceLabel:`Attendance check-out: ${actorName||'Employee'}`,summary:`${actorName||'Employee'} checked out`,changes:{after:{workDateKey:closed.workDateKey,checkOutAt:serverNow,policyVersion:policyVersion._id,outcome:summary.outcome,approvedLeaveIds:summary.approvedLeaves.map(l=>l.requestId)}}}],{session:dbSession});
       await enqueueAttendanceEvent({workspaceId,user:userId,key:`checkout-${closed._id}`,kind:'CHECKED_OUT',attendanceSession:closed._id,workDateKey:closed.workDateKey},dbSession);

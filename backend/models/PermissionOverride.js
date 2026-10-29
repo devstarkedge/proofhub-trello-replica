@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import reportingDirectoryInvalidation from '../services/chat/reportingDirectoryInvalidation.plugin.js';
 import { SCOPES } from '../authz/catalog.js';
 const schema = new mongoose.Schema({
   workspace: { type: mongoose.Schema.Types.ObjectId, ref: 'Workspace', required: true },
@@ -15,4 +16,5 @@ schema.index({ status: 1, expiresAt: 1 });
 // is not equality). The service sorts scopeIds and writes this key.
 schema.add({ scopeKey: { type: String, required: true, default: '' } });
 schema.index({ workspace: 1, user: 1, permission: 1, effect: 1, scope: 1, scopeKey: 1 }, { unique: true, partialFilterExpression: { status: 'active' } });
+schema.plugin(reportingDirectoryInvalidation, { workspaceField: 'workspace', fields: ['permission', 'effect', 'scope', 'scopeIds', 'expiresAt', 'status'] });
 export default mongoose.model('PermissionOverride', schema);

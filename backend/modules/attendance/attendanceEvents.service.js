@@ -32,7 +32,7 @@ export async function enqueueLeaveAttendanceChanges(request,dbSession) {
 export async function processAttendanceEvents(workspaceId,{limit=20,key=null}={}) {
   for(let i=0;i<limit;i++){
     const now=new Date();
-    const event=await AttendanceEvent.findOneAndUpdate({workspaceId,...(key?{key}:{}),processedAt:null,availableAt:{$lte:now},claimedUntil:{$lte:now}},{$set:{claimedUntil:new Date(+now+60000)},$inc:{attempts:1}},{new:true,sort:{availableAt:1}}).lean();
+    const event=await AttendanceEvent.findOneAndUpdate({workspaceId,kind:{$ne:'CHAT_REPORT'},...(key?{key}:{}),processedAt:null,availableAt:{$lte:now},claimedUntil:{$lte:now}},{$set:{claimedUntil:new Date(+now+60000)},$inc:{attempts:1}},{new:true,sort:{availableAt:1}}).lean();
     if(!event)break;
     try {
       const membership=await WorkspaceMembership.findOne({workspace:workspaceId,user:event.user}).lean();

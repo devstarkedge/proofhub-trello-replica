@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import reportingDirectoryInvalidation from '../services/chat/reportingDirectoryInvalidation.plugin.js';
 
 /**
  * AccessOverride — the single per-user, per-resource permission override table.
@@ -91,4 +92,5 @@ accessOverrideSchema.statics.isExpired = function (doc) {
   return Boolean(doc?.expiresAt && new Date(doc.expiresAt).getTime() <= Date.now());
 };
 
+accessOverrideSchema.plugin(reportingDirectoryInvalidation, { workspaceField: 'workspace', fields: ['resource', 'effect', 'actions', 'scope', 'scopedResourceIds', 'expiresAt', 'isActive'] });
 export default mongoose.model('AccessOverride', accessOverrideSchema);

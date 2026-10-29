@@ -2,6 +2,8 @@ import express from 'express';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import {
   getStatus,
+  getReportingStatus,
+  retryReporting,
   connect,
   disconnect,
   testConnection,
@@ -27,5 +29,7 @@ router.post('/connect', authorize('admin'), connect);
 router.post('/disconnect', authorize('admin'), disconnect);
 router.post('/test', authorize('admin'), testConnection);
 router.post('/sync', authorize('admin'), triggerSync);
+router.get('/reporting', authorize('admin'), getReportingStatus);
+router.post('/reporting/retry', authorize('admin'), retryReporting);
 
 export default router;

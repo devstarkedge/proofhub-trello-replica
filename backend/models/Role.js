@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import reportingDirectoryInvalidation from '../services/chat/reportingDirectoryInvalidation.plugin.js';
 import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 /**
@@ -226,4 +227,5 @@ roleSchema.virtual('userCount', {
   count: true
 });
 
+roleSchema.plugin(reportingDirectoryInvalidation, { fields: ['grants', 'denies', 'permissions', 'isActive', 'slug', 'isSystem'] });
 export default mongoose.model('Role', roleSchema);

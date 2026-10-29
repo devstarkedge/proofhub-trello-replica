@@ -1,4 +1,5 @@
 import { runSmartCheckoutMigration } from './migrateSmartCheckout.js';
+import { runAttendanceReportingMigration } from './migrateAttendanceReporting.js';
 import {runTrackingDashboardIndexMigration} from './migrateTrackingDashboardIndexes.js';
 /**
  * Migration Registry
@@ -119,6 +120,7 @@ const MIGRATIONS = [
   { name: 'hubspot_contact_fields', version: '20261028', description: 'Baseline expanded HubSpot source hashes while preserving retry exhaustion and contact ownership', run: runHubSpotContactFieldsMigration },
   { name: 'hubspot_remove_marketing_sync', version: '20261028', description: 'Remove marketing from sync hashes and release obsolete marketing-only blocks while preserving exhausted retry budgets', run: runHubSpotRemoveMarketingMigration },
   { name: 'audit_integrity_and_private_files', version: '20261027', description: 'Enforce private project files and unique session, recurrence, history and cleanup indexes', run: runAuditIntegrityMigration },
+  { name: 'attendance_chat_reporting', version: '20261029', description: 'Add durable attendance reporting delivery and directory lease indexes', run: runAttendanceReportingMigration },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

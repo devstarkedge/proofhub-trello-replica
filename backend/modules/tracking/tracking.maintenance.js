@@ -1,4 +1,5 @@
 import { processAttendanceEvents } from '../attendance/attendanceEvents.service.js';
+import { processAttendanceReports } from '../../services/chat/attendanceReporting.service.js';
 import Workspace from '../../models/Workspace.js';
 import { run } from '../workspaces/workspaceContext.js';
 import { TrackingScreenshot, ActivityInterval } from './tracking.models.js';
@@ -21,6 +22,8 @@ export function getRetentionCleanupIntervalMs() {
 }
 
 let operationalTimer = null;
+let reportingTimer = null;
+let reportingRunning = false;
 let retentionTimer = null;
 let initialRetentionTimeout = null;
 let operationalRunning = false;
@@ -153,6 +156,19 @@ export async function trackingRetentionMaintenance() {
 }
 
 export function startTrackingMaintenance() {
+  if (!reportingTimer) {
+    reportingTimer = setInterval(async () => {
+      if (reportingRunning) return;
+      reportingRunning = true;
+      try {
+        for await (const workspace of Workspace.find({}).select('_id').cursor()) {
+          await run({ workspaceId: workspace._id }, () => processAttendanceReports(workspace._id));
+        }
+      } catch (error) { console.error('[Reporting] maintenance:', error.message); }
+      finally { reportingRunning = false; }
+    }, OPERATIONAL_INTERVAL_MS);
+    reportingTimer.unref();
+  }
   if (!operationalTimer) {
     operationalTimer = setInterval(
       () => trackingMaintenance().catch(e => console.error('[Tracking] maintenance:', e.message)),
@@ -181,6 +197,7 @@ export function startTrackingMaintenance() {
 }
 
 export function stopTrackingMaintenance() {
+  if (reportingTimer) { clearInterval(reportingTimer); reportingTimer = null; }
   if (operationalTimer) {
     clearInterval(operationalTimer);
     operationalTimer = null;

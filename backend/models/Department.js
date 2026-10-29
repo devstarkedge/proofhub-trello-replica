@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import reportingDirectoryInvalidation from '../services/chat/reportingDirectoryInvalidation.plugin.js';
 import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const departmentSchema = new mongoose.Schema({
@@ -53,5 +54,6 @@ departmentSchema.index({ workspaceId: 1, members: 1, isActive: 1 }); // user's d
 departmentSchema.index({ workspaceId: 1, managers: 1, isActive: 1 }); // manager's departments
 
 departmentSchema.plugin(workspaceScopePlugin);
+departmentSchema.plugin(reportingDirectoryInvalidation, { fields: ['name', 'isActive', 'managers', 'members'] });
 
 export default mongoose.model('Department', departmentSchema);

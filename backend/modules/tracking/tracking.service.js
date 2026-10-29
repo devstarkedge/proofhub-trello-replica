@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { enqueueAttendanceReport } from '../../services/chat/attendanceReporting.service.js';
 import { invalidateTrackingReads } from './tracking.readCache.js';
 import { randomUUID, createHash } from 'node:crypto';
 import Board from '../../models/Board.js';
@@ -289,6 +290,7 @@ export async function changeWork({ workspaceId, userId, action, selection, opera
     if(!allowed.matchedCount)fail('Tracking configuration changed; refresh and retry',409,'TRACKING_CONFLICT');
     if(action==='pause'&&policy.personalPauseEnabled===false)fail('Personal Pause is disabled by workspace policy',403);
     if (session && expectedRevision !== session.revision) fail('Work changed on another device; refresh and retry', 409, 'TRACKING_CONFLICT');
+    const reportingBefore = session ? { ...session, segments: session.segments.map(s => ({ ...s })), pauses: (session.pauses || []).map(p => ({ ...p })) } : null;
     if(session){session.operations=[];session.audit=[];}
     const at = new Date(Math.max(Date.now(), session ? +new Date(session.segments.at(-1)?.startedAt || session.startedAt) : +new Date(attendance.checkInAt)));
     if (action === 'pause') {
@@ -362,6 +364,7 @@ export async function changeWork({ workspaceId, userId, action, selection, opera
       $inc: { revision: 1 }
     }, { new: true, upsert: session.revision === 0, runValidators: true, session: dbSession }).select('-operations -audit').lean();
     if (!result) fail('Work changed concurrently', 409);
+    await enqueueAttendanceReport({ action, attendance, work: result, before: reportingBefore, at, dbSession });
     await enqueueAttendanceEvent({workspaceId,user:userId,key:`work-${result._id}-${result.revision}`,kind:'WORK_CHANGED',workSession:result._id,workRevision:result.revision,workDateKey:result.workDateKey},dbSession);
   }); } finally { await dbSession.endSession(); }
   // The initiating employee/agent gets a small committed invalidation now.

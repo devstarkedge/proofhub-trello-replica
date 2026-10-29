@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import reportingDirectoryInvalidation from '../services/chat/reportingDirectoryInvalidation.plugin.js';
 import { PROJECT_SORT_OPTIONS } from '../../shared/projectView.mjs';
 
 /**
@@ -105,4 +106,5 @@ workspaceMembershipSchema.index({ workspace: 1, user: 1 }, { unique: true });
 workspaceMembershipSchema.index({ user: 1, status: 1 });
 workspaceMembershipSchema.index({ workspace: 1, role: 1 });
 
+workspaceMembershipSchema.plugin(reportingDirectoryInvalidation, { workspaceField: 'workspace', fields: ['role', 'roleId', 'department', 'departments', 'status', 'kind'] });
 export default mongoose.model('WorkspaceMembership', workspaceMembershipSchema);

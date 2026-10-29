@@ -40,7 +40,7 @@ const TIMEOUT_MS = 10000;
  * deployments unchanged while making explicitly-connected-per-workspace
  * deployments correct — see Workspace.js's `settings.chatIntegration`.
  */
-async function resolveWorkspaceChatSettings(workspaceId) {
+export async function resolveWorkspaceChatSettings(workspaceId) {
   if (!workspaceId) return { enabled: CHAT_ENABLED, webhookUrl: CHAT_WEBHOOK_URL };
 
   const ws = await Workspace.findById(workspaceId).select('settings.chatIntegration').lean();
@@ -96,6 +96,11 @@ async function dispatch(eventName, payload, { throwOnFailure = false } = {}) {
       workspaceId,
     });
     return;
+  }
+
+  if (['USER_CREATED', 'USER_VERIFIED', 'USER_UPDATED', 'USER_DEACTIVATED', 'DEPARTMENT_CREATED', 'DEPARTMENT_UPDATED', 'DEPARTMENT_DELETED'].includes(eventName)) {
+    const { requestReportingReconciliation } = await import('./attendanceReporting.service.js');
+    await requestReportingReconciliation(workspaceId);
   }
 
   const deliveryId = generateDeliveryId();
