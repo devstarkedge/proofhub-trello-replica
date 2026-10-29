@@ -43,21 +43,27 @@ export async function processLeaveReporting(workspaceId, settings, send, now = n
   if (!since) return;
   // Existing installations start with today's dates. Persisted activation
   // bounds let subsequent restarts recover missed dates without old-history spam.
-  const requests = await LeaveRequest.find({ status: { $in: APPROVED_STATUSES }, endDate: { $gte: since },
+  const floor = state.leaveSchedulingFloor || since;
+  const requests = await LeaveRequest.find({ status: { $in: APPROVED_STATUSES }, endDate: { $gte: floor },
     ...(state.leaveRequestCursor ? { _id: { $gt: state.leaveRequestCursor } } : {}) }).sort('_id').limit(100).select('_id requester reportingApprovedAt startDate endDate').lean();
   for (const request of requests) {
     await renew();
     const approvalTime = await approvedAt(request);
     if (!approvalTime) continue; // An unverifiable approval date cannot justify a retroactive publication.
-    for await (const day of LeaveRequestDay.find({ request: request._id, date: { $gte: since, $lte: local.endOf('day').toUTC().toJSDate() } }).cursor()) {
+    for await (const day of LeaveRequestDay.find({ request: request._id, date: { $gte: floor, $lte: local.endOf('day').toUTC().toJSDate() } }).cursor()) {
       const dateKey = instantToDateOnlyKey(day.date, zone), dueAt = leaveDueAt(dateKey, zone);
       if (+dueAt > +now || +new Date(approvalTime) > +dueAt || !leaveCoverage(day) || !(day.requestedAmount > 0) || +day.date < +request.startDate || +day.date > +request.endDate) continue;
       try { await Delivery.updateOne({ request: request._id, user: request.requester, dateKey }, { $setOnInsert: { workspaceId, request: request._id, user: request.requester, dateKey, dueAt } }, { upsert: true }); }
       catch (error) { if (error.code !== 11000) throw error; }
     }
   }
-  await State.updateOne({ workspaceId }, { $set: { leaveRequestCursor: requests.length === 100 ? requests.at(-1)._id : null } });
-  const deliveries = await Delivery.find({ availableAt: { $lte: now }, ...(state.leaveDeliveryCursor ? { $or: [{ needsReconcile: true }, { _id: { $gt: state.leaveDeliveryCursor } }] } : {}) }).sort({ needsReconcile: -1, _id: 1 }).limit(100);
+  await State.updateOne({ workspaceId }, { $set: { leaveRequestCursor: requests.length === 100 ? requests.at(-1)._id : null,
+    ...(requests.length < 100 ? { leaveSchedulingFloor: local.startOf('day').toUTC().toJSDate() } : {}) } });
+  const urgent = await Delivery.find({ availableAt: { $lte: now }, $or: [{ needsReconcile: true },
+    { dateKey: local.toISODate(), ...(state.leaveCurrentCursor ? { _id: { $gt: state.leaveCurrentCursor } } : {}) }] }).sort({ needsReconcile: -1, _id: 1 }).limit(100);
+  const historical = urgent.length < 100 ? await Delivery.find({ availableAt: { $lte: now }, needsReconcile: { $ne: true }, dateKey: { $ne: local.toISODate() },
+    _id: { ...(state.leaveDeliveryCursor ? { $gt: state.leaveDeliveryCursor } : {}), $nin: urgent.map(row => row._id) } }).sort('_id').limit(100 - urgent.length) : [];
+  const deliveries = [...urgent, ...historical];
   for (const row of deliveries) {
     await renew();
     const request = await LeaveRequest.findOne({ _id: row.request, requester: row.user }).lean();
@@ -85,5 +91,7 @@ export async function processLeaveReporting(workspaceId, settings, send, now = n
       row.availableAt = new Date(+now + Math.min(300000, 1000 * 2 ** Math.min(row.attempts, 9))); await row.save();
     }
   }
-  await State.updateOne({ workspaceId }, { $set: { leaveDeliveryCursor: deliveries.length === 100 ? deliveries.at(-1)._id : null } });
+  const current = urgent.filter(row => row.dateKey === local.toISODate());
+  await State.updateOne({ workspaceId }, { $set: { leaveCurrentCursor: urgent.length === 100 && current.length ? current.at(-1)._id : null,
+    ...(urgent.length < 100 ? { leaveDeliveryCursor: historical.length === 100 - urgent.length ? historical.at(-1)?._id || null : null } : {}) } });
 }

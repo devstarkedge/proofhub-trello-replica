@@ -9,6 +9,8 @@ const schema = new mongoose.Schema({
   leaveReportingSince: { type: Date, default: null },
   leaveRequestCursor: mongoose.Schema.Types.ObjectId,
   leaveDeliveryCursor: mongoose.Schema.Types.ObjectId,
+  leaveCurrentCursor: mongoose.Schema.Types.ObjectId,
+  leaveSchedulingFloor: Date,
 }, { timestamps: true });
 schema.index({ workspaceId: 1 }, { unique: true });
 schema.plugin(workspaceScopePlugin);
