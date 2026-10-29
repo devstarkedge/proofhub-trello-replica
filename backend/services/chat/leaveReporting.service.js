@@ -72,7 +72,7 @@ export async function processLeaveReporting(workspaceId, settings, send, now = n
     const employee = await User.findById(row.user).select('name isActive').lean();
     const approvalTime = request ? await approvedAt(request) : null;
     const valid = request && APPROVED_STATUSES.includes(request.status) && approvalTime && +new Date(approvalTime) <= +row.dueAt &&
-      +row.dueAt <= +now && day && +day.date >= +request.startDate && +day.date <= +request.endDate && day.requestedAmount > 0 && leaveCoverage(day) && member && employee?.isActive !== false;
+      +row.dueAt <= +now && day && +day.date >= +request.startDate && +day.date <= +request.endDate && day.requestedAmount > 0 && leaveCoverage(day) && member && employee && employee.isActive !== false;
     const departments = valid ? await Department.find({ _id: { $in: member.department || [] }, isActive: true }).select('_id name').lean() : [];
     const type = request ? await LeaveType.findById(request.leaveType).select('name').lean() : null;
     const payload = { eventType: 'leave.daily_report', eventId: `leave-${row.request}-${row.user}-${row.dateKey}`, workspaceId: String(workspaceId),
