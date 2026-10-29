@@ -23,6 +23,8 @@ import { getWorkspaceTimezone } from '../../modules/leave/leaveTimezone.util.js'
 import Card from '../../models/Card.js';
 import { TaskAssignmentEvent } from '../../modules/tracking/tracking.models.js';
 import { run } from '../../modules/workspaces/workspaceContext.js';
+import { processLeaveReporting } from './leaveReporting.service.js';
+import { resolveLeaveAccessScope } from '../../modules/leave/leaveAuthorization.service.js';
 
 async function reportingWorkSessions(workspaceId, userId, workDateKey, dbSession = null) {
   const sessions = await WorkSession.find({ workspaceId, user: userId, workDateKey }).session(dbSession).lean();
@@ -83,14 +85,14 @@ export async function deliverReportingPayload(payload, settings) {
 // once per maintenance cycle, never once per report. Every cycle also repairs
 // missed hooks; the durable fingerprint survives restarts and worker changes.
 export async function syncReportingDirectory(workspaceId, settings, state) {
-  const departments = await Department.find({ workspaceId }).select('_id name isActive managers').sort('_id').lean();
+  const departments = await Department.find({ workspaceId }).select('_id name isActive managers members').sort('_id').lean();
   const members = await WorkspaceMembership.find({ workspace: workspaceId }).select('user status role roleId department departments kind').sort('_id').lean();
   const users = await User.find({ _id: { $in: members.map(m => m.user) } }).select('_id name isActive').lean();
   const roles = await Role.find({ $or: [{ workspaceId }, { isSystem: true }] }).select('_id workspaceId slug isSystem grants denies permissions isActive').sort('_id').lean();
   const workspace = await Workspace.findById(workspaceId).select('isActive status authzVersion').lean();
   const overrides = await PermissionOverride.find({ workspace: workspaceId }).select('user permission effect scope scopeIds expiresAt status').sort('_id').lean();
-  const legacyOverrides = await AccessOverride.find({ workspace: workspaceId, resource: { $in: ['attendance', 'tracking'] } }).select('user resource effect actions scope scopedResourceIds expiresAt isActive').sort('_id').lean();
-  const hash = crypto.createHash('sha256').update(JSON.stringify([2, workspace, departments, members, users, roles, overrides, legacyOverrides,
+  const legacyOverrides = await AccessOverride.find({ workspace: workspaceId, resource: { $in: ['attendance', 'tracking', 'leave'] } }).select('user resource effect actions scope scopedResourceIds expiresAt isActive').sort('_id').lean();
+  const hash = crypto.createHash('sha256').update(JSON.stringify([3, workspace, departments, members, users, roles, overrides, legacyOverrides,
     [...overrides, ...legacyOverrides].filter(o => o.expiresAt && +new Date(o.expiresAt) <= Date.now()).map(o => String(o._id))])).digest('hex');
   if (!state.dirty && state.fingerprint === hash && Date.now() - +new Date(state.syncedAt || 0) < 300000) return;
   const reconcile = !state.syncedAt || Date.now() - +new Date(state.syncedAt) >= 300000;
@@ -132,9 +134,13 @@ export async function syncReportingDirectory(workspaceId, settings, state) {
     }
     const allowed = departments.filter(d => ctx?.status === 'active' && ctx?.kind !== 'guest' && d.isActive !== false && (allDepartments || assigned.has(String(d._id)) ||
       !systemRole && !legacyReportDenied && (legacyReportGrant || ctx && ['attendance.view_reports', 'attendance.view_workspace', 'tracking.view_reports'].some(p => can(ctx, p, { workspaceId, departments: [String(d._id)] }))))).map(d => String(d._id));
+    const leaveScope = active ? await resolveLeaveAccessScope({ viewer: { _id: member.user }, workspaceId, includeEmployees: true }) : null;
     await send({ eventType: 'reporting.member_synced', eventId: `report-member-${member.user}-${hash}`,
       workspaceId: String(workspaceId), employee: { flowTaskUserId: String(member.user), name: user?.name || 'Employee' },
       active, access, reportingAccess: { active, departmentIds: allowed, allDepartments: !!allDepartments,
+        leaveScope: { role: access?.role, memberDepartments: access?.departmentIds || [],
+          allUsers: systemRole !== 'employee' && (['admin', 'hr'].includes(systemRole) || leaveScope?.scope === 'workspace'),
+          employeeIds: systemRole === 'employee' ? [] : (leaveScope?.employeeIds || []).map(String) },
         historyAdmin: active && ctx?.status === 'active' && ctx?.kind !== 'guest' && systemRole === 'admin' },
     });
   }
@@ -156,6 +162,10 @@ async function processScopedAttendanceReports(workspaceId, { limit = 20 } = {}) 
   if (!state) return;
   try {
   await syncReportingDirectory(workspaceId, settings, state);
+  try { await processLeaveReporting(workspaceId, settings, deliverReportingPayload, new Date(), async () => {
+    const renewed = await ReportingDirectoryState.updateOne({ workspaceId, leaseToken: token }, { $set: { leaseUntil: new Date(Date.now() + 120000) } });
+    if (!renewed.matchedCount) throw new Error('Leave reporting lease was lost');
+  }); } catch (error) { logger.warn('Leave reporting will retry independently', { workspaceId: String(workspaceId), error: error.message }); }
   await reconcileReportingHistoryReports(workspaceId);
   await reconcileCheckoutReports(workspaceId);
   const blocked = [];

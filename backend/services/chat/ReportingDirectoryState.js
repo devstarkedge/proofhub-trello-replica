@@ -6,6 +6,9 @@ const schema = new mongoose.Schema({
   leaseToken: String, leaseUntil: { type: Date, default: () => new Date(0) },
   revision: { type: Number, default: 0 }, fingerprint: String, syncedAt: Date, dirty: { type: Boolean, default: true },
   checkoutCursor: { type: mongoose.Schema.Types.ObjectId, default: null },
+  leaveReportingSince: { type: Date, default: null },
+  leaveRequestCursor: mongoose.Schema.Types.ObjectId,
+  leaveDeliveryCursor: mongoose.Schema.Types.ObjectId,
 }, { timestamps: true });
 schema.index({ workspaceId: 1 }, { unique: true });
 schema.plugin(workspaceScopePlugin);

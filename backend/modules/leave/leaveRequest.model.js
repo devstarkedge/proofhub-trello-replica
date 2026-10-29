@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import workspaceScopePlugin from '../workspaces/workspaceScopePlugin.js';
+import leaveReportingInvalidation from '../../services/chat/leaveReportingInvalidation.plugin.js';
 import { LEAVE_CLIENT_ID_KEYS, LEAVE_CLIENT_ID_OPTIONS, normalizeLeaveClientId } from '../../utils/leaveRequestIdentity.js';
 
 export const LEAVE_REQUEST_STATUSES = Object.freeze({
@@ -60,6 +61,7 @@ const leaveRequestSchema = new mongoose.Schema({
   // PENDING_APPROVAL rather than auto-approving or vanishing. Surfaced
   // loudly in the UI, never silently resolved.
   blockedReason: { type: String, enum: ['NONE', 'NO_ELIGIBLE_APPROVER'], default: 'NONE' },
+  reportingApprovedAt: { type: Date, default: null },
   blackoutOverride: {
     warned: { type: Boolean, default: false },
     adminOverrodeBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
@@ -83,6 +85,10 @@ leaveRequestSchema.index({ workspaceId: 1, requester: 1, createdAt: -1, _id: -1 
 leaveRequestSchema.index({ workspaceId: 1, requesterDepartmentIds: 1, createdAt: -1, _id: -1 }, { name: 'leave_department_created' });
 leaveRequestSchema.index(LEAVE_CLIENT_ID_KEYS, LEAVE_CLIENT_ID_OPTIONS);
 
+leaveRequestSchema.pre('save', function () {
+  if (this.isModified('status') && this.status === 'APPROVED' && !this.reportingApprovedAt) this.reportingApprovedAt = new Date();
+});
 leaveRequestSchema.plugin(workspaceScopePlugin);
+leaveRequestSchema.plugin(leaveReportingInvalidation);
 
 export default mongoose.model('LeaveRequest', leaveRequestSchema);

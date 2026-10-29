@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import workspaceScopePlugin from '../workspaces/workspaceScopePlugin.js';
+import leaveReportingInvalidation from '../../services/chat/leaveReportingInvalidation.plugin.js';
 
 /**
  * One row per calendar date covered by a LeaveRequest, classified once at
@@ -33,5 +34,6 @@ leaveRequestDaySchema.index({ workspaceId: 1, request: 1, date: 1 }, { unique: t
 leaveRequestDaySchema.index({ workspaceId: 1, date: 1 }); // calendar rendering across users
 
 leaveRequestDaySchema.plugin(workspaceScopePlugin);
+leaveRequestDaySchema.plugin(leaveReportingInvalidation, { day: true });
 
 export default mongoose.model('LeaveRequestDay', leaveRequestDaySchema);
