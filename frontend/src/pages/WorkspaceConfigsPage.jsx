@@ -2,7 +2,7 @@ import { useContext, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Dialog } from 'radix-ui';
-import { Settings2, LockKeyhole, Loader, ShieldCheck, X } from 'lucide-react';
+import { Settings2, LockKeyhole, Loader, ShieldCheck, Info, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 import WorkspaceContext from '../context/WorkspaceContext';
 import WorkspaceSettingsTabs from '../components/Workspace/WorkspaceSettingsTabs';
@@ -22,6 +22,7 @@ function Configs({ workspace }) {
   const workspaceId = workspace._id;
   const queryClient = useQueryClient();
   const [issuePage, setIssuePage] = useState(1);
+  const [showSyncIssues, setShowSyncIssues] = useState(false);
   const { data, isPending, isFetching, error } = useQuery({ queryKey: ['workspace-configs', workspaceId, issuePage], queryFn: () => getWorkspaceConfigs(workspaceId, issuePage), refetchInterval: 15_000, retry: false, placeholderData: previous => previous });
   const connection = data?.hubspot;
   const projectIssues = connection?.projectSyncIssues;
@@ -111,14 +112,18 @@ function Configs({ workspace }) {
             </dl>
             {connection.contactOwnerId && connection.ownerMissingScopes?.includes('crm.objects.owners.read') && <p role="status" className="mt-4 rounded-lg bg-red-500/10 p-3 text-sm text-red-600">Add <code>crm.objects.owners.read</code> to this Service Key in HubSpot to verify the Contact Owner. If HubSpot issues a new key, update it in Edit Configuration; otherwise keep the saved key.</p>}
             {connection.writeCapability === 'unverified' && <p className="mt-4 text-sm text-amber-600">Contacts read access and account identity are verified. HubSpot did not provide non-destructive write permission inspection for this key. Ensure it has crm.objects.contacts.write before enabling sync. No test contact was created.</p>}
-            {(connection.lastError || hasProjectIssues) && <div role="alert" className="mt-4 rounded-lg bg-red-500/10 p-3 text-sm text-red-600">
-              {connection.lastError && <p>{connection.lastError}</p>}
-              {hasProjectIssues && <>
-                <p className="mt-2 font-medium">{projectIssues.total} {projectIssues.total === 1 ? 'project needs' : 'projects need'} attention. Review the issue shown for each affected project.</p>
+            {connection.lastError && <p role="alert" className="mt-4 rounded-lg bg-red-500/10 p-3 text-sm text-red-600">{connection.lastError}</p>}
+            {hasProjectIssues && <section className="mt-4 rounded-lg border border-[var(--color-border-subtle)] p-3 text-sm" aria-label="HubSpot contact sync issues">
+              <div className="flex items-start justify-between gap-3">
+                <div><p className="font-semibold">HubSpot contact sync issues</p><p className="mt-1 text-[var(--color-text-muted)]">{projectIssues.total} {projectIssues.total === 1 ? 'project has' : 'projects have'} contacts that could not sync to HubSpot. Click the info button to see affected projects and what needs fixing.</p></div>
+                <button type="button" onClick={() => setShowSyncIssues(previous => !previous)} aria-expanded={showSyncIssues} aria-controls="hubspot-project-sync-issues" aria-label={showSyncIssues ? 'Hide project sync issues' : 'Show project sync issues'} title={showSyncIssues ? 'Hide project sync issues' : 'View affected projects and sync errors'} className="shrink-0 cursor-pointer rounded-full p-2 text-amber-600 bg-amber-500/10 hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"><Info size={20} aria-hidden="true" /></button>
+              </div>
+              {showSyncIssues && <div id="hubspot-project-sync-issues" className="mt-3 rounded-lg bg-red-500/10 p-3 text-red-600">
+                <p className="font-medium">Review each issue below and correct the affected project&apos;s details where needed.</p>
                 <ul className="mt-3 max-h-72 overflow-y-auto space-y-3" aria-label="Projects with HubSpot sync errors">{projectIssues.projects.map(project => <li key={project.id} className="break-words"><p className="font-semibold">Project - {project.name}</p><p>{project.message}</p></li>)}</ul>
                 {projectIssues.total > projectIssues.pageSize && <div className="mt-3 flex flex-wrap items-center gap-3"><button type="button" className={secondaryClass} disabled={isFetching || projectIssues.page <= 1} onClick={() => setIssuePage(projectIssues.page - 1)}>Previous projects</button><span>Page {projectIssues.page} of {Math.ceil(projectIssues.total / projectIssues.pageSize)}</span><button type="button" className={secondaryClass} disabled={isFetching || projectIssues.page * projectIssues.pageSize >= projectIssues.total} onClick={() => setIssuePage(projectIssues.page + 1)}>Next projects</button></div>}
-              </>}
-            </div>}
+              </div>}
+            </section>}
             <div className="mt-5 flex flex-wrap gap-3"><button type="button" className={buttonClass} onClick={() => open('configure')}>Edit Configuration</button><button type="button" role="switch" aria-checked={connection.enabled} aria-label="Automatic client synchronization" className={connection.enabled ? disableSyncClass : buttonClass} onClick={() => open('toggle')}>{connection.enabled ? 'Disable automatic sync' : 'Enable automatic sync'}</button></div>
             {connection.enabled && <div className="mt-6 border-t border-[var(--color-border-subtle)] pt-5"><h3 className="font-bold mb-3">Field Mapping</h3><p className="text-sm text-[var(--color-text-muted)] mb-3">These mappings are fixed. Names split at the final word; a single name has an empty lastname.</p><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b border-[var(--color-border-subtle)]"><th className="py-2">FlowTask field</th><th>HubSpot property</th></tr></thead><tbody>{[['clientName (all but last word)', 'firstname'], ['clientName (last word)', 'lastname'], ['clientEmail', 'email'], ['clientWhatsappNumber', 'phone'], ['Project technologies (combined across eligible projects)', 'technology'], ['Workspace Contact Owner', 'hubspot_owner_id']].map(([source, target]) => <tr key={target} className="border-b border-[var(--color-border-subtle)]"><td className="py-3">{source}</td><td><code>{target}</code></td></tr>)}</tbody></table></div><p className="mt-4 text-xs text-[var(--color-text-muted)]">Existing eligible records are discovered automatically. Transient failures allow an initial attempt plus three retries, at least two minutes apart. Exhausted versions stay stopped until their relevant source data changes.</p></div>}
           </>}
