@@ -25,6 +25,7 @@ import { TaskAssignmentEvent } from '../../modules/tracking/tracking.models.js';
 import { run } from '../../modules/workspaces/workspaceContext.js';
 import { processLeaveReporting } from './leaveReporting.service.js';
 import { resolveLeaveAccessScope } from '../../modules/leave/leaveAuthorization.service.js';
+import { reportingRetry, isWorkspaceMappingUnavailable } from './reportingRetry.js';
 
 async function reportingWorkSessions(workspaceId, userId, workDateKey, dbSession = null) {
   const sessions = await WorkSession.find({ workspaceId, user: userId, workDateKey }).session(dbSession).lean();
@@ -152,12 +153,14 @@ export async function processAttendanceReports(workspaceId, options = {}) {
   return run({ workspaceId }, () => processScopedAttendanceReports(workspaceId, options));
 }
 async function processScopedAttendanceReports(workspaceId, { limit = 20 } = {}) {
-  const settings = await resolveWorkspaceChatSettings(workspaceId);
+  const settings = await resolveWorkspaceChatSettings(workspaceId, { requireLinkedWorkspace: true });
   if (!settings.enabled || !settings.webhookUrl || !process.env.FLOWTASK_WEBHOOK_SECRET) return;
   try { await ReportingDirectoryState.updateOne({}, { $setOnInsert: { workspaceId } }, { upsert: true, runValidators: true }); }
   catch (error) { if (error.code !== 11000) throw error; }
   const token = crypto.randomUUID();
-  const state = await ReportingDirectoryState.findOneAndUpdate({ workspaceId, leaseUntil: { $lte: new Date() } },
+  const now = new Date();
+  const state = await ReportingDirectoryState.findOneAndUpdate({ workspaceId, leaseUntil: { $lte: now },
+    $or: [{ nextAttemptAt: { $lte: now } }, { nextAttemptAt: { $exists: false } }] },
     { $set: { leaseToken: token, leaseUntil: new Date(Date.now() + 120000) } }, { new: true }).lean();
   if (!state) return;
   try {
@@ -165,7 +168,10 @@ async function processScopedAttendanceReports(workspaceId, { limit = 20 } = {}) 
   try { await processLeaveReporting(workspaceId, settings, deliverReportingPayload, new Date(), async () => {
     const renewed = await ReportingDirectoryState.updateOne({ workspaceId, leaseToken: token }, { $set: { leaseUntil: new Date(Date.now() + 120000) } });
     if (!renewed.matchedCount) throw new Error('Leave reporting lease was lost');
-  }); } catch (error) { logger.warn('Leave reporting will retry independently', { workspaceId: String(workspaceId), error: error.message }); }
+  }); } catch (error) {
+    if (isWorkspaceMappingUnavailable(error)) throw error;
+    logger.warn('Leave reporting will retry independently', { workspaceId: String(workspaceId), error: error.message });
+  }
   await reconcileReportingHistoryReports(workspaceId);
   await reconcileCheckoutReports(workspaceId);
   const blocked = [];
@@ -190,9 +196,18 @@ async function processScopedAttendanceReports(workspaceId, { limit = 20 } = {}) 
       await AttendanceEvent.updateOne(lease, { $set: { claimedUntil: new Date(0), lastError: `ChatApp reporting delivery failed (${error.response?.status || error.code || 'network'})`,
         availableAt: new Date(Date.now() + Math.min(300000, 1000 * 2 ** Math.min(event.attempts, 9))) } });
       logger.warn('Attendance report retained for retry', { eventId: event.key, attempts: event.attempts, status: error.response?.status });
+      if (isWorkspaceMappingUnavailable(error)) throw error;
     }
   }
-  } catch (error) { logger.warn('Attendance reporting worker will retry', { workspaceId: String(workspaceId), error: error.message }); }
+  await ReportingDirectoryState.updateOne({ workspaceId, leaseToken: token }, { $set: {
+    failureCount: 0, nextAttemptAt: new Date(0), lastFailureCode: '', lastFailureStatus: null,
+  } });
+  } catch (error) {
+    const retry = reportingRetry(error, state);
+    await ReportingDirectoryState.updateOne({ workspaceId, leaseToken: token }, { $set: retry });
+    logger.warn('Attendance reporting worker will retry', { workspaceId: String(workspaceId), error: error.message,
+      status: retry.lastFailureStatus, code: retry.lastFailureCode, nextAttemptAt: retry.nextAttemptAt.toISOString() });
+  }
   finally { await ReportingDirectoryState.updateOne({ workspaceId, leaseToken: token }, { $set: { leaseUntil: new Date(0) }, $unset: { leaseToken: 1 } }); }
 }
 
@@ -250,7 +265,7 @@ let requested = new Set();
 export async function requestReportingReconciliation(workspaceId, dbSession = null) {
   if (!workspaceId) return;
   return run({ workspaceId }, async () => {
-  const settings = await resolveWorkspaceChatSettings(workspaceId);
+  const settings = await resolveWorkspaceChatSettings(workspaceId, { requireLinkedWorkspace: true });
   if (!settings.enabled || !settings.webhookUrl) return;
   await ReportingDirectoryState.updateOne({}, { $set: { dirty: true }, $setOnInsert: { workspaceId } }, { upsert: true, runValidators: true, session: dbSession });
   if (dbSession?.inTransaction() || process.env.ATTENDANCE_REPORTING_AUTODRAIN === 'false') return;

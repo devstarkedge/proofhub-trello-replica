@@ -9,6 +9,8 @@ import { deleteFromCloudinary, uploadWorkspaceIconToCloudinary } from '../utils/
 import { emitToUser } from '../realtime/index.js';
 import config from '../config/index.js';
 import axios from 'axios';
+import ReportingDirectoryState from '../services/chat/ReportingDirectoryState.js';
+import { run } from '../modules/workspaces/workspaceContext.js';
 
 /**
  * Receives the reverse-sync WORKSPACE_CREATED announcement from ChatApp
@@ -76,6 +78,11 @@ async function reconcileChatWorkspaceLink({
     });
   }
 
+  // A verified link repair makes delivery eligible immediately, even if an
+  // earlier missing mapping put this workspace into a persisted cooldown.
+  await run({ workspaceId: flowTaskWorkspaceId }, async () => { await ReportingDirectoryState.updateOne({ workspaceId: flowTaskWorkspaceId }, { $set: {
+    dirty: true, failureCount: 0, nextAttemptAt: new Date(0), lastFailureCode: '', lastFailureStatus: null,
+  } }); });
   return mapping;
 }
 

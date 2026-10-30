@@ -20,7 +20,7 @@ export const getReportingStatus = asyncHandler(async (req, res) => {
   const [pending, failures, directory] = await Promise.all([
     AttendanceEvent.countDocuments({ workspaceId, kind: 'CHAT_REPORT', processedAt: null }),
     AttendanceEvent.find({ workspaceId, kind: 'CHAT_REPORT', processedAt: null, attempts: { $gt: 0 } }).select('key attempts lastError availableAt createdAt').sort({ createdAt: 1 }).limit(50).lean(),
-    ReportingDirectoryState.findOne({ workspaceId }).select('syncedAt revision').lean(),
+    ReportingDirectoryState.findOne({ workspaceId }).select('syncedAt revision failureCount nextAttemptAt lastFailureCode lastFailureStatus').lean(),
   ]);
   res.json({ success: true, data: { pending, failures, directory } });
 });
@@ -29,7 +29,7 @@ export const retryReporting = asyncHandler(async (req, res) => {
   if (!workspaceId) throw new ErrorResponse('Workspace context is required', 400);
   const result = await AttendanceEvent.updateMany({ workspaceId, kind: 'CHAT_REPORT', processedAt: null, claimedUntil: { $lte: new Date() } },
     { $set: { availableAt: new Date() } });
-  await ReportingDirectoryState.updateOne({ workspaceId }, { $set: { dirty: true } });
+  await ReportingDirectoryState.updateOne({ workspaceId }, { $set: { dirty: true, failureCount: 0, nextAttemptAt: new Date(0), lastFailureCode: '', lastFailureStatus: null } });
   res.json({ success: true, data: { queuedForRetry: result.modifiedCount } });
 });
 

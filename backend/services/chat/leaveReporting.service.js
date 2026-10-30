@@ -11,6 +11,7 @@ import Department from '../../models/Department.js';
 import State from './ReportingDirectoryState.js';
 import Delivery from './LeaveReportingDelivery.js';
 import { getWorkspaceTimezone, instantToDateOnlyKey } from '../../modules/leave/leaveTimezone.util.js';
+import { isWorkspaceMappingUnavailable } from './reportingRetry.js';
 let indexes;
 
 export function leaveCoverage(day) {
@@ -89,6 +90,7 @@ export async function processLeaveReporting(workspaceId, settings, send, now = n
     } catch (error) {
       row.attempts++; row.lastError = `ChatApp leave reporting delivery failed (${error.response?.status || error.code || 'network'})`;
       row.availableAt = new Date(+now + Math.min(300000, 1000 * 2 ** Math.min(row.attempts, 9))); await row.save();
+      if (isWorkspaceMappingUnavailable(error)) throw error;
     }
   }
   const current = urgent.filter(row => row.dateKey === local.toISODate());

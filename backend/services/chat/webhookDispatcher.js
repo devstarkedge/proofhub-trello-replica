@@ -16,6 +16,7 @@ import axios from 'axios';
 import logger from '../../utils/logger.js';
 import chatWebhookQueue from '../../queues/chatWebhookQueue.js';
 import Workspace from '../../models/Workspace.js';
+import WorkspaceIntegrationMapping from '../../models/WorkspaceIntegrationMapping.js';
 import config from '../../config/index.js';
 
 // WEBHOOK_SECRET stays a single, deployment-wide value by design (the
@@ -40,11 +41,18 @@ const TIMEOUT_MS = 10000;
  * deployments unchanged while making explicitly-connected-per-workspace
  * deployments correct — see Workspace.js's `settings.chatIntegration`.
  */
-export async function resolveWorkspaceChatSettings(workspaceId) {
-  if (!workspaceId) return { enabled: CHAT_ENABLED, webhookUrl: CHAT_WEBHOOK_URL };
+export async function resolveWorkspaceChatSettings(workspaceId, { requireLinkedWorkspace = false } = {}) {
+  if (!workspaceId) return { enabled: !requireLinkedWorkspace && CHAT_ENABLED, webhookUrl: CHAT_WEBHOOK_URL };
 
-  const ws = await Workspace.findById(workspaceId).select('settings.chatIntegration').lean();
+  const ws = await Workspace.findById(workspaceId).select('settings.chatIntegration isActive').lean();
   const ci = ws?.settings?.chatIntegration;
+
+  // Reporting maintenance runs without an originating user request. Global
+  // enablement is not proof that this tenant has ever linked ChatApp. Keep the
+  // legacy dispatcher fallback, but require the verified pair for reporting.
+  if (requireLinkedWorkspace && (!ws || ws.isActive === false || !await WorkspaceIntegrationMapping.exists({ flowTaskWorkspaceId: workspaceId, status: 'active' }))) {
+    return { enabled: false, webhookUrl: CHAT_WEBHOOK_URL };
+  }
 
   if (!ci?.connectedAt) {
     return { enabled: CHAT_ENABLED, webhookUrl: CHAT_WEBHOOK_URL };

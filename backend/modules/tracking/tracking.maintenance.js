@@ -1,6 +1,7 @@
 import { processAttendanceEvents } from '../attendance/attendanceEvents.service.js';
 import { processAttendanceReports } from '../../services/chat/attendanceReporting.service.js';
 import Workspace from '../../models/Workspace.js';
+import WorkspaceIntegrationMapping from '../../models/WorkspaceIntegrationMapping.js';
 import { run } from '../workspaces/workspaceContext.js';
 import { TrackingScreenshot, ActivityInterval } from './tracking.models.js';
 import { reconcileWorkspaceSessions, policyFor } from './tracking.service.js';
@@ -161,8 +162,10 @@ export function startTrackingMaintenance() {
       if (reportingRunning) return;
       reportingRunning = true;
       try {
-        for await (const workspace of Workspace.find({}).select('_id').cursor()) {
-          await run({ workspaceId: workspace._id }, () => processAttendanceReports(workspace._id));
+        for await (const mapping of WorkspaceIntegrationMapping.find({ status: 'active' }).select('flowTaskWorkspaceId').cursor()) {
+          const workspaceId = mapping.flowTaskWorkspaceId;
+          try { await run({ workspaceId }, () => processAttendanceReports(workspaceId)); }
+          catch (error) { console.error('[Reporting] workspace maintenance:', String(workspaceId), error.code || error.name); }
         }
       } catch (error) { console.error('[Reporting] maintenance:', error.message); }
       finally { reportingRunning = false; }
