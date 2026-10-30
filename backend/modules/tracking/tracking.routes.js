@@ -12,7 +12,7 @@ import '../../realtime/emitters.js';
 import { WorkSession } from './tracking.models.js';
 import { currentState, changeWork, workOptions, contextFor, fail, objectId, createWorkTask, authorizeRecord, policyFor, publicWorkSession } from './tracking.service.js';
 import { registerDevice, acceptMonitoringNotice, releaseDevice, heartbeat, recordInterval, prepareScreenshot, completeScreenshot, retryScreenshot } from './tracking.device.js';
-import { storageHealth } from './tracking.storage.js';
+import { storageHealth, workspaceStorageUsage } from './tracking.storage.js';
 import {gallery,screenshotDetails,screenshotContent} from './tracking.gallery.js';
 import {readVisibilityScope} from './tracking.visibility.js';
 import {updateSettings,requireTrackingAdmin,listAgendas,createAgenda} from './tracking.settings.js';
@@ -153,7 +153,13 @@ router.get('/sessions/:sessionId/timeline', asyncHandler(async (req,res) => {
 }));
 router.get('/storage-health',asyncHandler(async(req,res)=>{
   await requireTrackingAdmin(req.workspaceId,req.user.id);
-  send(res,await storageHealth());
+  res.set('Cache-Control','private, no-store');
+  const health=await storageHealth();
+  if(health.available){
+    try{health.usage=await workspaceStorageUsage(req.workspaceId);}
+    catch{health.usageMessage='Storage is available, but used size could not be read. Verify R2 object-list permissions or retry.';}
+  }
+  send(res,{...health,workspaceId:String(req.workspaceId)});
 }));
 router.get('/screenshots',asyncHandler(async(req,res)=>sendCached(res,()=>gallery(req.workspaceId,req.user.id,req.query))));
 router.get('/screenshots/:screenshotId/details',asyncHandler(async(req,res)=>{

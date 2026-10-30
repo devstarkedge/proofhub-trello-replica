@@ -18,7 +18,7 @@ function model(name, fields, indexes = [], options = {}) {
 export const TrackingPolicy = model('TrackingPolicy', {
   enabled: { type: Boolean, default: false }, monitoringEnabled: { type: Boolean, default: true },
   configuredAt: Date, effectiveAt: Date, disabledAt: Date, disableRecoveryPending:Boolean,
-  versions:[{_id:false,revision:Number,effectiveAt:Date,configuration:mongoose.Schema.Types.Mixed}],
+  versions:[{_id:false,revision:Number,effectiveAt:Date,captureGraceUntil:Date,configuration:mongoose.Schema.Types.Mixed}],
   intervalSeconds: { type: Number, default: 600, min: 60, max: 3600 },
   idleThresholdSeconds: { type: Number, default: 60, min: 15, max: 900 },
   retentionDays: { type: Number, default: 365, min: 7, max: 365 },

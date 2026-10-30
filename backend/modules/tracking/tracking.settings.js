@@ -26,18 +26,22 @@ export async function updateSettings(workspaceId,userId,body,health){
   if(body.revision!==previous.revision)fail('Configuration changed; refresh and retry',409);
   const action=body.action;
   if(!['save','enable','disable'].includes(action))fail('Choose save, enable, or disable');
-  if(action!=='disable'&&previous.enabled)fail('Disable Time Tracking before editing configuration',409);
+  if(action==='enable'&&previous.enabled)fail('Time Tracking is already enabled; save the configuration instead',409);
   if(action!=='disable'&&previous.disableRecoveryPending)fail('Stopping active work; retry when disable recovery completes',409);
   if(action==='disable'&&body.confirmed!==true)fail('Confirm stopping active work and monitoring');
   let values={};if(action!=='disable')values=validateConfiguration(body);
   if(action==='enable'&&body.confirmed!==true)fail('Explicitly confirm Enable');
-  if(action==='enable'&&values.monitoringEnabled&&!(await health()).available)fail('R2 screenshot storage is unavailable. Verify backend storage access before enabling.',503);
+  const enabled=action==='save'?previous.enabled:action==='enable';
+  if(enabled&&values.monitoringEnabled&&(action==='enable'||!previous.monitoringEnabled)&&!(await health()).available)fail('R2 screenshot storage is unavailable. Verify backend storage access before enabling.',503);
   const at=new Date(),revision=previous.revision+1;
+  // Existing desktops can finish their already authorized five-minute lease
+  // while the next heartbeat switches to the new policy and capture anchor.
+  const version={revision,effectiveAt:at,configuration:{...values,enabled},...(action==='save'&&previous.enabled?{captureGraceUntil:new Date(+at+300000)}:{})};
   // The existing workspace plugin supplies the tenant predicate. Repeating it
   // in an upsert's filter makes Mongo reject first-time inserts as ambiguous.
   const filter=previous._id?{_id:previous._id,revision:previous.revision}:{};
   let data;
-  try{data=await TrackingPolicy.findOneAndUpdate(filter,{$set:{...values,enabled:action==='enable',...(action!=='disable'?{configuredAt:at}:{}),effectiveAt:at,...(action==='disable'?{disabledAt:at,disableRecoveryPending:true}:{}),updatedBy:userId,revision},$setOnInsert:{workspaceId},$push:{versions:{revision,effectiveAt:at,configuration:{...values,enabled:action==='enable'}}}},{new:true,upsert:!previous._id,runValidators:true}).lean();}
+  try{data=await TrackingPolicy.findOneAndUpdate(filter,{$set:{...values,enabled,...(action!=='disable'?{configuredAt:at}:{}),effectiveAt:at,...(action==='disable'?{disabledAt:at,disableRecoveryPending:true}:{}),updatedBy:userId,revision},$setOnInsert:{workspaceId},$push:{versions:version}},{new:true,upsert:!previous._id,runValidators:true}).lean();}
   catch(error){if(error.code===11000)fail('Configuration changed concurrently; refresh and retry',409);throw error;}
   if(!data)fail('Configuration changed concurrently',409);
   for await(const member of WorkspaceMembership.find({workspace:workspaceId,status:'active'}).select('user').cursor())try{emitToUser(member.user,'tracking:policy-updated',{revision,enabled:data.enabled,disabledAt:data.disabledAt},workspaceId);}catch{/* polling recovers */}

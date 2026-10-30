@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadBucketCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, HeadObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadBucketCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createHash } from 'node:crypto';
 import sharp from 'sharp';
@@ -123,6 +123,27 @@ export async function removePrivateThumbnail(s){
 }
 export async function storageHealth() {
   let configured=false;
-  try{const {client,config}=privateStorage();configured=true;await client.send(new HeadBucketCommand({Bucket:config.bucket}));return {configured:true,available:true,provider:'cloudflare-r2'};}
+  try{const {client,config}=privateStorage();configured=true;await send(client,new HeadBucketCommand({Bucket:config.bucket}));return {configured:true,available:true,provider:'cloudflare-r2'};}
   catch{return {configured,available:false,provider:'cloudflare-r2',message:'R2 configuration, bucket access, or connectivity check failed. Review backend environment and bucket-scoped token permissions.'};}
+}
+
+export async function workspaceStorageUsage(workspaceId) {
+  if(!/^[a-f\d]{24}$/i.test(String(workspaceId)))throw failure('Invalid workspace storage identity',400);
+  const labels=await TrackingStorageLabel.find({workspaceId,kind:'workspace',ownerId:workspaceId}).select('label').lean();
+  const prefixes=new Set([`screenshots/${workspaceId}/`,...labels.map(({label})=>`screenshots/${label}/`)]);
+  const {client,config}=privateStorage(),abortSignal=AbortSignal.timeout(15000);
+  let usedBytes=0,objectCount=0;
+  for(const Prefix of prefixes){
+    let ContinuationToken;
+    do{
+      const page=await storageIO(()=>client.send(new ListObjectsV2Command({Bucket:config.bucket,Prefix,MaxKeys:1000,...(ContinuationToken?{ContinuationToken}:{})}),{abortSignal}));
+      for(const object of page.Contents||[]){
+        if(!object.Key?.startsWith(Prefix)||!Number.isSafeInteger(object.Size)||object.Size<0)throw failure('R2 returned invalid workspace storage usage');
+        usedBytes+=object.Size;objectCount++;
+      }
+      if(page.IsTruncated&&(!page.NextContinuationToken||page.NextContinuationToken===ContinuationToken))throw failure('R2 storage listing was incomplete; retry the check');
+      ContinuationToken=page.IsTruncated?page.NextContinuationToken:undefined;
+    }while(ContinuationToken);
+  }
+  return {workspaceId:String(workspaceId),usedBytes,objectCount,checkedAt:new Date()};
 }

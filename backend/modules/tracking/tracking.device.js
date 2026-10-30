@@ -156,8 +156,10 @@ async function saveInterval({ workspaceId, userId, deviceId, payload }) {
   if (!anchor || !numeric(payload.startOffsetMs, 86400000) || !numeric(payload.endOffsetMs, 86400000) || payload.endOffsetMs <= payload.startOffsetMs) fail('Invalid monotonic interval anchor');
   const startedAt = new Date(+new Date(anchor.serverAt) + payload.startOffsetMs), endedAt = new Date(+new Date(anchor.serverAt) + payload.endOffsetMs);
   if(session.endedAt && +endedAt>+new Date(session.endedAt))fail('Activity was recorded after attendance checkout',409,'CAPTURE_AFTER_CHECKOUT');
-  const nextVersion=(policy.versions||[]).filter(v=>v.revision>anchor.policyRevision).sort((a,b)=>a.revision-b.revision)[0];
-  if(nextVersion&&+endedAt>+new Date(nextVersion.effectiveAt))fail('Capture crosses a workspace configuration boundary',403);
+  const nextVersions=(policy.versions||[]).filter(v=>v.revision>anchor.policyRevision);
+  // Live edits preserve completed/offline evidence within the old lease.
+  // Check every later version so an intervening disable remains a hard stop.
+  if(nextVersions.some(v=>+endedAt>+new Date(v.captureGraceUntil||v.effectiveAt)))fail('Capture crosses a workspace configuration boundary',403);
   if(anchor.capturePolicy && (!anchor.capturePolicy.enabled||!anchor.capturePolicy.monitoringEnabled)||policy.disabledAt&&+endedAt>+new Date(policy.disabledAt)&&!policy.enabled)fail('Capture was not authorized by the effective workspace policy',403);
   if (conflicting && (!conflicting.leaseStartedAt || +endedAt > +new Date(conflicting.leaseStartedAt))) fail('Another device owns this monitoring session',409,'DEVICE_CONFLICT');
   if(device.noticeVersion===MONITORING_NOTICE_VERSION||payload.activityBasis==='distinct-input-seconds-v1'){
