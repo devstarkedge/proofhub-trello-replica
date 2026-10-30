@@ -184,7 +184,9 @@ async function saveInterval({ workspaceId, userId, deviceId, payload }) {
   const partial = covered + 0.01 < seconds;
   const distinctInput = payload.activityBasis === 'distinct-input-seconds-v1';
   if (payload.activityBasis && !distinctInput) fail('Unsupported activity measurement');
-  if (distinctInput && (!numeric(payload.inputActiveSeconds,seconds+0.05) || !numeric(payload.inputEligibleSeconds,seconds+0.05) || payload.inputActiveSeconds>payload.inputEligibleSeconds || Math.abs(payload.inputEligibleSeconds-seconds)>0.05)) fail('Invalid distinct-input-second measurements');
+  // Accept floating-point noise from already queued desktop measurements.
+  // Keep rejecting actual over-counting; replay digests use the original data.
+  if (distinctInput && (!numeric(payload.inputActiveSeconds,seconds+0.05) || !numeric(payload.inputEligibleSeconds,seconds+0.05) || payload.inputActiveSeconds-payload.inputEligibleSeconds>1e-6 || Math.abs(payload.inputEligibleSeconds-seconds)>0.05)) fail('Invalid distinct-input-second measurements');
   const inputEligible = distinctInput && !partial && payload.inputAvailable && !['excluded','locked','sleep'].includes(payload.coverage);
   if (payload.inputAvailable && (!Number.isInteger(payload.mouseCount) || !numeric(payload.mouseCount) || !Number.isInteger(payload.keyboardCount) || !numeric(payload.keyboardCount))) fail('Invalid input counts');
   if (!numeric(payload.activeSeconds, seconds + 0.05) || !numeric(payload.idleSeconds, seconds + 0.05) || Math.abs(payload.activeSeconds + payload.idleSeconds - seconds) > 0.1) fail('Active and idle measurements must cover the exact interval');
@@ -206,7 +208,7 @@ async function saveInterval({ workspaceId, userId, deviceId, payload }) {
       startedAt, endedAt, mouseCount: payload.inputAvailable ? payload.mouseCount : null,
       keyboardCount: payload.inputAvailable ? payload.keyboardCount : null,
       activeSeconds: partial ? null : payload.activeSeconds, idleSeconds: partial ? null : payload.idleSeconds,
-      inputActiveSeconds: inputEligible ? payload.inputActiveSeconds : null,
+      inputActiveSeconds: inputEligible ? Math.min(payload.inputActiveSeconds,payload.inputEligibleSeconds) : null,
       inputEligibleSeconds: inputEligible ? payload.inputEligibleSeconds : null, activityBasis: distinctInput ? payload.activityBasis : 'legacy-idle-threshold', policyRevision: anchor.policyRevision || policy.revision,
       departmentIdsAtCapture:anchor.departments,
       capturePolicy:{revision:anchor.policyRevision,retentionDays:capturePolicy.retentionDays,blur:capturePolicy.blur,monitoringEnabled:capturePolicy.monitoringEnabled,excludedDisplayIds:capturePolicy.excludedDisplayIds||[]},

@@ -578,15 +578,6 @@ export default function TrackingPanel({
                 </span>
               </strong>
             </div>
-            <div className="welcome-timer">
-              <span>Office</span>
-              <strong>
-                <Clock3 size={14} />
-                <span>
-                  <TrackingClock state={state} kind="office" />
-                </span>
-              </strong>
-            </div>
           </div>
           <div className="welcome-actions">
             {state.attendance && state.canTrack && (
@@ -633,11 +624,6 @@ export default function TrackingPanel({
           {latest?.agenda && latest.attributedTask && (
             <p className="welcome-work-provenance">
               Origin: {latest.agendaTitle} — {latest.description} · Task attribution: {latest.attributionIncluded ? 'Yes' : 'No'}
-            </p>
-          )}
-          {latest?.assignedAt && (
-            <p className="welcome-work-provenance">
-              Assigned {new Date(latest.assignedAt).toLocaleString()} · pre-assignment {duration(session.totals.preAssignmentSeconds)} · assigned <TrackingClock state={state} kind="assigned" />
             </p>
           )}
           {(scopedNative?.pending > 0 || warning) && (

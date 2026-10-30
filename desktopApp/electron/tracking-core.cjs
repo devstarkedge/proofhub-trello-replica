@@ -17,8 +17,12 @@ class ActivityCounters {
     this.sample(isIdle); const end = this.last;
     let inputActiveSeconds = 0;
     for (const bucket of this.inputBuckets) inputActiveSeconds += Math.max(0, Math.min(end,(bucket+1)*1000)-Math.max(this.start,bucket*1000))/1000;
+    const inputEligibleSeconds = (end-this.start)/1000;
+    // Adding fractional edge buckets can round a few ULPs above the exact
+    // window duration. Active input cannot exceed its eligible window.
+    inputActiveSeconds = Math.min(inputActiveSeconds,inputEligibleSeconds);
     const result = { startMono: this.start, endMono: end, mouseCount:this.mouse, keyboardCount:this.keyboard,
-      activeSeconds:this.active, idleSeconds:this.idle, inputActiveSeconds, inputEligibleSeconds: (end-this.start)/1000, activityBasis: 'distinct-input-seconds-v1' };
+      activeSeconds:this.active, idleSeconds:this.idle, inputActiveSeconds, inputEligibleSeconds, activityBasis: 'distinct-input-seconds-v1' };
     for (const bucket of this.inputBuckets) if ((bucket+1)*1000<=end) this.inputBuckets.delete(bucket);
     this.start = this.last = end; this.mouse = this.keyboard = this.active = this.idle = 0;
     return result;

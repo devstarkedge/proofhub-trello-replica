@@ -30,7 +30,7 @@
 .welcome-project-name { font-size: .95rem; line-height: 1.4; font-weight: 650; }
 .welcome-task-name { margin-top: .15rem; font-size: .75rem; line-height: 1.4; color: #ffffffb3; }
 .welcome-project-name, .welcome-task-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.welcome-timer { min-width: 0; padding-left: .7rem; border-left: 1px solid #ffffff30; }
+.welcome-timer { grid-column: -2 / -1; min-width: 0; padding-left: .7rem; border-left: 1px solid #ffffff30; }
 .welcome-timer > span { display: block; color: #ffffffb3; font-size: .7rem; }
 .welcome-timer strong { display: flex; align-items: center; gap: .3rem; margin-top: .2rem; font-size: 1rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .welcome-timer svg { flex-shrink: 0; }
@@ -50,7 +50,7 @@
 .welcome-details-popover a:focus-visible, .welcome-details-popover button:focus-visible { outline: 2px solid var(--color-primary, #2563eb); outline-offset: 3px; }
 .welcome-diagnostics { margin-top: .85rem; border-top: 1px solid var(--color-border-default, #e2e8f0); padding-top: .25rem; }
 @container (min-width: 450px) {
-  .welcome-tracking-context { grid-template-columns: minmax(0, 1fr) minmax(5.3rem, .55fr) minmax(5.3rem, .55fr); }
+  .welcome-tracking-context { grid-template-columns: minmax(0, 1.55fr) minmax(5.3rem, .55fr); }
   .welcome-project { grid-column: auto; }
 }
 @container (min-width: 880px) {

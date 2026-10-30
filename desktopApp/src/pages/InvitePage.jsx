@@ -298,7 +298,9 @@ const InvitePage = () => {
                     <button
                       type="button"
                       onClick={() => setShowLoginPassword((v) => !v)}
-                      className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-white/40 hover:text-white/70 transition-colors"
+                      aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                      aria-pressed={showLoginPassword}
+                      className="absolute inset-y-0 right-0 z-10 pr-3.5 flex items-center text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] focus-visible:outline-2 focus-visible:outline-emerald-400 rounded-r-xl transition-colors cursor-pointer"
                     >
                       {showLoginPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
@@ -359,7 +361,9 @@ const InvitePage = () => {
                     <button
                       type="button"
                       onClick={() => setShowPassword((v) => !v)}
-                      className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-white/40 hover:text-white/70 transition-colors"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      aria-pressed={showPassword}
+                      className="absolute inset-y-0 right-0 z-10 pr-3.5 flex items-center text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] focus-visible:outline-2 focus-visible:outline-emerald-400 rounded-r-xl transition-colors cursor-pointer"
                     >
                       {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
@@ -387,7 +391,9 @@ const InvitePage = () => {
                     <button
                       type="button"
                       onClick={() => setShowConfirmPassword((v) => !v)}
-                      className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-white/40 hover:text-white/70 transition-colors"
+                      aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                      aria-pressed={showConfirmPassword}
+                      className="absolute inset-y-0 right-0 z-10 pr-3.5 flex items-center text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] focus-visible:outline-2 focus-visible:outline-emerald-400 rounded-r-xl transition-colors cursor-pointer"
                     >
                       {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
