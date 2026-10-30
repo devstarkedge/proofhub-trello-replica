@@ -4,7 +4,7 @@ const path = require('node:path');
 
 const HIT_TEST = 'flowtask:capture-preview-hit-test';
 const CLOSE = 'flowtask:capture-preview-close';
-const DURATION_MS = 2000;
+const DURATION_MS = 3000;
 
 function previewBounds(display, size) {
   const area = display.workArea;
@@ -24,7 +24,7 @@ function previewDocument(dataURL, nonce) {
     .caption{height:28px;display:flex;align-items:center;padding:0 10px;pointer-events:none}
     button{position:absolute;right:7px;top:7px;width:28px;height:28px;display:grid;place-items:center;border:1px solid #ffffff40;border-radius:6px;background:#111827e6;color:#fff;cursor:pointer;padding:0}
     button:hover{background:#334155}svg{pointer-events:none}
-    body.visible .preview{animation:preview-life 2000ms ease-out both}
+    body.visible .preview{animation:preview-life ${DURATION_MS}ms ease-out both}
     @keyframes preview-life{0%{opacity:0;transform:translateY(8px)}8%,88%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(5px)}}
     @media(prefers-reduced-motion:reduce){body.visible .preview{animation-name:preview-fade}@keyframes preview-fade{0%,88%{opacity:1}100%{opacity:0}}}
     </style></head><body><div class="preview"><img src="${dataURL}" alt="Screenshot just captured"><div class="caption">Screenshot captured</div>
