@@ -1,6 +1,6 @@
 const { randomInt } = require('node:crypto');
 
-const INACTIVITY_MS = 5 * 60 * 1000;
+const INACTIVITY_MS = 10 * 60 * 1000;
 const JITTER_MS = 3 * 60 * 1000;
 // Match the minimum configurable screenshot interval. Negative/zero delays
 // for a 1–3 minute configuration must never cause a capture loop.
@@ -31,7 +31,7 @@ class CaptureSchedule {
     this.paused = true; this.nextAt = null; return true;
   }
   input(now = this.now()) {
-    if (!this.active) return false;
+    if (!this.active) { this.lastInputAt=now; return false; }
     const resumed = this.inactive(now);
     this.lastInputAt = now;
     if (resumed) { this.paused = false; this.nextAt = this.deadline(now); }

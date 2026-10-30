@@ -1,7 +1,8 @@
-import { useContext, useEffect, useState } from 'react';
+import { useContext, useEffect, useState, useRef } from 'react';
 import AuthContext from '../../context/AuthContext';
 import WorkspaceContext from '../../context/WorkspaceContext';
 import DesktopMonitoringNotice from './DesktopMonitoringNotice';
+import {trackingStore} from '../../services/trackingState';
 
 export default function DesktopTrackingBridge() {
   const { user, token, isAuthenticated } = useContext(AuthContext);
@@ -9,6 +10,15 @@ export default function DesktopTrackingBridge() {
   const userId = user?._id || user?.id, workspaceId = currentWorkspace?._id;
   const isDesktop=window.flowtaskDesktop?.isDesktop===true;
   const [status,setStatus]=useState(null);
+  const lastAutomaticReceipt=useRef('');
+  useEffect(()=>{
+    const receipt=status?.workTransition;
+    if(!isAuthenticated||!receipt||String(receipt.workspaceId)!==String(workspaceId)||String(receipt.userId)!==String(userId))return;
+    const key=`${workspaceId}:${userId}:${receipt.operationId}`;
+    if(lastAutomaticReceipt.current===key)return;
+    lastAutomaticReceipt.current=key;
+    trackingStore(`${workspaceId}:${userId}`,workspaceId).apply(receipt);
+  },[status?.workTransition,isAuthenticated,userId,workspaceId]);
   useEffect(()=>{const tracking=window.flowtaskDesktop?.tracking;if(!isDesktop||!tracking)return;tracking.getStatus().then(setStatus).catch(()=>{});return tracking.onStatus(setStatus);},[isDesktop]);
   useEffect(() => {
     const tracking = window.flowtaskDesktop?.tracking;

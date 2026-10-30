@@ -7,6 +7,7 @@ const { ActivityCounters, DurableQueue, checksum, CaptureSchedule, MAX_ACTIVITY_
 const {noticeAuthorization}=require('./monitoring-authorization.cjs');
 const {uploadEntry}=require('./screenshot-upload.cjs');
 const {createScreenshotPreview}=require('./screenshot-preview.cjs');
+const {ActivityWork}=require('./activity-work.cjs');
 
 function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   const preview = createScreenshotPreview();
@@ -31,7 +32,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
     transitions.set(key,{revision:value.revision,status:value.status});
     while(transitions.size>256)transitions.delete(transitions.keys().next().value);
     if(value.status==='CLOSED')rememberClosure({workSessionIds:[key],cutoffAt:value.endedAt});
-    else if(String(work?._id)===key&&value.status==='PAUSED'){work={...work,status:'PAUSED',revision:value.revision};haltCapture('', 'paused');}
+    else if(String(work?._id)===key&&value.status==='PAUSED'){if(work.status!=='PAUSED')activityObservedAt=performance.now();work={...work,status:'PAUSED',revision:value.revision};haltCapture('', 'paused');}
     else if(String(work?._id)===key&&value.status==='RUNNING'&&work.status==='PAUSED')publish('resuming','');
   }
   let noticeRequired=false,noticeVersion=1;
@@ -40,12 +41,39 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   const counters = new ActivityCounters();
   const captureSchedule = new CaptureSchedule({now:()=>performance.now()});
   let checkpointPending = false;
+  let activityWatchUntil=0,lastWorkTransition=null,activityObservedAt=0;
+  const activityWork=new ActivityWork({
+    now:()=>performance.now(),
+    perform:async operation=>{
+      const scope=generation,activeDeviceId=device?._id;
+      if(operation.action==='pause'){await stopCapture('inactive');startInput();}
+      if(scope!==generation||!credentials||activeDeviceId!==device?._id)throw Object.assign(new Error('Desktop identity changed'),{status:409});
+      publish(operation.action==='resume'?'resuming':'paused','');
+      return request(`/devices/${activeDeviceId}/activity/${operation.action}`,operation);
+    },
+    onCommitted:async receipt=>{
+      lastWorkTransition=receipt;acceptTransition(receipt.session);work=receipt.session;
+      publish(receipt.session.status==='PAUSED'?'paused':'resuming','');
+      await sync();
+    },
+    onError:error=>{publish(error.status===409?'unavailable':'offline',error.message,error.code||'');sync().catch(()=>{});},
+    onSettled:()=>publish()
+  });
+  function updateActivityState(){
+    const now=performance.now(),open=work?.pauses?.find(p=>!p.endedAt);
+    const enabled=Boolean(credentials&&policy?.enabled&&policy?.monitoringEnabled&&work&&!work.endedAt&&work.status!=='CLOSED'&&!quitting&&!device?.revokedAt&&!device?.monitoringDisplacedAt&&!noticeRequired);
+    const canResume=enabled&&!locked&&!suspended&&activityWatchUntil>now&&work.status==='PAUSED'&&['PERSONAL_PAUSE','INACTIVITY'].includes(open?.reason)&&String(open?.resumeDevice)===String(device?._id);
+    activityWork.update({enabled,workspaceId:credentials?.workspaceId,userId:credentials?.userId,sessionId:work?._id,revision:work?.revision,status:work?.status,canPause:enabled&&work.status==='RUNNING'&&leaseDeadlineMono>now,canResume,observedAt:activityObservedAt});
+    return canResume;
+  }
   const trusted = event => { const window=getWindow();
     return window && event.sender===window.webContents && event.senderFrame===window.webContents.mainFrame && new URL(event.senderFrame.url).origin===getOrigin(); };
   const publish = (state=lastState,error=lastError,code=error===lastError?lastErrorCode:'') => {
     lastState=state;lastError=error;lastErrorCode=code;
-    const value={protocolVersion:2,capabilities:{retryUploads:true,claimMonitoring:true,finalizeSession:true,sessionTransitions:true,screenshotPipeline:3,capturePreviews:true},state,error,errorCode:code,userId:credentials?.userId||null,workspaceId:credentials?.workspaceId||null,deviceId:device?._id||null,syncStatus:queue?.damagedFiles().length?'capture-failed':uploading?'uploading':uploadError?(uploadErrorCode==='SCREENSHOT_STORAGE_UNAVAILABLE'?'storage-unavailable':'retry-pending'):queue?.files().length?'pending-sync':'synced',queueBytes:queue?.usedBytes()||0,queueCapacityBytes:queue?.maxBytes||0,pending:(queue?.files()||[]).filter(name=>!protectedEntries.has(name)).length,protectedCopies:protectedEntries.size+(queue?.damagedFiles().length||0),uploadError,uploadErrorCode,nextUploadRetryAt,screenshotsPausedForInactivity:captureSchedule.inactive(),monitorIds:screen.getAllDisplays().map(d=>String(d.id)),appVersion:app.getVersion(),noticeRequired,noticeVersion,
+    const value={protocolVersion:2,capabilities:{retryUploads:true,claimMonitoring:true,finalizeSession:true,sessionTransitions:true,screenshotPipeline:3,capturePreviews:true,activityWork:true},workTransition:lastWorkTransition,state,error,errorCode:code,userId:credentials?.userId||null,workspaceId:credentials?.workspaceId||null,deviceId:device?._id||null,syncStatus:queue?.damagedFiles().length?'capture-failed':uploading?'uploading':uploadError?(uploadErrorCode==='SCREENSHOT_STORAGE_UNAVAILABLE'?'storage-unavailable':'retry-pending'):queue?.files().length?'pending-sync':'synced',queueBytes:queue?.usedBytes()||0,queueCapacityBytes:queue?.maxBytes||0,pending:(queue?.files()||[]).filter(name=>!protectedEntries.has(name)).length,protectedCopies:protectedEntries.size+(queue?.damagedFiles().length||0),uploadError,uploadErrorCode,nextUploadRetryAt,screenshotsPausedForInactivity:captureSchedule.inactive(),monitorIds:screen.getAllDisplays().map(d=>String(d.id)),appVersion:app.getVersion(),noticeRequired,noticeVersion,
       policy:policy?{revision:policy.revision,enabled:policy.enabled,monitoringEnabled:policy.monitoringEnabled,intervalSeconds:policy.intervalSeconds,retentionDays:policy.retentionDays,monitors:policy.monitors,blur:policy.blur,format:'webp',personalPauseEnabled:policy.personalPauseEnabled}:null};
+    value.automaticWorkPending=activityWork.running?activityWork.pending?.action||null:null;
+    value.autoResumeArmed=activityWatchUntil>performance.now()&&work?.status==='PAUSED'&&!locked&&!suspended;
     const window=getWindow(); if(window&&!window.isDestroyed())window.webContents.send('desktop-tracking:status',value);
     if(window&&!window.isDestroyed())window.setTitle(state==='monitoring'?'FlowTask · Monitoring active':state==='offline'?'FlowTask · Monitoring offline':'FlowTask');
     return value;
@@ -55,7 +83,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
     const backend=new URL(getBackendURL());
     if(backend.protocol!=='https:'&&!['localhost','127.0.0.1'].includes(backend.hostname))throw new Error('Desktop tracking requires HTTPS');
     const response=await fetch(new URL(`/api/tracking${endpoint}`,backend),{method,redirect:'error',
-      headers:{Authorization:`Bearer ${credentials.token}`,'x-workspace-id':credentials.workspaceId,'Content-Type':'application/json',...(/\/(notice|claim)$/.test(endpoint)?{'x-desktop-notice-authorization':noticeAuthorization(root,safeStorage)}:{})},
+      headers:{Authorization:`Bearer ${credentials.token}`,'x-workspace-id':credentials.workspaceId,'Content-Type':'application/json',...(/\/(notice|claim|activity\/(pause|resume))$/.test(endpoint)?{'x-desktop-notice-authorization':noticeAuthorization(root,safeStorage)}:{})},
       ...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000)});
     const json=await response.json().catch(()=>({}));
     if(!response.ok){const error=new Error(json.message||`Tracking request failed (${response.status})`);error.status=response.status;error.code=json.code||(response.status===429?'UPLOAD_RATE_LIMITED':undefined);
@@ -71,12 +99,14 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   }
   function haltPolicy(value){
     if(value?.enabled!==false)return;
+    activityWork.clear();activityWatchUntil=0;
     dismissPreview();
     haltRevision=Math.max(haltRevision,Number(value.revision)||0);captureEpoch++;
     capturing=false;lastCaptureAllowed=false;leaseDeadlineMono=0;noticeRequired=false;stopInput();counters.reset();
     publish('unavailable','Time Tracking disabled by workspace Admin');
   }
   function haltCapture(message='Desktop monitoring stopped',state='unavailable'){
+    if(state!=='paused'){activityWork.clear();activityWatchUntil=0;}
     dismissPreview();
     captureEpoch++;capturing=false;lastCaptureAllowed=false;leaseDeadlineMono=0;noticeRequired=false;stopInput();counters.reset();publish(state,message);
   }
@@ -118,14 +148,15 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
         hook=inputModule.uIOhook;
         // Deliberately ignore the entire event payload, including keycodes,
         // modifiers, button IDs and coordinates. Only counters cross this API.
-        hook.on('keydown',()=>{if(capturing&&!locked&&!suspended){captureInput();counters.keyDown();}});
-        hook.on('mousedown',()=>{if(capturing&&!locked&&!suspended){captureInput();counters.mouseDown();}});
-        hook.on('mousemove',()=>{if(capturing&&!locked&&!suspended)counters.input();});
-        hook.on('wheel',()=>{if(capturing&&!locked&&!suspended)counters.input();});
+        const activity=kind=>{if(locked||suspended)return;activityWork.input();if(capturing){captureInput();if(kind==='keyboard')counters.keyDown();else if(kind==='mouse')counters.mouseDown();else counters.input();}else if(activityWatchUntil>performance.now())captureSchedule.input();};
+        hook.on('keydown',()=>activity('keyboard'));
+        hook.on('mousedown',()=>activity('mouse'));
+        hook.on('mousemove',()=>activity('move'));
+        hook.on('wheel',()=>activity('wheel'));
       }catch{return false;}
     }
     if(!hookStarted){try{hook.start();hookStarted=true;}catch{return false;}}
-    if(!sampler)sampler=setInterval(()=>{if(capturing)counters.sample(isIdle());},1000);
+    if(capturing&&!sampler)sampler=setInterval(()=>{if(capturing)counters.sample(isIdle());},1000);
     return true;
   }
   function captureInput() {
@@ -310,7 +341,9 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
       const changedSession=work?._id!==next.session?._id;
       if(capturing&&(anchorChanged||changedSession||!next.canCapture||next.device.preferences.intervalSeconds!==device.preferences.intervalSeconds||JSON.stringify(next.device.preferences)!==JSON.stringify(device.preferences))){await stopCapture();}
       if(anchorChanged)anchorMono=(beforeHeartbeat+performance.now())/2;
+      if(next.session?.status==='PAUSED'&&work?.status!=='PAUSED')activityObservedAt=performance.now();
       work=next.session;policy=next.policy;device=next.device;
+      activityWatchUntil=next.canAutoResume?beforeHeartbeat+Math.max(0,+new Date(next.activityWatchUntil)-+new Date(next.serverNow)):0;
       noticeVersion=next.noticeVersion||1;noticeRequired=Boolean(next.needsNotice&&work?.status==='RUNNING');
       leaseDeadlineMono=next.canCapture?beforeHeartbeat+Math.max(0,+new Date(device.leaseUntil)-+new Date(next.serverNow)):0;
       if(device.revokedAt){haltCapture('This desktop device was revoked');return;}
@@ -320,6 +353,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
         }else{lastCaptureAllowed=true;begin();if(capturing)publish('monitoring',hookStarted?'':'System input counters unavailable');}
       }
       else{await stopCapture();const state=!policy.enabled||!policy.monitoringEnabled?'disabled':work?.status==='PAUSED'?'paused':!work||work.status!=='RUNNING'?'ready':'unavailable';publish(noticeRequired?'notice-required':state,['paused','ready','disabled'].includes(state)?'':next.reason||'Monitoring unavailable');}
+      if(updateActivityState())startInput();
       flush().catch(()=>{});
     }catch(error){
       if(scope!==generation)return;
@@ -337,12 +371,17 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
     if(credentials?.userId===value?.userId&&credentials?.workspaceId===value?.workspaceId){const changed=credentials?.token!==value?.token;credentials=value;if(changed)connectRealtime();return publish();}
     // End capture synchronously before awaiting network or changing identity.
     // Completed encrypted entries remain in their user/workspace directory.
-    haltCapture();generation++;closedSessions.clear();closedAttendance.clear();transitions.clear();realtime?.disconnect();realtime=null;
+    haltCapture();activityWork.clear();lastWorkTransition=null;activityObservedAt=0;activityWatchUntil=0;generation++;closedSessions.clear();closedAttendance.clear();transitions.clear();realtime?.disconnect();realtime=null;
     if(credentials&&device&&!device.revokedAt)await request(`/devices/${device._id}/release`,{}).catch(()=>{});
     credentials=value;device=null;work=null;policy=null;queue=null;anchorMono=null;manualRetryTask=null;uploadCooldownUntil=0;uploadError='';uploadErrorCode='';nextUploadRetryAt=null;protectedEntries.clear();haltRevision=0;noticeRequired=false;lastState='unavailable';lastError='';lastErrorCode='';publish();
     clearInterval(timer);timer=null;clearInterval(syncTimer);syncTimer=null;clearInterval(uploadTimer);uploadTimer=null;if(uploadContinueTimer)clearTimeout(uploadContinueTimer);uploadContinueTimer=null;
     if(value){const queueMB=Math.min(4096,Math.max(50,Number(process.env.FLOWTASK_SCREENSHOT_QUEUE_MAX_MB)||500));queue=new DurableQueue(path.join(root,checksum(`${value.workspaceId}:${value.userId}`)),safeStorage,queueMB*1024*1024);
       timer=setInterval(async()=>{
+        const presence=updateActivityState();
+        if(!hookStarted&&(!locked&&!suspended)&&(capturing||presence))activityWork.pollIdle(powerMonitor.getSystemIdleTime());
+        if(!busy)activityWork.tick();
+        if(activityWork.pending?.action==='pause')return;
+        if(!capturing&&!presence&&hookStarted)stopInput();
         if(capturing&&performance.now()>=leaseDeadlineMono){haltCapture('Capture lease expired. Reconnect to renew monitoring authorization.');return;}
         if(!capturing)return;
         const now=performance.now();

@@ -289,8 +289,7 @@ export default function TrackingPanel({
   attendanceWarning = false
 }) {
   const { state, error, reload, expired } = useWorkTracking();
-  const sessionAction = useSessionAction(),
-    busy = sessionAction.busy || Boolean(error) || expired;
+  const sessionAction = useSessionAction();
   const [detailsOpen, setDetailsOpen] = useState(false),
     [detailsView, setDetailsView] = useState('actions'),
     [entrySource, setEntrySource] = useState(null),
@@ -395,6 +394,7 @@ export default function TrackingPanel({
     : native?.workspaceId === String(state.workspaceId) && native?.userId === state.userId
     ? native
     : null;
+  const busy = sessionAction.busy || Boolean(error) || expired || Boolean(scopedNative?.automaticWorkPending);
   const capture = isDesktop
     ? scopedNative?.state || device?.state || 'unavailable'
     : device
@@ -604,7 +604,7 @@ export default function TrackingPanel({
                     {running ? <Coffee size={15} /> : <Play size={15} />}
                     <span>
                       {(['pause', 'resume'].includes(sessionAction.action) && transitionLabel) ||
-                        (running ? 'Take Break' : 'Resume Work')}
+                        (scopedNative?.automaticWorkPending==='resume' ? 'Resuming...' : running ? 'Take Break' : 'Resume Work')}
                     </span>
                   </button>
                 )}
@@ -621,6 +621,7 @@ export default function TrackingPanel({
           )}
           {recovery}
           {attendanceDetails && <div className="welcome-attendance-info">{attendanceDetails}</div>}
+          {paused && scopedNative?.autoResumeArmed && <p className="welcome-attendance-info">Work resumes automatically when keyboard or mouse activity returns.</p>}
           {latest?.agenda && latest.attributedTask && (
             <p className="welcome-work-provenance">
               Origin: {latest.agendaTitle} — {latest.description} · Task attribution: {latest.attributionIncluded ? 'Yes' : 'No'}

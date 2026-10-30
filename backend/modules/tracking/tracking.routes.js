@@ -11,7 +11,7 @@ import Board from '../../models/Board.js';
 import '../../realtime/emitters.js';
 import { WorkSession } from './tracking.models.js';
 import { currentState, changeWork, workOptions, contextFor, fail, objectId, createWorkTask, authorizeRecord, policyFor, publicWorkSession } from './tracking.service.js';
-import { registerDevice, acceptMonitoringNotice, releaseDevice, heartbeat, recordInterval, prepareScreenshot, completeScreenshot, retryScreenshot } from './tracking.device.js';
+import { registerDevice, acceptMonitoringNotice, releaseDevice, heartbeat, recordInterval, prepareScreenshot, completeScreenshot, retryScreenshot, changeWorkOnActivity } from './tracking.device.js';
 import { storageHealth, workspaceStorageUsage } from './tracking.storage.js';
 import {gallery,screenshotDetails,screenshotContent} from './tracking.gallery.js';
 import {readVisibilityScope} from './tracking.visibility.js';
@@ -119,6 +119,10 @@ router.post('/devices/:deviceId/revoke', asyncHandler(async (req,res) => {
   await audit(req, 'TRACKING_DEVICE_REVOKED', 'TrackingDevice', req.params.deviceId); send(res, { revoked: true });
 }));
 router.post('/devices/:deviceId/heartbeat', asyncHandler(async (req,res) => send(res, await heartbeat({ ...actor(req), deviceId: req.params.deviceId, sessionId: req.body?.sessionId, state: req.body?.state }))));
+router.post('/devices/:deviceId/activity/:action',asyncHandler(async(req,res)=>{
+  if(req.get('origin'))fail('Automatic work changes require the FlowTask desktop app',403,'DESKTOP_DEVICE_REQUIRED');
+  send(res,await changeWorkOnActivity({...actor(req),deviceId:req.params.deviceId,action:req.params.action,sessionId:req.body?.sessionId,operationId:req.body?.operationId,expectedRevision:req.body?.expectedRevision,idleSeconds:req.body?.idleSeconds,noticeAuthorization:req.get('x-desktop-notice-authorization')}));
+}));
 router.post('/devices/:deviceId/claim',asyncHandler(async(req,res)=>{
   if(req.get('origin'))fail('Switch monitoring in the FlowTask desktop app.',403,'DESKTOP_DEVICE_REQUIRED');
   const result=await heartbeat({...actor(req),deviceId:req.params.deviceId,sessionId:req.body?.sessionId,state:'connected',takeover:true,noticeAuthorization:req.get('x-desktop-notice-authorization')});

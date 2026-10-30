@@ -270,15 +270,16 @@ export async function currentState(workspaceId, userId) {
     session: publicWorkSession(session),
     devices: devices.map(d => ({ ...d, connected: Date.now() - +new Date(d.lastSeenAt || 0) < 45000 })) };
 }
-export async function changeWork({ workspaceId, userId, action, selection, operationId, expectedRevision }) {
+export async function changeWork({ workspaceId, userId, action, selection, operationId, expectedRevision, expectedSessionId, activityChange=null }) {
   if (typeof operationId !== 'string' || !/^[\w-]{8,128}$/.test(operationId)) fail('An operation ID is required');
   if (!['start', 'switch', 'pause', 'resume', 'link'].includes(action)) fail('Unknown work action');
-  const operationDigest = digest({ action, selection: selection || null });
+  const operationDigest = digest({ action, selection: selection || null,...(activityChange?{activityChange}:{}) });
   const dbSession = await mongoose.startSession(); let result;
   try { await dbSession.withTransaction(async () => {
     const attendance = await AttendanceSession.findOne({ workspaceId, user: userId, status: 'ACTIVE' }).session(dbSession).lean();
     if (!attendance || attendance.missedCheckoutCutoffAt && +new Date(attendance.missedCheckoutCutoffAt) <= Date.now()) fail('Check in before starting or changing work', 409);
     let session = await WorkSession.findOne({ workspaceId, attendanceSession: attendance._id }).select('-operations -audit').session(dbSession).lean();
+    if(expectedSessionId&&id(session)!==id(expectedSessionId))fail('The active work session changed',409,'TRACKING_CONFLICT');
     const previous = session ? await WorkSession.findOne({_id:session._id,'operations.id':operationId}).select('operations.$').session(dbSession).lean() : null;
     const replay = previous?.operations?.[0];
     if (replay) { if (replay.digest !== operationDigest) fail('Operation ID was already used for different work', 409); result = session; return; }
@@ -288,15 +289,34 @@ export async function changeWork({ workspaceId, userId, action, selection, opera
     if(!policy.enabled)fail('Time Tracking is disabled',403);
     const allowed=await TrackingPolicy.updateOne({_id:policy._id,revision:policy.revision,enabled:true},{$inc:{__v:1}},{session:dbSession});
     if(!allowed.matchedCount)fail('Tracking configuration changed; refresh and retry',409,'TRACKING_CONFLICT');
-    if(action==='pause'&&policy.personalPauseEnabled===false)fail('Personal Pause is disabled by workspace policy',403);
+    if(action==='pause'&&!activityChange&&policy.personalPauseEnabled===false)fail('Personal Pause is disabled by workspace policy',403);
     if (session && expectedRevision !== session.revision) fail('Work changed on another device; refresh and retry', 409, 'TRACKING_CONFLICT');
     const reportingBefore = session ? { ...session, segments: session.segments.map(s => ({ ...s })), pauses: (session.pauses || []).map(p => ({ ...p })) } : null;
     if(session){session.operations=[];session.audit=[];}
     const at = new Date(Math.max(Date.now(), session ? +new Date(session.segments.at(-1)?.startedAt || session.startedAt) : +new Date(attendance.checkInAt)));
+    let resumeDevice;
+    if(activityChange){
+      if(!['pause','resume'].includes(action)||!policy.monitoringEnabled)fail('Automatic work changes require enabled desktop monitoring',403);
+      const filter={_id:activityChange.deviceId,workspaceId,user:userId,revokedAt:null,monitoringDisplacedAt:null};
+      if(action==='pause'){
+        if(!Number.isFinite(activityChange.idleSeconds)||activityChange.idleSeconds<600)fail('Automatic pause requires ten minutes of inactivity');
+        Object.assign(filter,{activeSession:session?._id,leaseUntil:{$gt:at}});
+      }else{
+        const pause=session?.pauses?.find(p=>!p.endedAt);
+        if(!pause||!['PERSONAL_PAUSE','INACTIVITY'].includes(pause.reason)||id(pause.resumeDevice)!==id(activityChange.deviceId))fail('This desktop cannot automatically resume this pause',403,'AUTO_RESUME_UNAVAILABLE');
+        filter.$or=[{activeSession:null},{activeSession:session._id}];
+      }
+      const authorized=await TrackingDevice.updateOne(filter,{$set:{lastSeenAt:at}},{session:dbSession});
+      if(!authorized.matchedCount)fail('Desktop monitoring authorization changed',403,'DEVICE_REVOKED');
+      resumeDevice=activityChange.deviceId;
+    }else if(action==='pause'){
+      const owner=await TrackingDevice.findOne({workspaceId,user:userId,activeSession:session?._id,revokedAt:null,leaseUntil:{$gt:at}}).select('_id').session(dbSession).lean();
+      resumeDevice=owner?._id;
+    }
     if (action === 'pause') {
       if (!session || session.status!=='RUNNING') fail('No running work session to pause', 409);
       const open = session.segments.find(s => !s.endedAt); if (open) open.endedAt = at;
-      if (session.status === 'RUNNING') { session.pauses ||= []; session.pauses.push({startedAt:at,endedAt:null,reason:'PERSONAL_PAUSE'}); }
+      if (session.status === 'RUNNING') { session.pauses ||= []; session.pauses.push({startedAt:at,endedAt:null,reason:activityChange?'INACTIVITY':'PERSONAL_PAUSE',...(resumeDevice?{resumeDevice}:{})}); }
       session.status = 'PAUSED';
     } else {
       let chosen = selection;
@@ -354,6 +374,7 @@ export async function changeWork({ workspaceId, userId, action, selection, opera
     await AttendanceSession.updateOne({ _id: attendance._id, status: 'ACTIVE' }, { $set: { updatedAt: new Date() } }, { session: dbSession });
     session.operations.push({ id: operationId, digest: operationDigest, at });
     pushAudit(session, action.toUpperCase(), at, userId);
+    if(activityChange)pushAudit(session,action==='pause'?'INACTIVITY_PAUSE':'ACTIVITY_RESUME',at,userId,String(activityChange.deviceId));
     assertTimeline(session.segments);
     if (session.operations.length > 5000 || session.segments.length > 5000) fail('Daily work change limit reached', 429);
     result = await WorkSession.findOneAndUpdate({ _id: session._id, revision: session.revision }, {

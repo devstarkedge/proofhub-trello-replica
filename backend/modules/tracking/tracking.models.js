@@ -44,7 +44,7 @@ export const WorkSession = model('WorkSession', {
   startedAt: { type: Date, required: true, immutable: true }, endedAt: { type: Date, default: null },
   status: { type: String, enum: ['RUNNING', 'PAUSED', 'CLOSED'], required: true },
   segments: { type: [segment], default: [] }, revision: { type: Number, default: 0 }, evidenceRevision: { type: Number, default: 0 },
-  pauses: { type: [{ startedAt: {type:Date,required:true}, endedAt: {type:Date,default:null}, reason: {type:String,default:'PERSONAL_PAUSE'} }], default: [] },
+  pauses: { type: [{ startedAt: {type:Date,required:true}, endedAt: {type:Date,default:null}, reason: {type:String,default:'PERSONAL_PAUSE'}, resumeDevice:oid('TrackingDevice') }], default: [] },
   includePreAssignment: { type: Boolean, default: false },
   policyRevision:Number, reminderAt:Date,
   operations: { type: [{ _id: false, id: String, digest: String, at: Date }], default: [] },

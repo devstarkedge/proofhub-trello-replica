@@ -1,7 +1,7 @@
 {
   "name": "flowtask-desktop",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "FlowTask desktop application",
   "author": "FlowTask",
   "main": "electron/main.cjs",

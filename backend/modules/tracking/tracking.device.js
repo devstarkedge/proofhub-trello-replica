@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { invalidateTrackingReads } from './tracking.readCache.js';
 import { randomUUID,createHash,timingSafeEqual } from 'node:crypto';
 import { TrackingDevice, WorkSession, ActivityInterval, TrackingScreenshot,TrackingCaptureLease,TrackingCaptureAnchor,TrackingPolicy } from './tracking.models.js';
-import { contextFor, policyFor, fail, digest, objectId, reconcileSession, authorizeRecord } from './tracking.service.js';
+import { contextFor, policyFor, fail, digest, objectId, reconcileSession, authorizeRecord, changeWork, publicWorkSession } from './tracking.service.js';
 import { can } from './tracking.authorization.js';
 import { overlapSeconds } from './tracking.timeline.js';
 import { signedUpload, verifyPrivateUpload, screenshotKey, privateStorage, storageLabels,SCREENSHOT_MAX_BYTES,SCREENSHOT_TARGET_BYTES,screenshotUploadLimits,privateScreenshotExists,missingStorageObject } from './tracking.storage.js';
@@ -45,6 +45,21 @@ export async function ownedDevice(workspaceId, userId, deviceId) {
   if (!d) fail('Desktop device not found', 404);
   return d;
 }
+export function canResumeOnActivity(device,session){
+  const pause=session?.pauses?.find(value=>!value.endedAt);
+  return Boolean(device?._id&&pause?.resumeDevice&&session?.status==='PAUSED'&&!session.endedAt&&!device.revokedAt&&!device.monitoringDisplacedAt&&['PERSONAL_PAUSE','INACTIVITY'].includes(pause.reason)&&String(pause.resumeDevice)===String(device._id));
+}
+export async function changeWorkOnActivity({workspaceId,userId,deviceId,action,sessionId,operationId,expectedRevision,idleSeconds,noticeAuthorization}){
+  if(!['pause','resume'].includes(action))fail('Unsupported automatic work action');
+  const device=await TrackingDevice.findOne({_id:objectId(deviceId),workspaceId,user:userId,revokedAt:null}).select('+noticeAuthorizationHash').lean();
+  if(!device)fail('Desktop device not found',404);
+  if(!/^[a-f\d]{64}$/.test(noticeAuthorization||'')||!/^[a-f\d]{64}$/.test(device.noticeAuthorizationHash||'')||!timingSafeEqual(Buffer.from(device.noticeAuthorizationHash,'hex'),createHash('sha256').update(noticeAuthorization).digest()))fail('Automatic work changes require the authorized desktop app',403,'DESKTOP_DEVICE_REQUIRED');
+  if(!hasMonitoringNotice(device))fail('Review the desktop monitoring notice',403,'CONSENT_REQUIRED');
+  const ctx=await contextFor(workspaceId,userId,{includeProjects:false});
+  if(!can(ctx,'tracking.log',{workspaceId,user:userId}))fail('Tracking permission required',403);
+  const session=await changeWork({workspaceId,userId,action,operationId,expectedRevision,expectedSessionId:objectId(sessionId),activityChange:{deviceId:String(device._id),...(action==='pause'?{idleSeconds}:{})}});
+  return {workspaceId:String(workspaceId),userId:String(userId),session:publicWorkSession(session),operationId,serverNow:new Date()};
+}
 export async function acceptMonitoringNotice({ workspaceId, userId, deviceId, noticeVersion, policyRevision, noticeAuthorization }) {
   const d = await TrackingDevice.findOne({_id:objectId(deviceId),workspaceId,user:userId,revokedAt:null}).select('+noticeAuthorizationHash').lean(), policy = await policyFor(workspaceId);
   if(!d)fail('Desktop device not found',404);
@@ -77,6 +92,7 @@ export async function heartbeat({ workspaceId, userId, deviceId, sessionId, stat
   if (session) session = await reconcileSession(session._id);
   const permitted = policy.enabled && policy.monitoringEnabled && hasMonitoringNotice(device) && can(ctx, 'tracking.log', { workspaceId, user: userId });
   const canCapture = Boolean(permitted && session?.status === 'RUNNING');
+  const canAutoResume=Boolean(permitted&&canResumeOnActivity(device,session));
   if(takeover){
     const secret=await TrackingDevice.findOne({_id:device._id,workspaceId,user:userId,revokedAt:null}).select('+noticeAuthorizationHash').lean();
     if(!/^[a-f\d]{64}$/.test(noticeAuthorization||'')||!/^[a-f\d]{64}$/.test(secret?.noticeAuthorizationHash||'')||!timingSafeEqual(Buffer.from(secret.noticeAuthorizationHash,'hex'),createHash('sha256').update(noticeAuthorization).digest()))fail('Switch monitoring from the authorized FlowTask desktop app.',403,'DESKTOP_DEVICE_REQUIRED');
@@ -119,7 +135,7 @@ export async function heartbeat({ workspaceId, userId, deviceId, sessionId, stat
     if(canCapture)await TrackingCaptureLease.findOneAndUpdate({device:device._id,version:saved.leaseVersion},{$set:{endedAt:saved.leaseUntil,expiresAt:policy.retentionDays===null?null:new Date(+saved.leaseUntil+policy.retentionDays*86400000)},$setOnInsert:{workspaceId,user:userId,session:session._id,startedAt:saved.leaseStartedAt}},{upsert:true,runValidators:true,session:dbSession});
   });}catch(error){if(error.code===11000)fail('Another desktop owns monitoring. Choose Use this desktop to switch.',409,'DEVICE_CONFLICT');throw error;}finally{await dbSession.endSession();}
   if(transferredFrom)try{emitToUser(userId,'tracking:device-updated',{deviceId:transferredFrom,displaced:true,replacementDeviceId:String(device._id)},workspaceId);}catch{/* polling recovers */}
-  return { serverNow: now, device: saved, policy, session, canCapture,transferredFrom,
+  return { serverNow: now, device: saved, policy, session, canCapture,canAutoResume,activityWatchUntil:canAutoResume?new Date(+now+300000):null,transferredFrom,
     noticeVersion:MONITORING_NOTICE_VERSION,uploadLimits:screenshotUploadLimits(),needsNotice:policy.enabled&&policy.monitoringEnabled&&!hasMonitoringNotice(device),
     reason: !policy.enabled ? 'Time Tracking disabled by workspace' : !policy.monitoringEnabled ? 'Monitoring disabled by workspace' : !session || session.status !== 'RUNNING' ? 'Work is not running' : !hasMonitoringNotice(device) ? 'Monitoring notice required' : !permitted?'Tracking permission required':null };
 }
