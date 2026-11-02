@@ -11,6 +11,7 @@ export function periodDateRange(period, { now = new Date(), timezone = 'Asia/Kol
   const date = new Date(`${today}T00:00:00Z`);
   const year = date.getUTCFullYear(), month = date.getUTCMonth();
   const key = (value) => value.toISOString().slice(0, 10);
+  if (period === 'today') return { startDate: today, endDate: today };
   if (period === 'week') {
     const offset = (date.getUTCDay() - weekStartsOn + 7) % 7;
     const start = new Date(Date.UTC(year, month, date.getUTCDate() - offset));

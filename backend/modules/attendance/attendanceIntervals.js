@@ -25,6 +25,17 @@ export function attendanceIntervals(sessions, at) {
   }));
 }
 
+/** Mongo projection of unionIntervals for already normalized, start-sorted
+ * attendance intervals. Reporting uses this for running-session elapsed time;
+ * it does not change stored duration or classify attendance. */
+export function attendanceIntervalMillisecondsExpression(input) {
+  return { $let: { vars: { union: { $reduce: {
+    input, initialValue: { end: new Date(0), milliseconds: 0 },
+    in: { $cond: [{ $and: [{ $ne: ['$$this._intervalEnd', null] }, { $gt: ['$$this._intervalEnd', '$$this._intervalStart'] }] },
+      { end: { $max: ['$$value.end', '$$this._intervalEnd'] }, milliseconds: { $add: ['$$value.milliseconds', { $max: [0, { $subtract: ['$$this._intervalEnd', { $max: ['$$value.end', '$$this._intervalStart'] }] }] }] } }, '$$value'] }
+  } } }, in: '$$union.milliseconds' } };
+}
+
 export function scheduleForDay({ workDateKey, timezone, officeHours, shift }) {
   const startTime = officeHours?.startLocalTime || shift?.startLocalTime, endTime = officeHours?.endLocalTime || shift?.endLocalTime;
   if (!workDateKey || !startTime || !endTime) return null;

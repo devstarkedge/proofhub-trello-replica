@@ -11,6 +11,7 @@ import regularizationRoutes from './attendanceRegularization.routes.js';
 import workModeOverrideRoutes from './attendanceWorkModeOverride.routes.js';
 import officeHoursOverrideRoutes from './attendanceOfficeHoursOverride.routes.js';
 import viewRoutes from './attendanceView.routes.js';
+import teamRoutes from './attendanceTeam.routes.js';
 
 /**
  * Single mount point for the Attendance module —
@@ -22,6 +23,7 @@ const router = express.Router();
 
 router.use('/', setupRoutes);
 router.use(protect, requireModule('attendance'));
+router.use('/team', teamRoutes);
 router.use('/', selfRoutes);
 router.use('/', policyRoutes);
 router.use('/', shiftRoutes);

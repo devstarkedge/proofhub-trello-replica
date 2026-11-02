@@ -25,12 +25,17 @@ api.interceptors.response.use(
   },
   (error) => {
     const message = error.response?.data?.message || 'An error occurred';
-    if (![403, 423].includes(error.response?.status) && error.response?.data?.code !== 'CHECKOUT_RECONFIRM_REQUIRED') toast.error(message);
+    if (!axios.isCancel(error) && ![403, 423].includes(error.response?.status) && error.response?.data?.code !== 'CHECKOUT_RECONFIRM_REQUIRED') toast.error(message);
     return Promise.reject(error);
   }
 );
 
 // ─── Setup ──────────────────────────────────────────────────────────────────
+export const getTeamAttendance = async (params, signal) => (await api.get('/team', { params, signal })).data;
+export const getTeamAttendanceMonth = async (userId, month, params, signal) => (await api.get(`/team/users/${userId}/months/${month}`, { params, signal })).data;
+export const getTeamAttendanceDay = async (userId, workDateKey, params, signal) => (await api.get(`/team/users/${userId}/days/${workDateKey}`, { params, signal })).data;
+export const exportTeamAttendance = async (params, signal) => (await api.get('/team/export', { params, signal, responseType: 'blob', timeout: 120000 })).data;
+
 export const setupAttendanceModule = async () => (await api.post('/setup')).data;
 
 // ─── Self-service (check-in/out) ───────────────────────────────────────────

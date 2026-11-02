@@ -26,7 +26,7 @@ import { getEffectiveAttendanceProfile } from './attendanceMemberProfile.service
  * global `User.role` — the same user can be Admin (excluded) in one
  * workspace and an ordinary Employee (included) in another.
  */
-export async function resolveAttendanceEligibility({ workspaceId, userId, membership, workspace, attendancePolicy = null }) {
+export async function resolveAttendanceEligibility({ workspaceId, userId, membership, workspace, attendancePolicy = null, resolvedProfile }) {
   if (!workspace?.attendanceModuleEnabled) {
     return buildResult({ attendanceRequired: false, reason: 'ATTENDANCE_MODULE_DISABLED' });
   }
@@ -43,7 +43,9 @@ export async function resolveAttendanceEligibility({ workspaceId, userId, member
     return buildResult({ attendanceRequired: false, reason: 'ADMIN_EXCLUDED' });
   }
 
-  const profile = await getEffectiveAttendanceProfile({ workspaceId, userId });
+  // Reporting supplies the same profiles in a batch; undefined retains the
+  // existing single-subject lookup for check-in and lifecycle callers.
+  const profile = resolvedProfile === undefined ? await getEffectiveAttendanceProfile({ workspaceId, userId }) : resolvedProfile;
 
   if (profile.attendanceRequiredOverride === 'NOT_REQUIRED') {
     return buildResult({ attendanceRequired: false, reason: 'PROFILE_OVERRIDE_EXCLUDED', profile, applicablePolicy: attendancePolicy });
