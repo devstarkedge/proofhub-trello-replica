@@ -47,7 +47,7 @@ export default ({ mode, command }) => {
     server: {
       host: '127.0.0.1',
       port: 5175,
-      strictPort: true,
+      strictPort: false,
       cors: false,
       headers: { 'Content-Security-Policy': contentSecurityPolicy },
       proxy: {
