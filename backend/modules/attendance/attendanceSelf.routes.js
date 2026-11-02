@@ -7,6 +7,8 @@ import { getMyTodayStatus, postCheckIn, postCheckOut, previewCheckOut } from './
 import AttendanceSession from './attendanceSession.model.js';
 import asyncHandler from '../../middleware/asyncHandler.js';
 
+import { readAttendanceWork } from './attendanceTrackedWork.service.js';
+import { validateDateRange } from '../../utils/calendarDateRange.js';
 const router = express.Router();
 router.use(protect);
 
@@ -23,6 +25,13 @@ const checkInOutLimiter = rateLimiter({ windowMs: 5 * 60 * 1000, maxRequests: 30
 // never is) is decided server-side by attendance.service.js's eligibility
 // check, never by a route-level permission gate standing in for it.
 router.get('/me/today', getMyTodayStatus);
+router.get('/me/work-time', asyncHandler(async (req, res) => {
+  const { startDate, endDate } = req.query;
+  validateDateRange(startDate, endDate);
+  const userId = req.user._id || req.user.id;
+  const work = await readAttendanceWork({ workspaceId: req.workspaceId, viewer: req.user, userIds: [userId], startDate, endDate });
+  res.set('Cache-Control', 'private, no-store').json({ success: true, data: { days: [...work].map(([key, value]) => ({ workDateKey: key.slice(String(userId).length + 1), ...value })) } });
+}));
 router.get('/check-out/preview', previewCheckOut);
 router.get('/operations/:operationId',asyncHandler(async(req,res)=>{
   const operationId=req.params.operationId;

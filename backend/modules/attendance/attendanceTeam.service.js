@@ -17,13 +17,13 @@ import { resolveApplicablePolicyVersion } from './attendancePolicy.service.js';
 import { resolveAttendanceEligibility } from './attendanceEligibility.service.js';
 import { resolveAttendanceAccess, assertCanViewDepartment, assertCanViewUser } from './attendanceAuthorization.service.js';
 import { effectiveAttendanceSession, applyRegularizationOverlay } from './attendanceRegularizationOverlay.js';
-import { intervalMinutes, unionIntervals, attendanceIntervals, attendanceIntervalMillisecondsExpression } from './attendanceIntervals.js';
+import { intervalMinutes, attendanceIntervals, attendanceIntervalMillisecondsExpression } from './attendanceIntervals.js';
 import { buildCalendarContext, classifyDateWithContext } from '../workCalendar/workCalendarFacade.js';
 import { dateOnlyToInstant } from '../leave/leaveTimezone.util.js';
-import { contextFor, policyFor } from '../tracking/tracking.service.js';
-import { readVisibilityScope } from '../tracking/tracking.visibility.js';
-import { dashboardReadPipeline } from '../tracking/tracking.dashboardRead.js';
-import { WorkSession } from '../tracking/tracking.models.js';
+import { readAttendanceWork, unavailableWork } from './attendanceTrackedWork.service.js';
+
+
+
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import { validateTeamQuery, serializeTeamRow, csvLine, TEAM_STATUSES, TEAM_WORK_MODES } from './attendanceTeamReport.js';
 
@@ -198,6 +198,17 @@ async function summaryRows(ctx) {
   const groupMap = new Map(groups.map(g => [id(g), g]));
   const rows = ctx.subjects.map(subject => serializeTeamRow({ ...subject, ...groupMap.get(id(subject.user)) }, ctx.expectedDates))
     .filter(row => !(ctx.q.status || ctx.q.workMode) || row.recordedDays > 0);
+  const work = await readAttendanceWork({ ...ctx, userIds: rows.map(row => row.user._id), startDate: ctx.q.startDate, endDate: ctx.q.endDate });
+  let matches = null;
+  if (ctx.q.status || ctx.q.workMode) {
+    const pipeline = teamDayPipeline({ ...ctx, userIds: rows.map(row => row.user._id), startDate: ctx.q.startDate, endDate: ctx.q.endDate });
+    pipeline.push({ $match: { ...(ctx.q.status ? { displayStatus: ctx.q.status } : {}), ...(ctx.q.workMode ? { workMode: ctx.q.workMode } : {}) } }, { $project: { user: 1, workDateKey: 1 } });
+    matches = new Set((await AttendanceDay.aggregate(pipeline).option(queryOptions)).map(day => id(day.user) + ':' + day.workDateKey));
+  }
+  for (const row of rows) {
+    const entries = [...work].filter(([key]) => key.startsWith(id(row.user) + ':') && (!matches || matches.has(key))).map(([, value]) => value);
+    row.workSeconds = entries.length && entries.every(value => value.seconds != null) ? entries.reduce((total, value) => total + value.seconds, 0) : null;
+  }
   const { sort, direction } = ctx.q, sign = direction === 'asc' ? 1 : -1;
   rows.sort((a, b) => {
     const value = row => sort === 'department' ? row.departments.map(d => d.name).join(', ') : sort === 'attendanceRate' ? row.attendanceRate.value : ['name', 'email'].includes(sort) ? row.user[sort] : row[sort];
@@ -222,7 +233,7 @@ export async function getTeamAttendance(args) {
     filters: { departments: ctx.departments.filter(d => d.isActive !== false).map(d => ({ _id: d._id, name: d.name })), statuses: TEAM_STATUSES, workModes: TEAM_WORK_MODES },
     query: ctx.q, totals, pagination: { page, pageSize: ctx.q.pageSize, total: rows.length, pageCount },
     rows: rows.slice((page - 1) * ctx.q.pageSize, page * ctx.q.pageSize),
-    coverageNotice: 'Day counts and attendance time reflect recorded results. Missing records are not absences. Rates require complete historical coverage.' };
+    coverageNotice: 'Day counts reflect recorded attendance results. Work time reflects authorized Time Tracking records. Missing records are not absences. Rates require complete historical coverage.' };
 }
 
 async function subjectContext(args) {
@@ -271,31 +282,14 @@ export async function getTeamAttendanceMonth(args) {
     day.activeSession = daySessions.some(s => s.status === 'ACTIVE' && (!s.missedCheckoutCutoffAt || +s.missedCheckoutCutoffAt > +ctx.now));
     if (day.hasAttendance && day.activeSession) { day.workedMinutes = Math.round(intervalMinutes(attendanceIntervals(daySessions, ctx.now))); day.durationIsLive = true; }
   }
+  const work = await readAttendanceWork({ ...ctx, userIds: [args.userId], startDate, endDate });
+  for (const day of days) day.trackedWork = work.get(id(args.userId) + ':' + day.workDateKey) || unavailableWork();
   return { user: ctx.subjects[0].user, departments: ctx.subjects[0].departments, timezone: ctx.timezone, month: args.month, asOf: ctx.now, days };
 }
 
 async function trackedDay(ctx, userId, workDateKey) {
-  try {
-    const [tracking, policy] = await Promise.all([contextFor(ctx.workspaceId, ctx.viewer._id || ctx.viewer.id, { readOnly: true }), policyFor(ctx.workspaceId)]);
-    const scope = await readVisibilityScope(tracking);
-    if (!scope.canOwner(userId)) return { seconds: null, reason: 'Tracked work is unavailable for this view.' };
-    const pipeline = dashboardReadPipeline({ workspaceId: ctx.workspaceId, ctx: tracking, scope, owners: [userId],
-      bounds: { workDateKey }, query: {}, dates: { start: new Date(0), end: ctx.now }, now: ctx.now, policy, attendanceDetails: true });
-    pipeline.push({ $project: { _selected: 1, _cutoff: 1, _attendance: 1, endedAt: 1 } });
-    const sessions = await WorkSession.aggregate(pipeline).option(queryOptions);
-    if (!sessions.length) return { seconds: null, reason: 'No authorized tracked work records.' };
-    if (sessions.some(session => !session._attendance)) return { seconds: null, reason: 'Tracked work attendance boundaries are unavailable.' };
-    const intervals = sessions.flatMap(session => {
-      if (!session._attendance) return [];
-      const attendance = effectiveAttendanceSession(session._attendance);
-      return (session._selected || []).map(segment => [Math.max(+new Date(segment.startedAt), +new Date(attendance.checkInAt)),
-        Math.min(+ctx.now, +new Date(session._cutoff), attendance.checkOutAt ? +new Date(attendance.checkOutAt) : Infinity, segment.endedAt ? +new Date(segment.endedAt) : Infinity)]);
-    });
-    return { seconds: intervalMinutes(unionIntervals(intervals)) * 60, reason: null };
-  } catch (error) {
-    if ([403, 404].includes(error.statusCode)) return { seconds: null, reason: 'Tracked work is unavailable for this view.' };
-    throw error;
-  }
+  const work = await readAttendanceWork({ ...ctx, userIds: [userId], startDate: workDateKey, endDate: workDateKey });
+  return work.get(id(userId) + ':' + workDateKey) || unavailableWork();
 }
 
 export async function getTeamAttendanceDay(args) {
@@ -345,17 +339,18 @@ export async function exportTeamAttendance(args, response) {
     });
   };
   if (format === 'summary') {
-    await write(['Employee', 'Email', 'Department', 'Present days', 'Half days', 'Absent days', 'Missing checkout', 'Full leave days', 'Attendance minutes', 'Full-period attendance %', 'Rate availability']);
-    for (const row of rows) { if (response.destroyed) break; await write([row.user.name, row.user.email, row.departments.map(d => d.name).join('; '), row.present, row.halfDays, row.absent, row.missingCheckout, row.leaveDays, row.attendanceMinutes ?? 'N/A', row.attendanceRate.value ?? 'N/A', row.attendanceRate.reason]); }
+    await write(['Employee', 'Email', 'Department', 'Present days', 'Half days', 'Absent days', 'Missing checkout', 'Full leave days', 'Attendance minutes', 'Full-period attendance %', 'Rate availability', 'Work seconds']);
+    for (const row of rows) { if (response.destroyed) break; await write([row.user.name, row.user.email, row.departments.map(d => d.name).join('; '), row.present, row.halfDays, row.absent, row.missingCheckout, row.leaveDays, row.attendanceMinutes ?? 'N/A', row.attendanceRate.value ?? 'N/A', row.attendanceRate.reason, row.workSeconds ?? 'N/A']); }
   } else {
-    await write(['Employee', 'Date', 'Work mode', 'Worked hours', 'Status']);
+    await write(['Employee', 'Date', 'Work mode', 'Worked hours', 'Status', 'Tracked work hours']);
+    const tracked = await readAttendanceWork({ ...ctx, userIds: rows.map(row => row.user._id), startDate: ctx.q.startDate, endDate: ctx.q.endDate });
     const names = new Map(rows.map(row => [id(row.user), row.user.name]));
     const pipeline = teamDayPipeline({ ...ctx, userIds: rows.map(row => row.user._id), startDate: ctx.q.startDate, endDate: ctx.q.endDate });
     if (ctx.q.status) pipeline.push({ $match: { displayStatus: ctx.q.status } });
     if (ctx.q.workMode) pipeline.push({ $match: { workMode: ctx.q.workMode } });
     pipeline.push(...sessionFactsStages(ctx), { $sort: { workDateKey: -1, user: 1 } });
     const cursor = AttendanceDay.aggregate(pipeline).option(queryOptions).cursor({ batchSize: 250 });
-    try { for await (const day of cursor) { if (response.destroyed) break; await write([names.get(id(day.user)), day.workDateKey, day.workMode, day.hasAttendance && Number.isFinite(day.workedMinutes) ? day.workedMinutes / 60 : 'N/A', day.displayStatus]); } } finally { await cursor.close(); }
+    try { for await (const day of cursor) { if (response.destroyed) break; await write([names.get(id(day.user)), day.workDateKey, day.workMode, day.hasAttendance && Number.isFinite(day.workedMinutes) ? day.workedMinutes / 60 : 'N/A', day.displayStatus, tracked.get(id(day.user) + ':' + day.workDateKey)?.seconds == null ? 'N/A' : tracked.get(id(day.user) + ':' + day.workDateKey).seconds / 3600]); } } finally { await cursor.close(); }
   }
   response.end();
 }

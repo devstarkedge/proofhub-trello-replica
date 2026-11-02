@@ -7,8 +7,8 @@ export const labels = { PRESENT: 'Present', HALF_PRESENT: 'Half day', ABSENT: 'A
 const tones = { FUTURE: 'bg-transparent text-gray-400 dark:text-gray-600', NOT_STARTED: 'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300', PRESENT: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300', HALF_PRESENT: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300', ABSENT: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300', MISSING_CHECKOUT: 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300', ON_LEAVE: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300', HOLIDAY: 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300', WEEKLY_OFF: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400' };
 export const statusTone = status => tones[status] || 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400';
 // Private, bounded cache lives only inside the keyed authenticated page/drawer.
-// Invalidation is part of the key; old-key payloads never render while loading.
-export function useTeamRead(key, load, identity) {
+// Filter/access changes clear old-scope data; same-query refreshes keep the confirmed view visible.
+export function useTeamRead(key, load, identity, retainKey = key) {
   const cache = useRef(new Map());
   const [state, setState] = useState({ key: null, data: null, loading: true, error: '', forbidden: false });
   useEffect(() => {
@@ -16,24 +16,24 @@ export function useTeamRead(key, load, identity) {
     const current = () => !identity || String(identity.workspaceId) === localStorage.getItem('workspaceId') && identity.token === localStorage.getItem('token');
     if (!current()) return () => controller.abort();
     if (cached && Date.now() - cached.time < 15000) {
-      setState({ key, data: cached.data, loading: false, error: '', forbidden: false });
+      setState({ key, retainKey, data: cached.data, loading: false, error: '', forbidden: false });
       return () => controller.abort();
     }
-    setState({ key, data: null, loading: true, error: '', forbidden: false });
+    setState(previous => ({ key, retainKey, data: previous.retainKey === retainKey ? previous.data : null, loading: !(previous.retainKey === retainKey && previous.data), refreshing: true, error: '', forbidden: false }));
     load(controller.signal).then(response => {
       if (controller.signal.aborted || !current()) return;
       cache.current.set(key, { data: response.data, time: Date.now() });
       if (cache.current.size > 8) cache.current.delete(cache.current.keys().next().value);
-      setState({ key, data: response.data, loading: false, error: '', forbidden: false });
+      setState({ key, retainKey, data: response.data, loading: false, error: '', forbidden: false });
     }).catch(error => {
       if (controller.signal.aborted || ['CanceledError', 'AbortError'].includes(error.name)) return;
       cache.current.clear();
       setState({ key, data: null, loading: false, error: error.response?.data?.message || 'Unable to load attendance. Please retry.', forbidden: [401, 403, 404].includes(error.response?.status) });
     });
     return () => controller.abort();
-  }, [key, load, identity]);
+  }, [key, load, identity, retainKey]);
   if (identity && (String(identity.workspaceId) !== localStorage.getItem('workspaceId') || identity.token !== localStorage.getItem('token'))) return { data: null, loading: true, error: '', forbidden: false };
-  return state.key === key ? state : { data: null, loading: true, error: '', forbidden: false };
+  return state.key === key ? state : state.retainKey === retainKey && state.data ? { ...state, refreshing: true } : { data: null, loading: true, error: '', forbidden: false };
 }
 export function shiftMonth(month, delta) {
   const [year, index] = month.split('-').map(Number), date = new Date(Date.UTC(year, index - 1 + delta, 1));

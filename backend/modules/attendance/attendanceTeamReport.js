@@ -4,7 +4,7 @@ import { validateDateRange } from '../../utils/calendarDateRange.js';
 
 export const TEAM_STATUSES = ['PRESENT', 'HALF_PRESENT', 'ABSENT', 'MISSING_CHECKOUT', 'NOT_STARTED', 'ON_LEAVE', 'HOLIDAY', 'WEEKLY_OFF'];
 export const TEAM_WORK_MODES = ['OFFICE', 'WFH', 'HYBRID', 'FIELD'];
-export const TEAM_SORTS = ['name', 'email', 'department', 'present', 'halfDays', 'absent', 'missingCheckout', 'attendanceMinutes', 'attendanceRate'];
+export const TEAM_SORTS = ['name', 'email', 'department', 'present', 'halfDays', 'absent', 'missingCheckout', 'attendanceMinutes', 'workSeconds', 'attendanceRate'];
 const identifier = value => typeof value === 'string' && /^[a-f\d]{24}$/i.test(value);
 export function validateTeamQuery(query, timezone, now = new Date()) {
   const month = DateTime.fromJSDate(now).setZone(timezone);

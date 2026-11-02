@@ -37,14 +37,14 @@ function DayDetails({ day, selectedDate, timezone, pending, error }) {
       <DetailField icon={Monitor} label="Work mode">{workModes[day?.workMode] || 'Unavailable'}</DetailField>
       <DetailField icon={LogOut} label="Check-out">{attendanceTimeLabel(day?.lastCheckOutAt, timezone)}</DetailField>
       <DetailField icon={Layers} label="Office hours">{schedule || 'Unavailable'}</DetailField>
-      <DetailField icon={Clock3} label="Attendance time">{day?.workedMinutes != null ? formatHours(day.workedMinutes) : 'Unavailable'}</DetailField>
+      <DetailField icon={Clock3} label="Work time">{day?.trackedSeconds != null ? formatHours(day.trackedSeconds / 60) : 'Unavailable'}</DetailField>
       <DetailField icon={CalendarCheck} label="Status">{personalDayStyle(day).label}</DetailField>
     </div>
     {leaveLabels[day?.leaveState] && <p className="mt-3 text-xs" style={{ color: 'var(--color-info-text)' }}>{leaveLabels[day.leaveState]}</p>}
     {day?.exceptionFlags?.length > 0 && <p className="mt-3 text-xs leading-relaxed" style={mutedStyle}>{day.exceptionFlags.map(flag => flag.replaceAll('_', ' ').toLowerCase()).join(' · ')}</p>}
     {day?.activeSession && <p className="mt-3 text-xs" style={{ color: 'var(--color-primary)' }}>Attendance in progress. Duration may update as your session continues.</p>}
     {!day && <p className="mt-3 text-xs leading-relaxed" style={mutedStyle}>No attendance record is available for this date. A missing record does not establish absence, leave, or a non-working day.</p>}
-    <p className="mt-3 text-[11px] leading-relaxed" style={mutedStyle}>Times use {timezone}. Attendance time is separate from tracked work time.</p>
+    <p className="mt-3 text-[11px] leading-relaxed" style={mutedStyle}>Times use {timezone}. Work time reflects your Time Tracking records.</p>
   </section>;
 }
 
@@ -71,9 +71,11 @@ export default function MyAttendanceOverview({ today, workspace, scope, children
       if (!userId || !range || !identity()) { setHistory({ key: readKey, records: [], loading: false, error: 'Personal attendance history is unavailable for the current session.' }); return; }
       // Explicitly request self through the existing API. No team, dashboard,
       // policy-management or role-dependent endpoint is used for this view.
-      attendanceApi.getAttendanceView({ userId, startDate: range.startDate, endDate: range.endDate }).then(({ data }) => {
+      Promise.all([attendanceApi.getAttendanceView({ userId, startDate: range.startDate, endDate: range.endDate }), attendanceApi.getMyWorkTime(range).catch(() => ({ data: { days: [] } }))]).then(([{ data }, work]) => {
         if (!active || generation !== request || !identity()) return;
         const records = data.filter(record => String(record.user?._id || record.user) === String(userId));
+        const workByDate = new Map(work.data.days.map(day => [day.workDateKey, day.seconds]));
+        for (const record of records) record.trackedSeconds = workByDate.get(record.workDateKey) ?? null;
         setHistory({ key: readKey, records, loading: false, error: '' });
       }).catch(error => {
         if (!active || generation !== request || !identity()) return;
@@ -81,7 +83,7 @@ export default function MyAttendanceOverview({ today, workspace, scope, children
       });
     };
     load();
-    const events = ['socket-attendance-checked-in', 'socket-attendance-checked-out', 'socket-attendance-missed-checkout', 'socket-attendance-updated', 'socket-attendance-regularization-decided'];
+    const events = ['socket-attendance-checked-in', 'socket-attendance-checked-out', 'socket-attendance-missed-checkout', 'socket-attendance-updated', 'socket-attendance-regularization-decided', 'flowtask:tracking-refresh', 'tracking-local-change'];
     events.forEach(event => window.addEventListener(event, load));
     return () => { active = false; generation++; events.forEach(event => window.removeEventListener(event, load)); };
   }, [readKey, userId, token, workspace?._id, range]);
@@ -161,7 +163,7 @@ export default function MyAttendanceOverview({ today, workspace, scope, children
                     {leaveLabels[day?.leaveState] && <span className="h-1 w-3 rounded-full" style={{ backgroundColor: 'var(--color-info-text)' }} />}
                   </button>;
                 })}</div></div>
-            </div> : !days.length ? <div className="px-5 py-12 text-center text-sm" style={mutedStyle}>No attendance records are available for this month.</div> : <div className="max-h-[34rem] overflow-auto"><table className="w-full text-left text-xs"><thead className="sticky top-0" style={{ backgroundColor: 'var(--color-card-bg)' }}><tr>{['Date', 'Status', 'Check-in', 'Check-out', 'Attendance time'].map(label => <th key={label} className="whitespace-nowrap px-3 py-3 font-medium" style={mutedStyle}>{label}</th>)}</tr></thead><tbody>{days.map(day => <tr key={day.workDateKey} className="border-t" style={{ borderColor: 'var(--color-border-subtle)', backgroundColor: selectedDate === day.workDateKey ? 'var(--color-primary-subtle)' : undefined }}><td className="whitespace-nowrap px-3 py-3"><button type="button" className="font-medium underline-offset-2 hover:underline" style={{ color: 'var(--color-primary)' }} onClick={() => setSelectedDate(day.workDateKey)}>{attendanceDateLabel(day.workDateKey, { day: 'numeric', month: 'short' })}</button>{day.currentStatus && <span className="mt-0.5 block text-[10px]" style={mutedStyle}>Current status</span>}</td><td className="px-3 py-3"><DayStatus day={day} /></td><td className="whitespace-nowrap px-3 py-3">{attendanceTimeLabel(day.activeSession?.checkInAt || day.firstCheckInAt, timezone)}</td><td className="whitespace-nowrap px-3 py-3">{attendanceTimeLabel(day.lastCheckOutAt, timezone)}</td><td className="whitespace-nowrap px-3 py-3 tabular-nums">{day.workedMinutes != null ? formatHours(day.workedMinutes) : 'Unavailable'}</td></tr>)}</tbody></table></div>}
+            </div> : !days.length ? <div className="px-5 py-12 text-center text-sm" style={mutedStyle}>No attendance records are available for this month.</div> : <div className="max-h-[34rem] overflow-auto"><table className="w-full text-left text-xs"><thead className="sticky top-0" style={{ backgroundColor: 'var(--color-card-bg)' }}><tr>{['Date', 'Status', 'Check-in', 'Check-out', 'Work time'].map(label => <th key={label} className="whitespace-nowrap px-3 py-3 font-medium" style={mutedStyle}>{label}</th>)}</tr></thead><tbody>{days.map(day => <tr key={day.workDateKey} className="border-t" style={{ borderColor: 'var(--color-border-subtle)', backgroundColor: selectedDate === day.workDateKey ? 'var(--color-primary-subtle)' : undefined }}><td className="whitespace-nowrap px-3 py-3"><button type="button" className="font-medium underline-offset-2 hover:underline" style={{ color: 'var(--color-primary)' }} onClick={() => setSelectedDate(day.workDateKey)}>{attendanceDateLabel(day.workDateKey, { day: 'numeric', month: 'short' })}</button>{day.currentStatus && <span className="mt-0.5 block text-[10px]" style={mutedStyle}>Current status</span>}</td><td className="px-3 py-3"><DayStatus day={day} /></td><td className="whitespace-nowrap px-3 py-3">{attendanceTimeLabel(day.activeSession?.checkInAt || day.firstCheckInAt, timezone)}</td><td className="whitespace-nowrap px-3 py-3">{attendanceTimeLabel(day.lastCheckOutAt, timezone)}</td><td className="whitespace-nowrap px-3 py-3 tabular-nums">{day.trackedSeconds != null ? formatHours(day.trackedSeconds / 60) : 'Unavailable'}</td></tr>)}</tbody></table></div>}
             <div className="flex flex-wrap gap-x-3 gap-y-2 border-t p-4" style={{ borderColor: 'var(--color-border-subtle)' }}>{['PRESENT', 'HALF_PRESENT', 'ABSENT', 'ON_LEAVE', 'MISSING_CHECKOUT', 'HOLIDAY', 'WEEKLY_OFF', 'LATE', 'NOT_STARTED', 'UNKNOWN'].map(status => { const style = PERSONAL_DAY_STYLES[status]; return <span key={status} className="inline-flex items-center gap-1.5 text-[10px]" style={mutedStyle}><span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full text-[9px] font-bold" style={{ color: style.color, backgroundColor: style.background }}>{style.short || '—'}</span>{style.label}</span>; })}</div>
           </>}
         </section>
@@ -175,7 +177,7 @@ export default function MyAttendanceOverview({ today, workspace, scope, children
             <table className="w-full text-left text-xs">
               <thead style={controlStyle}>
                 <tr>
-                  {['Date', 'Status', 'Check-in', 'Check-out', 'Attendance'].map(label => (
+                  {['Date', 'Status', 'Check-in', 'Check-out', 'Work time'].map(label => (
                     <th key={label} className="whitespace-nowrap px-3 py-3 font-medium">{label}</th>
                   ))}
                 </tr>
@@ -212,9 +214,7 @@ export default function MyAttendanceOverview({ today, workspace, scope, children
                         {formatTime(day.lastCheckOutAt)}
                       </td>
                       <td className="whitespace-nowrap px-3 py-3 tabular-nums">
-                        {day.workedMinutes != null && day.workedMinutes > 0
-                          ? formatHours(day.workedMinutes)
-                          : (day.hasAttendance ? '0h 0m' : 'N/A')}
+                        {day.trackedSeconds != null ? formatHours(day.trackedSeconds / 60) : 'N/A'}
                       </td>
                     </tr>
                   );
