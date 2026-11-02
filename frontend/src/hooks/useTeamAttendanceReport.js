@@ -44,3 +44,11 @@ export function initialAttendanceMonth(startDate, endDate, today) {
   return current >= startDate.slice(0, 7) && current <= endDate.slice(0, 7) ? current : startDate.slice(0, 7);
 }
 export const dateLabel = key => new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${key}T12:00:00Z`));
+
+// The drawer's calendar month owns its summary range, independently of the
+// dashboard's period. Keep all existing subject and filter restrictions.
+export function teamAttendanceMonthQuery(query, userId, month) {
+  const end = new Date(shiftMonth(month, 1) + '-01T12:00:00Z');
+  end.setUTCDate(end.getUTCDate() - 1);
+  return { ...query, userId, search: '', page: 1, startDate: month + '-01', endDate: end.toISOString().slice(0, 10) };
+}
