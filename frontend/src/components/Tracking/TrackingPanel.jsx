@@ -595,10 +595,9 @@ export default function TrackingPanel({
                 {session && session.status !== 'CLOSED' && (paused || state.policy.personalPauseEnabled !== false) && (
                   <button
                     type="button"
-                    className="welcome-action"
+                    className="welcome-action welcome-action-break"
                     disabled={busy}
                     aria-busy={busy}
-                    style={{ minWidth: 114 }}
                     onClick={() => action(running ? 'pause' : 'resume')}
                   >
                     {running ? <Coffee size={15} /> : <Play size={15} />}
