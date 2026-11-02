@@ -87,16 +87,29 @@ async function prepare({ viewer, workspaceId, query = {}, now = new Date(), hist
   if (q.userId) assertCanViewUser(access, viewer._id || viewer.id, q.userId);
   if (q.departmentId) assertCanViewDepartment(access, q.departmentId);
   const departmentFilter = { workspaceId, ...(access.scope === 'workspace' ? {} : { _id: { $in: access.allowedDepartmentIds } }) };
-  const [departments, members, profiles, policy, history] = await Promise.all([
+  const [departments, members, profiles, policy, attendanceHistory, leaveHistory] = await Promise.all([
     Department.find(departmentFilter).select('_id name members isActive').lean(),
     WorkspaceMembership.find({ workspace: workspaceId, ...(access.allowedUserIds ? { user: { $in: access.allowedUserIds } } : {}) }).select('user role status department joinedAt').lean(),
     AttendanceMemberProfile.find({ workspaceId, isActive: true, ...(access.allowedUserIds ? { user: { $in: access.allowedUserIds } } : {}) }).lean(),
     resolveApplicablePolicyVersion({ workspaceId }),
-    AttendanceDay.distinct('user', { workspaceId, ...(historicalSubject && q.userId ? { user: oid(q.userId) } : { workDateKey: { $gte: q.startDate, $lte: q.endDate }, ...(access.allowedUserIds ? { user: { $in: access.allowedUserIds } } : {}) }) })
+    AttendanceDay.distinct('user', { workspaceId, ...(historicalSubject && q.userId ? { user: oid(q.userId) } : { workDateKey: { $gte: q.startDate, $lte: q.endDate }, ...(access.allowedUserIds ? { user: { $in: access.allowedUserIds } } : {}) }) }),
+    LeaveRequestDay.aggregate([
+      { $match: { workspaceId: oid(workspaceId), ...(historicalSubject && q.userId ? {} : { date: { $gte: dateOnlyToInstant(q.startDate, timezone), $lte: dateOnlyToInstant(q.endDate, timezone) } }) } },
+      { $lookup: { from: LeaveRequest.collection.name, localField: 'request', foreignField: '_id', pipeline: [
+        { $match: { workspaceId: oid(workspaceId), status: { $in: APPROVED_STATUSES }, ...(q.userId ? { requester: oid(q.userId) } : access.allowedUserIds ? { requester: { $in: access.allowedUserIds.map(oid) } } : {}) } },
+        { $project: { requester: 1 } }
+      ], as: 'approved' } }, { $unwind: '$approved' }, { $group: { _id: '$approved.requester' } }
+    ]).option(queryOptions)
   ]);
+  const history = [...new Map([...attendanceHistory, ...leaveHistory.map(row => row._id)].map(user => [id(user), user])).values()];
   const selectedDepartment = q.departmentId ? departments.find(d => id(d) === q.departmentId && d.isActive !== false) : null;
   if (q.departmentId && !selectedDepartment) throw new ErrorResponse('Department not found', 404);
   const profileMap = new Map(profiles.map(p => [id(p.user), p])), historicalIds = new Set(history.map(id));
+  const memberIds = new Set(members.map(m => id(m.user))), departmentMap = new Map(departments.map(d => [id(d), d]));
+  const rosterDepartments = new Map();
+  for (const department of departments) for (const member of department.members || []) {
+    const list = rosterDepartments.get(id(member)) || []; list.push(department._id); rosterDepartments.set(id(member), list);
+  }
   const roster = [];
   for (const member of members) {
     if (q.userId && id(member.user) !== q.userId) continue;
@@ -106,12 +119,12 @@ async function prepare({ viewer, workspaceId, query = {}, now = new Date(), hist
   }
   // Deleted membership rows must not erase workspace-wide authorized history.
   if (access.scope === 'workspace' && !q.departmentId) for (const user of history) {
-    if ((!q.userId || id(user) === q.userId) && !members.some(m => id(m.user) === id(user))) roster.push({ user, historical: true, department: [] });
+    if ((!q.userId || id(user) === q.userId) && !memberIds.has(id(user))) roster.push({ user, historical: true, department: [] });
   }
   const users = await User.find({ _id: { $in: roster.map(m => m.user) } }).select('name email avatar').lean();
   const userMap = new Map(users.map(u => [id(u), u]));
   const subjects = roster.map(m => ({ user: { _id: m.user, name: null, email: null, avatar: null, ...userMap.get(id(m.user)) }, historical: !!m.historical, primaryDepartmentId: m.department?.[0] || null,
-    departments: departments.filter(d => (m.department || []).some(v => id(v) === id(d)) || (d.members || []).some(u => id(u) === id(m.user))).map(d => ({ _id: d._id, name: d.name }))
+    departments: [...new Set([...(m.department || []), ...(rosterDepartments.get(id(m.user)) || [])].map(id))].map(key => departmentMap.get(key)).filter(Boolean).map(d => ({ _id: d._id, name: d.name }))
   })).filter(row => !q.search || [row.user.name, row.user.email].some(value => value?.toLocaleLowerCase().includes(q.search.toLocaleLowerCase())));
   const today = DateTime.fromJSDate(now).setZone(timezone).toISODate(), through = q.endDate < today ? q.endDate : today;
   const expectedDates = q.startDate > through ? 0 : Math.round(DateTime.fromISO(through).diff(DateTime.fromISO(q.startDate), 'days').days) + 1;
@@ -119,6 +132,33 @@ async function prepare({ viewer, workspaceId, query = {}, now = new Date(), hist
 }
 
 const countIf = expression => ({ $sum: { $cond: [expression, 1, 0] } });
+// Duration-only projection shared by overview and daily CSV. Historical
+// snapshots remain authoritative; running intervals are unioned as of serverNow.
+function sessionFactsStages(ctx) {
+  const now = ctx.now;
+  const corrected = { $and: [
+    { $ne: [{ $ifNull: ['$regularizationResolution.appliedAt', null] }, null] },
+    { $ne: [{ $ifNull: ['$regularizationResolution.checkInAt', null] }, null] },
+    { $ne: [{ $ifNull: ['$regularizationResolution.checkOutAt', null] }, null] }
+  ] };
+  return [
+    { $lookup: { from: AttendanceSession.collection.name, let: { owner: '$user', date: '$workDateKey' }, pipeline: [
+      { $match: { workspaceId: oid(ctx.workspaceId), $expr: { $and: [{ $eq: ['$user', '$$owner'] }, { $eq: ['$workDateKey', '$$date'] }] } } },
+      { $project: { status: 1, checkInAt: 1, checkOutAt: 1, effectiveShiftEndAt: 1, missedCheckoutCutoffAt: 1, regularizationResolution: 1 } },
+      { $set: { _intervalStart: { $cond: [corrected, '$regularizationResolution.checkInAt', '$checkInAt'] },
+        _intervalEnd: { $cond: [corrected, '$regularizationResolution.checkOutAt', { $switch: { branches: [
+          { case: { $in: ['$status', ['CLOSED', 'COMPLETED']] }, then: '$checkOutAt' },
+          { case: { $eq: ['$status', 'ACTIVE'] }, then: { $min: [now, { $ifNull: ['$missedCheckoutCutoffAt', now] }] } }
+        ], default: null } }] } } }, { $sort: { _intervalStart: 1 } }
+    ], as: '_sessions' } },
+    { $set: { _live: { $anyElementTrue: { $map: { input: '$_sessions', as: 's', in: { $and: [
+      { $eq: ['$$s.status', 'ACTIVE'] }, { $eq: [{ $ifNull: ['$$s.regularizationResolution.appliedAt', null] }, null] },
+      { $gt: [{ $ifNull: ['$$s.missedCheckoutCutoffAt', new Date(8640000000000000)] }, now] }
+    ] } } } } } },
+    { $set: { workedMinutes: { $cond: ['$_live', { $floor: { $add: [{ $divide: [attendanceIntervalMillisecondsExpression('$_sessions'), 60000] }, 0.5] } }, '$workedMinutes'] } } }
+  ];
+}
+
 function summarizedPipeline(ctx) {
   const { q, today, now } = ctx;
   const matches = { $and: [q.status ? { $eq: ['$displayStatus', q.status] } : true, q.workMode ? { $eq: ['$workMode', q.workMode] } : true] };
@@ -128,25 +168,11 @@ function summarizedPipeline(ctx) {
   const required = { $and: [{ $eq: ['$isCalendarWorkingDay', true] }, { $lt: ['$leaveFraction', 1] }] };
   return [
     ...teamDayPipeline({ ...ctx, userIds: ctx.subjects.map(s => s.user._id), startDate: q.startDate, endDate: q.endDate }),
-    { $lookup: { from: AttendanceSession.collection.name, let: { owner: '$user', date: '$workDateKey' }, pipeline: [
-      { $match: { workspaceId: oid(ctx.workspaceId), $expr: { $and: [{ $eq: ['$user', '$$owner'] }, { $eq: ['$workDateKey', '$$date'] }] } } },
-      { $project: { status: 1, checkInAt: 1, checkOutAt: 1, effectiveShiftEndAt: 1, missedCheckoutCutoffAt: 1, regularizationResolution: 1 } },
-      { $set: { _intervalStart: { $ifNull: ['$regularizationResolution.checkInAt', '$checkInAt'] },
-        _intervalEnd: { $ifNull: ['$regularizationResolution.checkOutAt', { $switch: { branches: [
-          { case: { $in: ['$status', ['CLOSED', 'COMPLETED']] }, then: '$checkOutAt' },
-          { case: { $eq: ['$status', 'ACTIVE'] }, then: { $min: [now, { $ifNull: ['$missedCheckoutCutoffAt', now] }] } }
-        ], default: null } }] } } }, { $sort: { _intervalStart: 1 } }
-    ], as: '_sessions' } },
-    { $set: { _matches: matches, _elapsed: { $lte: ['$workDateKey', today] }, _required: required,
-      _ongoing: { $anyElementTrue: { $map: { input: '$_sessions', as: 's', in: { $and: [
-        { $eq: [{ $ifNull: ['$$s.regularizationResolution.appliedAt', null] }, null] },
-        { $or: [{ $gt: ['$$s.effectiveShiftEndAt', now] }, { $and: [{ $eq: ['$$s.status', 'ACTIVE'] }, { $gt: [{ $ifNull: ['$$s.missedCheckoutCutoffAt', now] }, now] }] }] }
-      ] } } } },
-      _ended: ended, _live: { $anyElementTrue: { $map: { input: '$_sessions', as: 's', in: { $and: [
-        { $eq: ['$$s.status', 'ACTIVE'] }, { $eq: [{ $ifNull: ['$$s.regularizationResolution.appliedAt', null] }, null] },
-        { $gt: [{ $ifNull: ['$$s.missedCheckoutCutoffAt', new Date(8640000000000000)] }, now] }
-      ] } } } } } },
-    { $set: { workedMinutes: { $cond: ['$_live', { $round: [{ $divide: [attendanceIntervalMillisecondsExpression('$_sessions'), 60000] }, 0] }, '$workedMinutes'] } } },
+    ...sessionFactsStages(ctx),
+    { $set: { _matches: matches, _elapsed: { $lte: ['$workDateKey', today] }, _required: required, _ended: ended,
+      _ongoing: { $or: ['$_live', { $anyElementTrue: { $map: { input: '$_sessions', as: 's', in: { $and: [
+        { $eq: [{ $ifNull: ['$$s.regularizationResolution.appliedAt', null] }, null] }, { $gt: ['$$s.effectiveShiftEndAt', now] }
+      ] } } } }] } } },
     { $set: { _unresolved: { $or: [
       { $not: [{ $in: ['$isCalendarWorkingDay', [true, false]] }] },
       { $eq: ['$presenceState', 'MISSING_CHECKOUT'] },
@@ -205,6 +231,21 @@ async function subjectContext(args) {
   return ctx;
 }
 
+function missingCalendarDay(ctx, workDateKey, calendar) {
+  const primary = ctx.subjects[0].primaryDepartmentId;
+  const instant = dateOnlyToInstant(workDateKey, ctx.timezone);
+  // The legacy calendar helper accepts a workspace-wide holiday context. Narrow
+  // it to the subject before classification; another department's holiday (or
+  // an unresolvable location holiday) cannot establish this member's day type.
+  if (calendar) calendar = { ...calendar, holidaysByDateKey: new Map([...calendar.holidaysByDateKey].map(([key, holidays]) => [key, holidays.filter(h => h.scope === 'workspace' || h.scope === 'department' && (h.departmentIds || []).some(department => id(department) === id(primary)))]).filter(([, holidays]) => holidays.length)) };
+  const configured = calendar && (calendar.workspaceCalendars.some(c => +new Date(c.effectiveFrom) <= +instant) ||
+    calendar.departmentCalendars.some(c => id(c.departmentId) === id(primary) && +new Date(c.effectiveFrom) <= +instant) ||
+    calendar.overridesByDateKey.has(workDateKey) || calendar.holidaysByDateKey.has(workDateKey) || calendar.holidaysByDateKey.has(`*-${workDateKey.slice(5)}`));
+  const classification = configured ? classifyDateWithContext(calendar, instant, primary) : null;
+  return { workDateKey, hasAttendance: false, displayStatus: classification && !classification.isWorkingDay ? classification.dayType === 'HOLIDAY' ? 'HOLIDAY' : 'WEEKLY_OFF' : workDateKey > ctx.today ? 'FUTURE' : 'UNKNOWN',
+    calendarDayType: classification?.dayType || null, calendarSource: classification ? 'CURRENT_CONFIGURATION' : null, workedMinutes: null };
+}
+
 export async function getTeamAttendanceMonth(args) {
   if (typeof args.month !== 'string' || !/^\d{4}-\d{2}$/.test(args.month) || !DateTime.fromISO(`${args.month}-01`).isValid) throw new ErrorResponse('Invalid attendance month', 400);
   const month = DateTime.fromISO(`${args.month}-01`), startDate = month.toISODate(), endDate = month.endOf('month').toISODate();
@@ -219,9 +260,7 @@ export async function getTeamAttendanceMonth(args) {
       const { leaveTypes: _, policyVersion: __, ...publicDay } = record;
       days.push({ ...publicDay, calendarSource: record.hasAttendance ? 'ATTENDANCE_SNAPSHOT' : 'APPROVED_LEAVE_SNAPSHOT' });
     } else {
-      const classification = calendar && workDateKey >= ctx.today ? classifyDateWithContext(calendar, dateOnlyToInstant(workDateKey, ctx.timezone), ctx.subjects[0].primaryDepartmentId) : null;
-      days.push({ workDateKey, hasAttendance: false, displayStatus: classification && !classification.isWorkingDay ? classification.dayType === 'HOLIDAY' ? 'HOLIDAY' : 'WEEKLY_OFF' : workDateKey > ctx.today ? 'FUTURE' : 'UNKNOWN',
-        calendarDayType: classification?.dayType || null, calendarSource: classification ? 'CURRENT_CONFIGURATION' : null, workedMinutes: null });
+      days.push(missingCalendarDay(ctx, workDateKey, workDateKey >= ctx.today ? calendar : null));
     }
   }
   const sessions = await AttendanceSession.find({ workspaceId: args.workspaceId, user: args.userId, workDateKey: { $gte: startDate, $lte: endDate } }).select('workDateKey status checkInAt checkOutAt missedCheckoutCutoffAt regularizationResolution').lean();
@@ -276,12 +315,15 @@ export async function getTeamAttendanceDay(args) {
     LeaveType.find({ workspaceId: args.workspaceId, _id: { $in: requests.map(r => r.leaveType) } }).select('name').lean(),
     trackedDay(ctx, args.userId, args.workDateKey)
   ]);
-  const { leaveTypes: _, policyVersion, ...day } = records[0] || { workDateKey: args.workDateKey, displayStatus: args.workDateKey > ctx.today ? 'FUTURE' : 'UNKNOWN', workedMinutes: null };
+  const calendar = !records.length && args.workDateKey >= ctx.today ? await buildCalendarContext({ timezone: ctx.timezone, departmentIds: [ctx.subjects[0].primaryDepartmentId].filter(Boolean), startDate: args.workDateKey, endDate: args.workDateKey }) : null;
+  const { leaveTypes: _, policyVersion, ...day } = records[0] || missingCalendarDay(ctx, args.workDateKey, calendar);
   day.activeSession = effective.some(s => s.status === 'ACTIVE' && (!s.missedCheckoutCutoffAt || +s.missedCheckoutCutoffAt > +ctx.now));
   if (day.hasAttendance && day.activeSession) { day.workedMinutes = Math.round(intervalMinutes(attendanceIntervals(effective, ctx.now))); day.durationIsLive = true; }
   const policy = policyVersion ? await AttendancePolicyVersion.findOne({ workspaceId: args.workspaceId, _id: policyVersion }).select('name versionNumber').lean() : null;
   return { user: ctx.subjects[0].user, timezone: ctx.timezone, asOf: ctx.now, day,
-    schedule: { startLocalTime: day.effectiveOfficeHoursStart || null, endLocalTime: day.effectiveOfficeHoursEnd || null, source: day.effectiveOfficeHoursSource || null, expectedMinutes: day.hasAttendance ? day.shiftExpectedMinutes : null, policyVersion: policy?.versionNumber || null },
+    schedule: { startLocalTime: day.effectiveOfficeHoursStart || null, endLocalTime: day.effectiveOfficeHoursEnd || null, source: day.effectiveOfficeHoursSource || null,
+      recordedEndAt: sessions.map(s => s.effectiveShiftEndAt).filter(Boolean).sort((a, b) => +b - +a)[0] || null,
+      expectedMinutes: day.hasAttendance ? day.shiftExpectedMinutes : null, policyVersion: policy?.versionNumber || null },
     sessions: effective.map(s => ({ status: s.status, checkInAt: s.checkInAt, checkOutAt: s.checkOutAt, regularized: !!s.regularized, regularizationStatus: s.regularizationStatus || null })),
     regularizations: regularizations.map(r => ({ status: r.status, type: r.type, appliedAt: r.appliedAt || null })),
     approvedLeaves: leaveDays.map(d => { const request = requests.find(r => id(r) === id(d.request)); return { dayType: d.dayType, isConsuming: d.isConsuming,
@@ -303,7 +345,7 @@ export async function exportTeamAttendance(args, response) {
     });
   };
   if (format === 'summary') {
-    await write(['Employee', 'Email', 'Department', 'Present days', 'Half days', 'Absent days', 'Missing checkout', 'Leave days', 'Attendance minutes', 'Full-period attendance %', 'Rate availability']);
+    await write(['Employee', 'Email', 'Department', 'Present days', 'Half days', 'Absent days', 'Missing checkout', 'Full leave days', 'Attendance minutes', 'Full-period attendance %', 'Rate availability']);
     for (const row of rows) { if (response.destroyed) break; await write([row.user.name, row.user.email, row.departments.map(d => d.name).join('; '), row.present, row.halfDays, row.absent, row.missingCheckout, row.leaveDays, row.attendanceMinutes ?? 'N/A', row.attendanceRate.value ?? 'N/A', row.attendanceRate.reason]); }
   } else {
     await write(['Employee', 'Date', 'Work mode', 'Worked hours', 'Status']);
@@ -311,7 +353,7 @@ export async function exportTeamAttendance(args, response) {
     const pipeline = teamDayPipeline({ ...ctx, userIds: rows.map(row => row.user._id), startDate: ctx.q.startDate, endDate: ctx.q.endDate });
     if (ctx.q.status) pipeline.push({ $match: { displayStatus: ctx.q.status } });
     if (ctx.q.workMode) pipeline.push({ $match: { workMode: ctx.q.workMode } });
-    pipeline.push({ $sort: { workDateKey: -1, user: 1 } });
+    pipeline.push(...sessionFactsStages(ctx), { $sort: { workDateKey: -1, user: 1 } });
     const cursor = AttendanceDay.aggregate(pipeline).option(queryOptions).cursor({ batchSize: 250 });
     try { for await (const day of cursor) { if (response.destroyed) break; await write([names.get(id(day.user)), day.workDateKey, day.workMode, day.hasAttendance && Number.isFinite(day.workedMinutes) ? day.workedMinutes / 60 : 'N/A', day.displayStatus]); } } finally { await cursor.close(); }
   }

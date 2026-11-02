@@ -4,7 +4,7 @@ export const inputStyle = { backgroundColor: 'var(--color-bg-base)', borderColor
 export const mutedStyle = { color: 'var(--color-text-muted)' };
 export const controlClass = 'min-h-10 rounded-lg border px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:opacity-50';
 export const labels = { PRESENT: 'Present', HALF_PRESENT: 'Half day', ABSENT: 'Absent', MISSING_CHECKOUT: 'Missing checkout', NOT_STARTED: 'Not started', ON_LEAVE: 'Approved leave', HOLIDAY: 'Holiday', WEEKLY_OFF: 'Non-working', UNKNOWN: 'No record', FUTURE: 'Future date', HALF_LEAVE_FIRST: 'First-half leave', HALF_LEAVE_SECOND: 'Second-half leave', SHORT_LEAVE: 'Short leave', FULL_LEAVE: 'Approved leave', OFFICE: 'Office', WFH: 'Work from home', HYBRID: 'Hybrid', FIELD: 'Field' };
-const tones = { PRESENT: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300', HALF_PRESENT: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300', ABSENT: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300', MISSING_CHECKOUT: 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300', ON_LEAVE: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300', HOLIDAY: 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300', WEEKLY_OFF: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400' };
+const tones = { FUTURE: 'bg-transparent text-gray-400 dark:text-gray-600', NOT_STARTED: 'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300', PRESENT: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300', HALF_PRESENT: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300', ABSENT: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300', MISSING_CHECKOUT: 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300', ON_LEAVE: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300', HOLIDAY: 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300', WEEKLY_OFF: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400' };
 export const statusTone = status => tones[status] || 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400';
 // Private, bounded cache lives only inside the keyed authenticated page/drawer.
 // Invalidation is part of the key; old-key payloads never render while loading.
@@ -38,5 +38,9 @@ export function useTeamRead(key, load, identity) {
 export function shiftMonth(month, delta) {
   const [year, index] = month.split('-').map(Number), date = new Date(Date.UTC(year, index - 1 + delta, 1));
   return date.toISOString().slice(0, 7);
+}
+export function initialAttendanceMonth(startDate, endDate, today) {
+  const current = today.slice(0, 7);
+  return current >= startDate.slice(0, 7) && current <= endDate.slice(0, 7) ? current : startDate.slice(0, 7);
 }
 export const dateLabel = key => new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${key}T12:00:00Z`));

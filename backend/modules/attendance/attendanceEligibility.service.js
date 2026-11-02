@@ -45,7 +45,7 @@ export async function resolveAttendanceEligibility({ workspaceId, userId, member
 
   // Reporting supplies the same profiles in a batch; undefined retains the
   // existing single-subject lookup for check-in and lifecycle callers.
-  const profile = resolvedProfile === undefined ? await getEffectiveAttendanceProfile({ workspaceId, userId }) : resolvedProfile;
+  const profile = resolvedProfile === undefined ? await getEffectiveAttendanceProfile({ workspaceId, userId }) : resolvedProfile || {};
 
   if (profile.attendanceRequiredOverride === 'NOT_REQUIRED') {
     return buildResult({ attendanceRequired: false, reason: 'PROFILE_OVERRIDE_EXCLUDED', profile, applicablePolicy: attendancePolicy });
