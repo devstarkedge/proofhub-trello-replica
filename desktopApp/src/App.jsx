@@ -93,6 +93,7 @@ const SuperAdminWorkspaceDetailPage = lazy(() => import('./pages/SuperAdmin/Supe
 const SuperAdminAuditLogPage = lazy(() => import('./pages/SuperAdmin/SuperAdminAuditLogPage'));
 
 import DesktopTrackingBridge from './components/Tracking/DesktopTrackingBridge';
+import DesktopUpdateBridge from './components/DesktopUpdateBridge';
 
 function App() {
   return (
@@ -100,6 +101,7 @@ function App() {
       <MeProvider>
         <WorkspaceProvider>
         <DesktopTrackingBridge />
+        <DesktopUpdateBridge />
         <TeamProvider>
           <NotificationProvider>
             <ClientInfoProvider>

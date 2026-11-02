@@ -28,3 +28,4 @@ release/
 build/
 artifacts/
 .md
+!AUTO_UPDATES.md

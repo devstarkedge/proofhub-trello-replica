@@ -9,7 +9,7 @@ const {uploadEntry}=require('./screenshot-upload.cjs');
 const {createScreenshotPreview}=require('./screenshot-preview.cjs');
 const {ActivityWork}=require('./activity-work.cjs');
 
-function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
+function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = () => false) {
   const preview = createScreenshotPreview();
   const dismissPreview = () => { try { preview.dismiss(); } catch { /* Optional UI must not interrupt tracking. */ } };
   const root = path.join(app.getPath('userData'),'tracking'); fs.mkdirSync(root,{recursive:true});
@@ -22,6 +22,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   let locked=false,suspended=false,lastBoundary=0,lastState='unavailable',lastError='',lastErrorCode='',lastCaptureAllowed=false;
   let leaseDeadlineMono=0;
   let realtime=null,haltRevision=0,captureEpoch=0,resyncRequested=false;
+  let updateHold=false,shutdownTask=null;
   const closedSessions=new Map(),closedAttendance=new Map();
   const transitions=new Map();
   function acceptTransition(value){
@@ -61,7 +62,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   });
   function updateActivityState(){
     const now=performance.now(),open=work?.pauses?.find(p=>!p.endedAt);
-    const enabled=Boolean(credentials&&policy?.enabled&&policy?.monitoringEnabled&&work&&!work.endedAt&&work.status!=='CLOSED'&&!quitting&&!device?.revokedAt&&!device?.monitoringDisplacedAt&&!noticeRequired);
+    const enabled=Boolean(credentials&&policy?.enabled&&policy?.monitoringEnabled&&work&&!work.endedAt&&work.status!=='CLOSED'&&!quitting&&!updateHold&&!device?.revokedAt&&!device?.monitoringDisplacedAt&&!noticeRequired);
     const canResume=enabled&&!locked&&!suspended&&activityWatchUntil>now&&work.status==='PAUSED'&&['PERSONAL_PAUSE','INACTIVITY'].includes(open?.reason)&&String(open?.resumeDevice)===String(device?._id);
     activityWork.update({enabled,workspaceId:credentials?.workspaceId,userId:credentials?.userId,sessionId:work?._id,revision:work?.revision,status:work?.status,canPause:enabled&&work.status==='RUNNING'&&leaseDeadlineMono>now,canResume,observedAt:activityObservedAt});
     return canResume;
@@ -166,6 +167,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
     }
   }
   function begin() {
+    if(updateHold)return;
     if(capturing||locked||suspended||performance.now()>=leaseDeadlineMono)return;
     if(!queue?.available()){publish('unavailable','Encrypted offline storage is unavailable');return;}
     if(queue.usedBytes()>=queue.maxBytes){publish('unavailable','Offline screenshot queue is full; reconnect to upload saved captures');return;}
@@ -310,7 +312,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
     }
   }
   async function sync() {
-    if(!credentials||quitting)return;
+    if(!credentials||quitting||updateHold)return;
     if(busy){resyncRequested=true;return;}busy=true;resyncRequested=false;
     const scope=generation;
     try{
@@ -367,6 +369,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
     }finally{busy=false;if(resyncRequested){resyncRequested=false;sync().catch(()=>{});}}
   }
   async function configure(value) {
+    if(updateHold)throw new Error('FlowTask is preparing a safe update restart. Please retry shortly.');
     if(value&&(!/^[a-f\d]{24}$/i.test(value.userId)||!/^[a-f\d]{24}$/i.test(value.workspaceId)||typeof value.token!=='string'||value.token.length<16||value.token.length>8192))throw new Error('Invalid tracking identity');
     if(credentials?.userId===value?.userId&&credentials?.workspaceId===value?.workspaceId){const changed=credentials?.token!==value?.token;credentials=value;if(changed)connectRealtime();return publish();}
     // End capture synchronously before awaiting network or changing identity.
@@ -479,18 +482,53 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL) {
   powerMonitor.on('suspend',async()=>{suspended=true;await stopCapture('sleep');publish('sleep');});
   powerMonitor.on('resume',async()=>{suspended=false;await sync();await retryQueuedUploads();});
   let quitting=false;
-  app.on('before-quit',event=>{
-    if(quitting)return;
-    dismissPreview();
-    event.preventDefault();quitting=true;
-    stopCapture('partial').finally(async()=>{
-      // Preserve completed encrypted entries, then relinquish ownership so a
-      // normal restart or another desktop need not wait for lease expiration.
+  function pendingCaptureFiles(directory=root){
+    let count=0;
+    for(const entry of fs.readdirSync(directory,{withFileTypes:true})){
+      if(entry.isSymbolicLink())return 1;
+      if(entry.isDirectory())count+=pendingCaptureFiles(path.join(directory,entry.name));
+      else if(/\.queue(?:\.tmp)?(?:\.damaged)?$/.test(entry.name))count++;
+    }
+    return count;
+  }
+  function localUpdateSafety(){
+    if(capturing||work&&!work.endedAt&&work.status!=='CLOSED')return {safe:false,reason:'Finish your active attendance and work session before restarting to update.'};
+    if(busy||uploading||uploadTask||manualRetryTask||activityWork.running||activityWork.pending)return {safe:false,reason:'Tracking or screenshot synchronization is still running. Please try again shortly.'};
+    if(queue?.files().length||queue?.damagedFiles().length||pendingCaptureFiles())return {safe:false,reason:'Saved screenshot uploads are pending. Let them finish before installing the update.'};
+    return {safe:true,configured:Boolean(credentials)};
+  }
+  async function updateSafety(){
+    const local=localUpdateSafety();if(!local.safe)return local;
+    const scope=generation;
+    if(credentials){
+      try{
+        const current=await request('/me');
+        if(scope!==generation)return {safe:false,reason:'Your session changed. Please retry the update.'};
+        if(!Object.hasOwn(current,'attendance')||!Object.hasOwn(current,'session')||String(current.workspaceId)!==String(credentials.workspaceId)||String(current.userId)!==String(credentials.userId))return {safe:false,reason:'The current attendance and work state could not be verified. Please reconnect and retry.'};
+        if(current.attendance||current.session&&!current.session.endedAt&&current.session.status!=='CLOSED')return {safe:false,reason:'An attendance or work session is active. Finish it normally before restarting to update.'};
+      }catch{return {safe:false,reason:'Reconnect so FlowTask can verify that attendance and work have finished before restarting.'};}
+    }
+    return localUpdateSafety();
+  }
+  function holdForUpdate(){const result=localUpdateSafety();if(result.safe)updateHold=true;return result;}
+  function prepareShutdown(){
+    if(shutdownTask)return shutdownTask;
+    quitting=true;dismissPreview();
+    shutdownTask=stopCapture('partial').then(async()=>{
+      // Same durable checkpoint and device-release path as normal application exit.
       generation++;clearInterval(timer);clearInterval(syncTimer);clearInterval(uploadTimer);if(uploadContinueTimer)clearTimeout(uploadContinueTimer);realtime?.disconnect();stopInput();
       if(credentials&&device&&!device.revokedAt)await request(`/devices/${device._id}/release`,{}).catch(()=>{});
-      credentials=null;app.quit();
+      credentials=null;
     });
+    return shutdownTask;
+  }
+  app.on('before-quit',event=>{
+    if(quitting||deferQuit())return;
+    event.preventDefault();prepareShutdown().finally(()=>app.quit());
   });
-  return { configure,sync,status:()=>publish() };
+  let updateCredentials=null;
+  const prepareUpdateShutdown=async()=>{updateCredentials=credentials;await prepareShutdown();};
+  const resumeAfterUpdateFailure=async()=>{const saved=updateCredentials;updateCredentials=null;quitting=false;shutdownTask=null;updateHold=false;await configure(saved);};
+  return { configure,sync,status:()=>publish(),updateSafety,holdForUpdate,releaseUpdateHold:()=>{updateHold=false;},prepareShutdown,prepareUpdateShutdown,resumeAfterUpdateFailure };
 }
 module.exports={installDesktopTracking};

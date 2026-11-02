@@ -1,5 +1,10 @@
 const records=new Map(),listeners=new Set(),pending=new Map();
 const idle=Object.freeze({phase:'IDLE',action:'',operationId:null,error:''});
+export function hasPendingSessionActions(){
+  if(pending.size||[...records.values()].some(value=>['PENDING','RECONCILIATION_REQUIRED'].includes(value.phase)))return true;
+  for(let index=0;index<sessionStorage.length;index++)if(sessionStorage.key(index)?.startsWith('flowtask-action:'))return true;
+  return false;
+}
 const storageKey=scope=>`flowtask-action:${scope}`;
 export const subscribeActions=listener=>{listeners.add(listener);return()=>listeners.delete(listener);};
 export function actionSnapshot(scope){

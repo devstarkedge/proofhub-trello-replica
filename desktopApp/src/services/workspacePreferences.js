@@ -128,6 +128,7 @@ export function createPreferenceSession({ userId, workspaceId, api, storage, onE
 // Reuse an in-flight queue across navigation and across consumers in one
 // user/workspace. Otherwise an old page's delayed save could race a new page.
 const sessions = new Map();
+export const hasPendingWorkspacePreferences = () => [...sessions.values()].some(entry => entry.session.hasPending());
 export function getWorkspacePreferenceSession(options) {
   const key = preferenceCacheKey(options.userId, options.workspaceId);
   let entry = sessions.get(key);

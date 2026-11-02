@@ -101,6 +101,7 @@ module.exports = async (window) => {
   let nativeInputBindingLoaded = null;
   let webpEncoderVerified = null;
   let trackingSocketLoaded=null;
+  let updaterRuntimeLoaded=null;
   if (app.isPackaged) {
     nativeInputBindingLoaded = Boolean(require(path.join(process.resourcesPath, 'node_modules', 'uiohook-napi')).uIOhook);
     assert.equal(nativeInputBindingLoaded, true);
@@ -110,8 +111,11 @@ module.exports = async (window) => {
     const metadata=await sharp(encoded.data).metadata();webpEncoderVerified=metadata.format==='webp'&&metadata.width===32&&metadata.height===16&&encoded.quality===85;
     assert.equal(webpEncoderVerified,true);
     trackingSocketLoaded=typeof require(path.join(process.resourcesPath,'node_modules','socket.io-client')).io==='function';assert.equal(trackingSocketLoaded,true);
+    updaterRuntimeLoaded=typeof require('./updater-runtime.cjs').autoUpdater.checkForUpdates==='function';assert.equal(updaterRuntimeLoaded,true);
+    const updateConfig=require('node:fs').readFileSync(path.join(process.resourcesPath,'app-update.yml'),'utf8');
+    assert.match(updateConfig,/provider: github/);assert.match(updateConfig,/owner: devstarkedge/);assert.match(updateConfig,/repo: proofhub-trello-replica/);assert.doesNotMatch(updateConfig,/^\s*token\s*:/mi);
   }
-  return { menuRemoved: true, nativeInputBindingLoaded, webpEncoderVerified, trackingSocketLoaded, windowChecks: {
+  return { menuRemoved: true, nativeInputBindingLoaded, webpEncoderVerified, trackingSocketLoaded, updaterRuntimeLoaded, windowChecks: {
     resize: true, minimizeRestore: true, maximizeRestore: true, fullscreen: true,
     copyCutPaste: clipboardCommands, selectAll: clipboardCommands, undoRedo: clipboardCommands, zoomReset: true,
     reloadShortcuts: true, developmentToolsPolicy: true, navigation: true,

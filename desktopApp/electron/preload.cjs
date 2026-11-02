@@ -3,6 +3,28 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('flowtaskDesktop', Object.freeze({
   isDesktop: true,
   platform: process.platform,
+  updates: Object.freeze({
+    getStatus: () => ipcRenderer.invoke('desktop-updates:status'),
+    check: () => ipcRenderer.invoke('desktop-updates:check'),
+    restart: () => ipcRenderer.invoke('desktop-updates:restart'),
+    later: () => ipcRenderer.invoke('desktop-updates:later'),
+    onStatus: callback => {
+      const listener = (_event, value) => callback(value);
+      ipcRenderer.on('desktop-updates:status', listener);
+      return () => ipcRenderer.removeListener('desktop-updates:status', listener);
+    },
+    onPrepare: callback => {
+      const listener = (_event, requestId) => callback(requestId);
+      ipcRenderer.on('desktop-updates:prepare', listener);
+      return () => ipcRenderer.removeListener('desktop-updates:prepare', listener);
+    },
+    prepared: value => ipcRenderer.send('desktop-updates:prepared', value),
+    onRelease: callback => {
+      const listener = () => callback();
+      ipcRenderer.on('desktop-updates:release', listener);
+      return () => ipcRenderer.removeListener('desktop-updates:release', listener);
+    }
+  }),
   tracking: Object.freeze({
     configure: value => ipcRenderer.invoke('desktop-tracking:configure', value),
     getStatus: () => ipcRenderer.invoke('desktop-tracking:status'),

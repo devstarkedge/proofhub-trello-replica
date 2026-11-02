@@ -1,7 +1,7 @@
 {
   "name": "flowtask-desktop",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "FlowTask desktop application",
   "author": "FlowTask",
   "main": "electron/main.cjs",
@@ -10,6 +10,7 @@
     "dev": "node scripts/start-desktop.mjs --with-backend",
     "build": "vite build",
     "build:win": "node scripts/build-desktop.mjs win",
+    "release:win": "node scripts/release-desktop.mjs win",
     "build:mac": "node scripts/build-desktop.mjs mac",
     "start": "node scripts/start-desktop.mjs --with-backend",
     "electron": "node scripts/start-desktop.mjs --with-backend",
@@ -51,6 +52,7 @@
     "class-variance-authority": "^0.7.1",
     "date-fns": "^4.1.0",
     "dompurify": "^3.3.1",
+    "electron-updater": "6.8.12",
     "emoji-picker-react": "^4.16.1",
     "framer-motion": "^12.29.2",
     "idb": "^8.0.3",
@@ -90,6 +92,7 @@
     "baseline-browser-mapping": "^2.9.7",
     "electron": "44.7.0",
     "electron-builder": "26.15.3",
+    "esbuild": "0.25.10",
     "eslint": "^9.36.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.22",
@@ -101,6 +104,12 @@
   "build": {
     "appId": "com.flowtask.desktop",
     "productName": "FlowTask",
+    "publish": {
+      "provider": "github",
+      "owner": "devstarkedge",
+      "repo": "proofhub-trello-replica",
+      "private": false
+    },
     "directories": {
       "app": "build/app",
       "output": "release"

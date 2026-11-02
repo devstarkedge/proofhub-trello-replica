@@ -5,6 +5,7 @@ const { readBackendURL } = require('./config.cjs');
 const { startDesktopServer } = require('./server.cjs');
 const { installDesktopNotifications } = require('./notifications.cjs');
 const { installDesktopTracking } = require('./tracking.cjs');
+const { installDesktopUpdates } = require('./auto-updates.cjs');
 
 ipcMain.on('desktop-theme:set', (_event, mode) => {
   try {
@@ -29,6 +30,7 @@ else if(isolatedTestProfile)app.setPath('userData',path.join(app.getPath('temp')
 let mainWindow;
 let localServer;
 let rendererOrigin;
+let desktopUpdates;
 const root = path.join(__dirname, '..');
 const hasLock = app.requestSingleInstanceLock();
 
@@ -80,6 +82,7 @@ async function createWindow() {
     },
   });
   mainWindow.once('ready-to-show', () => mainWindow.show());
+  desktopUpdates?.attachWindow(mainWindow);
   mainWindow.on('closed', () => { mainWindow = null; });
   const contents = mainWindow.webContents;
   const rendererErrors = [];
@@ -166,7 +169,7 @@ else {
   });
   app.whenReady().then(async () => {
     installDesktopNotifications(() => mainWindow, () => rendererOrigin);
-    installDesktopTracking(() => mainWindow, () => rendererOrigin, () => rendererOrigin);
+    const tracking = installDesktopTracking(() => mainWindow, () => rendererOrigin, () => rendererOrigin, () => desktopUpdates?.isHandlingExit() || false);
     if (!app.isPackaged && process.env.FLOWTASK_DEV_URL) {
       const url = new URL(process.env.FLOWTASK_DEV_URL);
       if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw new Error('Development URL must be local.');
@@ -175,6 +178,8 @@ else {
       localServer = await startDesktopServer({ dist: path.join(root, 'dist'), backendURL: readBackendURL(root), port: smokeTest ? 0 : 47831 });
       rendererOrigin = localServer.origin;
     }
+    desktopUpdates = installDesktopUpdates({ app, ipcMain, getWindow: () => mainWindow, getOrigin: () => rendererOrigin, tracking,
+      webRequest: require('electron').session.defaultSession.webRequest, disabled: smokeTest });
     Menu.setApplicationMenu(process.platform === 'darwin' ? Menu.buildFromTemplate([
       ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
       { label: 'File', submenu: [{ role: 'close' }, { role: 'quit' }] },

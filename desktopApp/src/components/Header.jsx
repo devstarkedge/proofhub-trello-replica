@@ -1,5 +1,6 @@
 import { useContext, useState, useRef, useEffect, lazy, Suspense } from 'react';
 import { Bell, Menu, Settings, LogOut, User, ChevronDown, Kanban, List, Calendar, BarChart3, Users, Building2, CreditCard, HelpCircle, Palette, LayoutGrid } from 'lucide-react';
+import { DesktopUpdateMenuItem } from './DesktopUpdateBridge';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Dialog } from 'radix-ui';
@@ -674,6 +675,7 @@ const Header = ({ boardName }) => {
                     
                     {/* Menu items with colored icons */}
                     <div className="p-2">
+                      <DesktopUpdateMenuItem />
                       {[
                         { key: 'profile', icon: User, label: 'My Profile', path: '/profile', config: menuIconColors.profile },
                         { key: 'appearance', icon: Palette, label: 'Appearance', action: () => setShowAppearanceModal(true), config: menuIconColors.appearance },

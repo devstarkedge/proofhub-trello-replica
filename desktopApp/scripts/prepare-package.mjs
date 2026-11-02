@@ -1,8 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createRequire } from 'node:module';
+import { build } from 'esbuild';
 import { root, ensureElectron, run, electronEnvironment } from './electron-runtime.mjs';
 
 const manifest = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
+const require = createRequire(import.meta.url);
 await run(await ensureElectron(), [path.join(root, 'scripts/prepare-icon.cjs')], { env: electronEnvironment() });
 const stage = path.resolve(root, 'build/app');
 if (!stage.startsWith(path.resolve(root) + path.sep)) throw new Error('Package staging directory is outside desktopApp.');
@@ -14,6 +17,12 @@ await fs.cp(path.join(root, 'dist'), path.join(stage, 'dist'), { recursive: true
 for (const filename of await fs.readdir(path.join(root, 'electron'))) {
   if (filename.endsWith('.cjs') && !filename.endsWith('.test.cjs')) await fs.copyFile(path.join(root, 'electron', filename), path.join(stage, 'electron', filename));
 }
+// before-build.cjs intentionally disables automatic dependency collection.
+// Bundle the updater and its JS-only dependency graph into the staged main
+// process, leaving Electron external and keeping all native tracking packages
+// in their established locations. No credentials are part of this bundle.
+await build({ entryPoints: [require.resolve('electron-updater')], outfile: path.join(stage, 'electron/updater-runtime.cjs'),
+  bundle: true, platform: 'node', format: 'cjs', target: 'node22', external: ['electron'], logLevel: 'warning' });
 for (const dependency of ['uiohook-napi', 'node-gyp-build','sharp','@img','detect-libc','semver','socket.io-client','socket.io-parser','engine.io-client','engine.io-parser','@socket.io/component-emitter','debug','ms','ws','xmlhttprequest-ssl']) {
   await fs.cp(path.join(root,'node_modules',dependency),path.join(stage,'node_modules',dependency),{recursive:true});
 }
@@ -22,6 +31,6 @@ for (const dependency of ['uiohook-napi', 'node-gyp-build','sharp','@img','detec
 await fs.writeFile(path.join(stage, 'package.json'), JSON.stringify({
   name: manifest.name, version: manifest.version, description: manifest.description,
   author: manifest.author, main: manifest.main, private: true,
-  dependencies: { 'uiohook-napi': manifest.dependencies['uiohook-napi'],sharp:manifest.dependencies.sharp,'socket.io-client':manifest.dependencies['socket.io-client'] },
+  dependencies: { 'uiohook-napi': manifest.dependencies['uiohook-napi'],sharp:manifest.dependencies.sharp,'socket.io-client':manifest.dependencies['socket.io-client'], 'electron-updater': manifest.dependencies['electron-updater'] },
 }, null, 2));
 console.log('Prepared desktop package:', stage);
