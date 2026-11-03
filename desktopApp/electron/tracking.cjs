@@ -127,7 +127,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
     realtime?.disconnect();realtime=null;if(!credentials)return;
     try{
       let client;try{client=require('socket.io-client');}catch(error){if(!app.isPackaged)throw error;client=require(path.join(process.resourcesPath,'node_modules','socket.io-client'));}
-      realtime=client.io(getBackendURL(),{auth:{...credentials},transports:['websocket','polling'],reconnection:true,reconnectionDelay:1000,reconnectionDelayMax:5000});
+      realtime=client.io(getBackendURL(),{auth:{...credentials},transports:['polling','websocket'],tryAllTransports:true,reconnection:true,reconnectionDelay:1000,reconnectionDelayMax:5000});
       realtime.on('tracking:policy-updated',value=>{haltPolicy(value);return sync();});
       realtime.on('tracking:changed',value=>{acceptTransition(value);return sync();});
       realtime.on('attendance:checked-out',value=>{if(String(value?.userId)===String(credentials?.userId)&&value?.session?._id)rememberClosure({attendanceSessionId:value.session._id,cutoffAt:value.session.checkOutAt});return sync();});

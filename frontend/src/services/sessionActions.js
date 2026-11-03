@@ -11,11 +11,22 @@ export const actionBusy=value=>['PENDING','RECONCILIATION_REQUIRED'].includes(va
 export async function recoverSessionAction(scope,read,onConfirmed){
   if(pending.has(scope))return pending.get(scope);
   const saved=actionSnapshot(scope);if(!actionBusy(saved))return null;
-  const task=(async()=>{try{const result=await read(saved);if(result?.committed){onConfirmed?.(result,saved);publish(scope,{...saved,phase:'CONFIRMED',error:''});return result;}
-    publish(scope,{...saved,phase:'RECONCILIATION_REQUIRED',error:'The action is not confirmed. Retry the same operation safely.'});return null;
-  }catch{publish(scope,{...saved,phase:'RECONCILIATION_REQUIRED',error:'Reconnect to verify the last action before changing work.'});return null;}finally{pending.delete(scope);}})();pending.set(scope,task);return task;
+  publish(scope,{...saved,verifying:true});
+  const task=(async()=>{try{const result=await read(saved);if(result?.committed){onConfirmed?.(result,saved);publish(scope,{...saved,verifying:false,phase:'CONFIRMED',error:''});return result;}
+    publish(scope,{...saved,verifying:false,phase:'RECONCILIATION_REQUIRED',error:'The action is not confirmed. Retry the same operation safely.'});return null;
+  }catch{publish(scope,{...saved,verifying:false,phase:'RECONCILIATION_REQUIRED',error:'Reconnect to verify the last action before changing work.'});return null;}finally{pending.delete(scope);}})();pending.set(scope,task);return task;
 }
 export async function performSessionAction(scope,descriptor,send,{read,onConfirmed}={}){
+  while(pending.has(scope)){
+    const waiting=actionSnapshot(scope),sameOperation=waiting.operationId===descriptor.operationId&&waiting.kind===descriptor.kind&&waiting.action===descriptor.action&&waiting.sessionId===descriptor.sessionId&&JSON.stringify(waiting.payload)===JSON.stringify(descriptor.payload);
+    // Retry may be clicked while a receipt lookup is still running. Wait for
+    // that lookup instead of treating it as a competing business mutation.
+    if(waiting.phase==='RECONCILIATION_REQUIRED'){
+      const result=await pending.get(scope).catch(()=>null);
+      if(sameOperation&&actionSnapshot(scope).phase==='CONFIRMED')return result;
+    }else if(sameOperation)return pending.get(scope);
+    else throw new Error('Another attendance or work action is in progress.');
+  }
   const existing=actionSnapshot(scope);
   if(pending.has(scope)||existing.phase==='PENDING')throw new Error('Another attendance or work action is in progress.');
   if(existing.phase==='RECONCILIATION_REQUIRED'&&existing.operationId!==descriptor.operationId)throw new Error('Verify or retry the previous action first.');

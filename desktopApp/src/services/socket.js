@@ -8,7 +8,7 @@ class SocketService {
     this.rooms = new Map();
     this.connected = false;
     this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 10;
+    this.connectionFailureThreshold = 10;
   }
 
   connect(userId, token, workspaceId) {
@@ -43,7 +43,10 @@ class SocketService {
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       reconnectionAttempts: Infinity,
-      transports: ['websocket', 'polling']
+      // Establish a polling session first, then upgrade when WebSocket works.
+      // A failed initial transport must not trap every reconnect on WebSocket.
+      transports: ['polling', 'websocket'],
+      tryAllTransports: true
     });
 
     this.socket.onAny((type, payload) => window.dispatchEvent(new CustomEvent('flowtask:realtime', { detail: { type, payload } })));
@@ -89,8 +92,8 @@ class SocketService {
     });
 
     this.socket.on('connect_error', (error) => {
-      if (import.meta.env.DEV) console.error('Socket connection error:', error);
       this.reconnectAttempts++;
+      if (import.meta.env.DEV && this.reconnectAttempts === 1) console.warn('Socket connection unavailable; retrying automatically:', error.message);
       if (/Invalid or expired token|Authentication required|Invalid token payload/.test(error.message)) {
         window.dispatchEvent(new Event('socket-auth-expired'));
       } else if (/Not a member|Inactive account or workspace/.test(error.message)) {
@@ -98,8 +101,8 @@ class SocketService {
         window.dispatchEvent(new Event('socket-workspace-rejected'));
       }
 
-      if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-        if (import.meta.env.DEV) console.error('Max reconnection attempts reached');
+      if (this.reconnectAttempts === this.connectionFailureThreshold) {
+        if (import.meta.env.DEV) console.warn('Socket connection is still unavailable; automatic retries will continue.');
         window.dispatchEvent(new CustomEvent('socket-connection-failed'));
       }
     });

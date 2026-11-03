@@ -428,6 +428,7 @@ export default function TrackingPanel({
       return true;
     } catch (e) {
       toast.error(errorMessage(e));
+      if(!e.response?.status||e.response.status>=500)setSelecting(false);
       reload();
       return false;
     }
@@ -486,11 +487,12 @@ export default function TrackingPanel({
   const recovery = sessionAction.phase === 'RECONCILIATION_REQUIRED' && (
     <p role="alert" className="mt-2 text-xs text-amber-600 dark:text-amber-400">
       {sessionAction.error}{' '}
-      <button type="button" className="underline cursor-pointer" onClick={() => sessionAction.recover()}>
-        Verify status
+      <button type="button" disabled={sessionAction.verifying} className="underline cursor-pointer" onClick={() => sessionAction.recover()}>
+        {sessionAction.verifying ? 'Verifying…' : 'Verify status'}
       </button>{' '}
       <button
         type="button"
+        disabled={sessionAction.verifying}
         className="underline cursor-pointer"
         onClick={() => sessionAction.retry().catch(e => toast.error(errorMessage(e)))}
       >

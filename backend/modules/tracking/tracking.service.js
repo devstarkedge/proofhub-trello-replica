@@ -81,7 +81,9 @@ export async function workOptions(workspaceId, userId, projectId = null, page = 
 export async function validateSelection({ workspaceId, userId, selection, dbSession = null, context = null, policy: resolvedPolicy = null }) {
   if (!selection || selection.mode === 'ATTENDANCE_ONLY') return null;
   if (!['ASSIGNED', 'INDIVIDUAL'].includes(selection.mode)) fail('Select assigned task, individual work, or attendance only');
-  const ctx = context || await contextFor(workspaceId, userId, {includeProjects:selection.mode!=='INDIVIDUAL'||!selection.agendaId}), policy = resolvedPolicy || await policyFor(workspaceId, dbSession);
+  const project = selection.mode==='INDIVIDUAL'&&selection.agendaId ? null : await Board.findOne({ _id: objectId(selection.projectId), workspaceId }).session(dbSession).lean();
+  const ctx = context || await contextFor(workspaceId, userId, {includeProjects:Boolean(project),projectRecords:project?[project]:[]}), policy = resolvedPolicy || await policyFor(workspaceId, dbSession);
+  if(context&&project)await withTrackingProjects(ctx,[project],{loadAssignmentData:false});
   if (!policy.enabled || !can(ctx, 'tracking.log', { workspaceId, user: userId })) fail('Work tracking is not permitted', 403);
   if(selection.mode==='INDIVIDUAL'&&selection.agendaId){
     const agenda=await TrackingAgenda.findOne({_id:objectId(selection.agendaId),workspaceId,archivedAt:null}).session(dbSession).lean();
@@ -90,7 +92,6 @@ export async function validateSelection({ workspaceId, userId, selection, dbSess
     return {kind:'INDIVIDUAL',agenda:agenda._id,agendaTitle:agenda.title,description:selection.description.trim(),project:null,task:null};
   }
   if(selection.mode==='INDIVIDUAL'&&!selection.candidateTaskId)fail('Choose an agenda and describe what you are working on');
-  const project = await Board.findOne({ _id: objectId(selection.projectId), workspaceId }).session(dbSession).lean();
   if (!project || !can(ctx, 'project.view', project)) fail('Project not found', 404);
   let task = null;
   const taskId = selection.mode === 'ASSIGNED' ? selection.taskId : selection.candidateTaskId;
@@ -278,20 +279,46 @@ async function changeWorkUnlocked({ workspaceId, userId, action, selection, oper
   if (typeof operationId !== 'string' || !/^[\w-]{8,128}$/.test(operationId)) fail('An operation ID is required');
   if (!['start', 'switch', 'pause', 'resume', 'link'].includes(action)) fail('Unknown work action');
   const operationDigest = digest({ action, selection: selection || null,...(activityChange?{activityChange}:{}) });
+  // Resolve actor permissions before holding the workspace-wide policy write
+  // fence. These reads previously ran inside the transaction, scanning every
+  // project while heartbeats were competing for the same policy document.
+  // The selected board, task assignment and policy revision are still checked
+  // against the transaction's current snapshot below.
+  let selectionContext = null;
+  if(action!=='pause'){
+    let candidate = selection;
+    if(action==='resume'){
+      const previous=await WorkSession.findOne({workspaceId,user:userId,endedAt:null}).select('segments').lean();
+      const last=previous?.segments?.at(-1);
+      candidate=last?.agenda?{mode:'INDIVIDUAL',agendaId:last.agenda}:{projectId:last?.project};
+    }
+    const project=candidate?.projectId?await Board.findOne({_id:objectId(candidate.projectId),workspaceId,isDeleted:{$ne:true}}).select('_id workspaceId name visibility owner members managers guests department team isDeleted').lean():null;
+    selectionContext=await contextFor(workspaceId,userId,{includeProjects:Boolean(project),projectRecords:project?[project]:[]});
+  }
+  const policy=await policyFor(workspaceId);
   const dbSession = await mongoose.startSession(); let result;
   try { await withTrackingTransaction(dbSession, async () => {
+    // This MUST be the first transaction operation. Reading attendance/work
+    // first creates a snapshot that every other user's policy heartbeat can
+    // invalidate, indefinitely starving a switch under steady heartbeat load.
+    const allowed=await TrackingPolicy.updateOne({_id:policy._id||null,revision:policy.revision,enabled:true},{$inc:{__v:1}},{session:dbSession});
     const attendance = await AttendanceSession.findOne({ workspaceId, user: userId, status: 'ACTIVE' }).session(dbSession).lean();
     if (!attendance || attendance.missedCheckoutCutoffAt && +new Date(attendance.missedCheckoutCutoffAt) <= Date.now()) fail('Check in before starting or changing work', 409);
     let session = await WorkSession.findOne({ workspaceId, attendanceSession: attendance._id }).select('-operations -audit').session(dbSession).lean();
     if(expectedSessionId&&id(session)!==id(expectedSessionId))fail('The active work session changed',409,'TRACKING_CONFLICT');
     const previous = session ? await WorkSession.findOne({_id:session._id,'operations.id':operationId}).select('operations.$').session(dbSession).lean() : null;
     const replay = previous?.operations?.[0];
-    if (replay) { if (replay.digest !== operationDigest) fail('Operation ID was already used for different work', 409); result = session; return; }
+    if (replay) {
+      if (replay.digest !== operationDigest) fail('Operation ID was already used for different work', 409);
+      result = session;
+      // The receipt was already committed. Undo only this retry's policy
+      // fence so replay does not create another write or revision increment.
+      await dbSession.abortTransaction();
+      return;
+    }
     if (session && session.status === 'CLOSED') fail('Work session has ended', 409);
     if(session && await WorkSession.exists({_id:session._id,'operations.4999':{$exists:true}}).session(dbSession))fail('Daily work change limit reached',429);
-    const policy=await policyFor(workspaceId,dbSession);
     if(!policy.enabled)fail('Time Tracking is disabled',403);
-    const allowed=await TrackingPolicy.updateOne({_id:policy._id,revision:policy.revision,enabled:true},{$inc:{__v:1}},{session:dbSession});
     if(!allowed.matchedCount)fail('Tracking configuration changed; refresh and retry',409,'TRACKING_CONFLICT');
     if(action==='pause'&&!activityChange&&policy.personalPauseEnabled===false)fail('Personal Pause is disabled by workspace policy',403);
     if (session && expectedRevision !== session.revision) fail('Work changed on another device; refresh and retry', 409, 'TRACKING_CONFLICT');
@@ -329,7 +356,7 @@ async function changeWorkUnlocked({ workspaceId, userId, action, selection, oper
         const last = session.segments.at(-1);
         chosen = { mode: last.kind === 'TASK' || last.linkedTask ? 'ASSIGNED' : 'INDIVIDUAL', projectId: last.project, taskId: last.task || last.linkedTask, candidateTaskId: last.candidateTask,agendaId:last.agenda,description:last.description };
       }
-      const valid = await validateSelection({ workspaceId, userId, selection: chosen, dbSession, policy });
+      const valid = await validateSelection({ workspaceId, userId, selection: chosen, dbSession, policy, context:selectionContext });
       if (!valid) fail('Select work before starting a timer');
       if (!session) {
         const policy = await policyFor(workspaceId, dbSession);
