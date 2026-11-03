@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { serializeTrackingWrite, withTrackingTransaction } from './tracking.writes.js';
-import { enqueueAttendanceReport } from '../../services/chat/attendanceReporting.service.js';
+import { enqueueAttendanceReport, requestAttendanceReportDelivery } from '../../services/chat/attendanceReporting.service.js';
 import { invalidateTrackingReads } from './tracking.readCache.js';
 import { randomUUID, createHash } from 'node:crypto';
 import Board from '../../models/Board.js';
@@ -419,6 +419,7 @@ async function changeWorkUnlocked({ workspaceId, userId, action, selection, oper
     await enqueueAttendanceReport({ action, attendance, work: result, before: reportingBefore, at, dbSession });
     await enqueueAttendanceEvent({workspaceId,user:userId,key:`work-${result._id}-${result.revision}`,kind:'WORK_CHANGED',workSession:result._id,workRevision:result.revision,workDateKey:result.workDateKey},dbSession);
   }); } finally { await dbSession.endSession(); }
+  requestAttendanceReportDelivery(workspaceId);
   // The initiating employee/agent gets a small committed invalidation now.
   // Workspace observers and retries use the transactional outbox.
   await invalidateTrackingReads(workspaceId);

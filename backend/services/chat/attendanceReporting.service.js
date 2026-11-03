@@ -75,10 +75,19 @@ export async function deliverReportingPayload(payload, settings) {
   if (!process.env.FLOWTASK_WEBHOOK_SECRET) throw new Error('FlowTask reporting signing secret is missing');
   const body = JSON.stringify(payload), timestamp = String(Math.floor(Date.now() / 1000));
   const signature = crypto.createHmac('sha256', process.env.FLOWTASK_WEBHOOK_SECRET).update(`${timestamp}.${body}`).digest('hex');
-  const response = await axios.post(settings.webhookUrl, body, { timeout: 10000, transformRequest: [data => data], headers: {
-    'Content-Type': 'application/json', 'X-FlowTask-Timestamp': timestamp, 'X-FlowTask-Signature': signature,
-    'X-FlowTask-Delivery-Id': payload.eventId, 'X-FlowTask-Event': payload.eventType, 'X-FlowTask-Workspace': payload.workspaceId,
-  } });
+  // Directory reconciliation includes durable membership/room updates. Its
+  // request budget must fit that work while remaining below the 120s lease.
+  const timeout = payload.eventType.startsWith('reporting.') ? 60000 : 30000;
+  let response;
+  try {
+    response = await axios.post(settings.webhookUrl, body, { timeout, transformRequest: [data => data], headers: {
+      'Content-Type': 'application/json', 'X-FlowTask-Timestamp': timestamp, 'X-FlowTask-Signature': signature,
+      'X-FlowTask-Delivery-Id': payload.eventId, 'X-FlowTask-Event': payload.eventType, 'X-FlowTask-Workspace': payload.workspaceId,
+    } });
+  } catch (error) {
+    error.reportingEventType = payload.eventType;
+    throw error;
+  }
   if (!response.data?.success || !['processed', 'duplicate'].includes(response.data.status)) throw new Error('ChatApp has not confirmed durable reporting delivery');
 }
 
@@ -206,7 +215,7 @@ async function processScopedAttendanceReports(workspaceId, { limit = 20 } = {}) 
     const retry = reportingRetry(error, state);
     await ReportingDirectoryState.updateOne({ workspaceId, leaseToken: token }, { $set: retry });
     logger.warn('Attendance reporting worker will retry', { workspaceId: String(workspaceId), error: error.message,
-      status: retry.lastFailureStatus, code: retry.lastFailureCode, nextAttemptAt: retry.nextAttemptAt.toISOString() });
+      eventType: error.reportingEventType, status: retry.lastFailureStatus, code: retry.lastFailureCode, nextAttemptAt: retry.nextAttemptAt.toISOString() });
   }
   finally { await ReportingDirectoryState.updateOne({ workspaceId, leaseToken: token }, { $set: { leaseUntil: new Date(0) }, $unset: { leaseToken: 1 } }); }
 }
@@ -262,20 +271,24 @@ export async function reconcileCheckoutReports(workspaceId) {
 // Hooks only persist invalidation and request an early drain. The persisted
 // source/outbox and the periodic maintenance remain authoritative after crashes.
 let requested = new Set();
-export async function requestReportingReconciliation(workspaceId, dbSession = null) {
-  if (!workspaceId) return;
-  return run({ workspaceId }, async () => {
-  const settings = await resolveWorkspaceChatSettings(workspaceId, { requireLinkedWorkspace: true });
-  if (!settings.enabled || !settings.webhookUrl) return;
-  await ReportingDirectoryState.updateOne({}, { $set: { dirty: true }, $setOnInsert: { workspaceId } }, { upsert: true, runValidators: true, session: dbSession });
-  if (dbSession?.inTransaction() || process.env.ATTENDANCE_REPORTING_AUTODRAIN === 'false') return;
+export function requestAttendanceReportDelivery(workspaceId) {
+  if (!workspaceId || process.env.ATTENDANCE_REPORTING_AUTODRAIN === 'false') return;
   const key = String(workspaceId);
   if (requested.has(key)) return;
   requested.add(key);
   setImmediate(async () => {
     try { await processAttendanceReports(workspaceId); }
-    catch (error) { logger.warn('Reporting reconciliation scheduled for retry', { workspaceId: key, error: error.message }); }
+    catch (error) { logger.warn('Reporting delivery scheduled for retry', { workspaceId: key, error: error.message }); }
     finally { requested.delete(key); }
   });
+}
+
+export async function requestReportingReconciliation(workspaceId, dbSession = null) {
+  if (!workspaceId) return;
+  return run({ workspaceId }, async () => {
+    const settings = await resolveWorkspaceChatSettings(workspaceId, { requireLinkedWorkspace: true });
+    if (!settings.enabled || !settings.webhookUrl) return;
+    await ReportingDirectoryState.updateOne({}, { $set: { dirty: true }, $setOnInsert: { workspaceId } }, { upsert: true, runValidators: true, session: dbSession });
+    if (!dbSession?.inTransaction()) requestAttendanceReportDelivery(workspaceId);
   });
 }
