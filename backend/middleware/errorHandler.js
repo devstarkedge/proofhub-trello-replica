@@ -11,12 +11,6 @@ const errorHandler = (err, req, res, next) => {
   let error = { ...err };
   error.message = err.message;
 
-  // Log error for debugging
-  // A refreshed checkout preview contains a short-lived confirmation proof.
-  // Keep it in the caller's response, never in application logs.
-  // Validation/provider errors can contain submitted passwords or auth headers.
-  console.error('Request failed', { name: err.name, code: err.code, status: err.statusCode || 500 });
-
   // Mongoose bad ObjectId
   if (err.name === 'CastError') {
     const message = 'Resource not found';
@@ -44,6 +38,10 @@ const errorHandler = (err, req, res, next) => {
 
   // Mongoose validation error
   if (err.name === 'VersionError') error = new ErrorResponse('This item changed while you were editing it. Refresh and retry.', 409);
+  if (err.code === 112) {
+    error = new ErrorResponse('This item was updated by another request. Refresh and retry.', 409);
+    error.code = 'WRITE_CONFLICT';
+  }
   if (err.name === 'ValidationError') {
     const message = Object.values(err.errors).map(val => val.message).join(', ');
     error = new ErrorResponse(message, 400);
@@ -60,13 +58,21 @@ const errorHandler = (err, req, res, next) => {
     error = new ErrorResponse(message, 401);
   }
 
+  // Route templates and router prefixes identify the failing handler without
+  // logging query strings, request bodies, or provider error messages.
+  console.error('Request failed', {
+    name: err.name, code: err.code, status: error.statusCode || 500,
+    method: req.method,
+    route: req.route?.path ? `${req.baseUrl || ''}${req.route.path}` : undefined,
+  });
+
   res.status(error.statusCode || 500).json({
     success: false,
     message: error.message || 'Server Error',
     // Optional machine-readable code (e.g. Attendance's OUTSIDE_GEOFENCE,
     // ALREADY_CHECKED_IN) — set via `err.code = '...'` at the throw site;
     // every existing caller that never sets it is unaffected.
-    ...(err.code && { code: err.code }),
+    ...((error.code || err.code) && { code: error.code || err.code }),
     ...(err.code === 'CHECKOUT_RECONFIRM_REQUIRED' && err.checkoutPreview && { data: { checkoutPreview: err.checkoutPreview } }),
     ...(process.env.NODE_ENV === 'development' && err.code !== 11000 && { stack: err.stack })
   });

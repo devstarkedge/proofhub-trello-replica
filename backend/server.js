@@ -7,6 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import config from './config/index.js';
 import logger from './utils/logger.js';
+import { initializeHttpServer, requireBackendReady } from './utils/httpStartup.js';
 import { connectRedis, getSharedConnection } from './queues/connection.js';
 import { configureRealtimeCluster, closeRealtimeCluster } from './realtime/cluster.js';
 import { stopBoardPublication } from './realtime/boardPublication.js';
@@ -82,9 +83,12 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
+let backendReady = false;
+const startupGate = requireBackendReady(() => backendReady);
 
 // Initialize Socket.IO via the realtime module (all socket logic is in realtime/)
 socketManager.init(server);
+socketManager.getIO().engine.use(startupGate);
 
 // ─── Security ────────────────────────────────────────────────────────────────
 // Function-based CORS: logs every blocked request so you can see the exact
@@ -152,6 +156,9 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// Block HTTP requests until startup finishes, including health checks.
+app.use(startupGate);
 
 // All file uploads stream directly to Cloudinary (zero local disk storage)
 
@@ -285,13 +292,14 @@ import { runLeaveAccrualCatchUp } from './schedulers/leaveMaintenanceScheduler.j
 import * as workspaceContext from './modules/workspaces/workspaceContext.js';
 import { hasPendingMigrations } from './scripts/migrationRegistry.js';
 
-connectRedis().then(() => mongoose.connect(config.db.uri, {
-  autoIndex: !config.isProd,
-  maxPoolSize: config.db.maxPoolSize,
-  serverSelectionTimeoutMS: config.db.serverSelectionTimeoutMS,
-  socketTimeoutMS: config.db.socketTimeoutMS,
-}))
-  .then(async () => {
+initializeHttpServer(server, config.port, async () => {
+    await connectRedis();
+    await mongoose.connect(config.db.uri, {
+      autoIndex: !config.isProd,
+      maxPoolSize: config.db.maxPoolSize,
+      serverSelectionTimeoutMS: config.db.serverSelectionTimeoutMS,
+      socketTimeoutMS: config.db.socketTimeoutMS,
+    });
     logger.info('Connected to MongoDB with connection pooling');
     if (config.isProd) {
       const pending = await hasPendingMigrations();
@@ -341,16 +349,20 @@ connectRedis().then(() => mongoose.connect(config.db.uri, {
       logger.error('Slack services initialization error (non-fatal)', { error: err.message });
     });
 
-    server.listen(config.port, () => {
-      logger.info(`Server running on port ${config.port}`, { env: config.env });
-    });
-
     // HTTP keep-alive tuning for load balancer compatibility
     server.keepAliveTimeout = config.http.keepAliveTimeout;
     server.headersTimeout = config.http.headersTimeout;
+    backendReady = true;
+    logger.info(`Server running on port ${config.port}`, { env: config.env });
   })
   .catch(async (error) => {
-    logger.error('Backend startup failed', { error: error.message });
+    backendReady = false;
+    const message = error.code === 'EADDRINUSE'
+      ? `Port ${config.port} is already in use. Stop the existing backend or configure a different PORT.`
+      : error.message;
+    logger.error('Backend startup failed', { error: message });
+    server.close();
+    server.closeAllConnections?.();
     await closeRealtimeCluster();
     await shutdownQueues();
     await mongoose.disconnect();
@@ -362,6 +374,7 @@ let shuttingDown = false;
 const gracefulShutdown = async (signal) => {
   if (shuttingDown) return;
   shuttingDown = true;
+  backendReady = false;
   logger.info(`${signal} received. Shutting down gracefully...`);
   const forced = setTimeout(() => { logger.error('Forced shutdown after timeout'); process.exit(1); }, 15000);
   forced.unref();

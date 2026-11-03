@@ -21,7 +21,9 @@ export function reportRedisError(role, error) {
   const code = /^[A-Z0-9_]{1,40}$/.test(error?.code || '') ? error.code : 'REDIS_UNAVAILABLE';
   if (errors.has(role) && Date.now() - errors.get(role) < config.redis.errorLogIntervalMs) return;
   errors.set(role, Date.now());
-  logger.error('Redis service unavailable', { role, code });
+  const status = ['wait', 'connecting', 'connect', 'ready', 'close', 'reconnecting', 'end'].includes(shared?.status)
+    ? shared.status : 'unavailable';
+  logger.error('Redis service unavailable', { role, code, connectionStatus: status });
 }
 
 export async function withTimeout(operation, timeoutMs, service = 'Redis') {

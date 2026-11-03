@@ -130,7 +130,14 @@ export async function heartbeat({ workspaceId, userId, deviceId, sessionId, stat
       }
     }
     saved=await TrackingDevice.findOneAndUpdate({_id:device._id,revokedAt:null,releasedAt:device.releasedAt||null},{$set:update,...(takeover?{$unset:{monitoringDisplacedAt:1}}:{}),...(update.anchor?{$push:{anchors:{$each:[update.anchor],$slice:-8}}}:{})},{new:true,session:dbSession}).lean();
-    if(!saved)fail('Desktop device was revoked',403,'DEVICE_REVOKED');
+    if(!saved){
+      // A release/takeover can change the CAS fence after the initial read.
+      // Keep revocation authoritative without mislabeling a reconnect race.
+      const current=await TrackingDevice.findOne({_id:device._id,workspaceId,user:userId}).select('revokedAt monitoringDisplacedAt').session(dbSession).lean();
+      if(!current||current.revokedAt)fail('Desktop device was revoked',403,'DEVICE_REVOKED');
+      if(current.monitoringDisplacedAt)fail('Monitoring was moved to another desktop.',409,'DEVICE_TRANSFERRED');
+      fail('Desktop connection changed; retry the heartbeat.',409,'DEVICE_STATE_CHANGED');
+    }
     if(update.anchor)await persistAnchor(saved,update.anchor,dbSession);
     if(canCapture)await TrackingCaptureLease.findOneAndUpdate({device:device._id,version:saved.leaseVersion},{$set:{endedAt:saved.leaseUntil,expiresAt:policy.retentionDays===null?null:new Date(+saved.leaseUntil+policy.retentionDays*86400000)},$setOnInsert:{workspaceId,user:userId,session:session._id,startedAt:saved.leaseStartedAt}},{upsert:true,runValidators:true,session:dbSession});
   });}catch(error){if(error.code===11000)fail('Another desktop owns monitoring. Choose Use this desktop to switch.',409,'DEVICE_CONFLICT');throw error;}finally{await dbSession.endSession();}
