@@ -34,19 +34,28 @@ function installDesktopUpdates({ app, ipcMain, getWindow, getOrigin, tracking, w
     });
   }
   const manager = createUpdateManager({ updater, enabled, version: app.getVersion(), log, publish,
+    readiness: async () => {
+      if (mutations.size) return { safe: false, reason: 'Uploads or saved changes are still being sent. Waiting for them to finish.' };
+      return tracking.updateSafety();
+    },
     safety: async () => {
-      networkLocked = true;
-      const renderer = await rendererSafety();
-      if (!renderer.safe) { releaseHold(); return renderer; }
-      if (mutations.size) { releaseHold(); return { safe: false, reason: 'Uploads or saved changes are still being sent. Please retry shortly.' }; }
-      const native = await tracking.updateSafety();
-      if (!native.safe || renderer.authenticated && !native.configured) { releaseHold(); return { safe: false, reason: native.reason || 'Wait for your desktop session to connect before restarting.' }; }
-      const held = tracking.holdForUpdate();
-      if (!held.safe || mutations.size) { releaseHold(); return { safe: false, reason: held.reason || 'Synchronization is still running. Please retry.' }; }
-      // Recheck renderer queues after the asynchronous server verification.
-      const final = await rendererSafety();
-      if (!final.safe) releaseHold();
-      return final;
+      try {
+        networkLocked = true;
+        const renderer = await rendererSafety();
+        if (!renderer.safe) { releaseHold(); return renderer; }
+        if (mutations.size) { releaseHold(); return { safe: false, reason: 'Uploads or saved changes are still being sent. Please retry shortly.' }; }
+        const native = await tracking.updateSafety();
+        if (!native.safe || renderer.authenticated && !native.configured) { releaseHold(); return { safe: false, reason: native.reason || 'Wait for your desktop session to connect before restarting.' }; }
+        const held = tracking.holdForUpdate();
+        if (!held.safe || mutations.size) { releaseHold(); return { safe: false, reason: held.reason || 'Synchronization is still running. Please retry.' }; }
+        // Recheck renderer queues after the asynchronous server verification.
+        const final = await rendererSafety();
+        if (!final.safe) releaseHold();
+        return final;
+      } catch (error) {
+        releaseHold();
+        throw error;
+      }
     },
     install: async normalExit => {
       try {

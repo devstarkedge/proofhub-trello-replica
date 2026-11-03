@@ -1,11 +1,12 @@
 const semver = require('semver');
 const FOUR_HOURS = 4 * 60 * 60 * 1000;
+const RESTART_RETRY_MS = 15000;
 
 // No Electron globals: the lifecycle and safety contract can be verified without
 // downloading/installing a release or touching a real person's tracking state.
-function createUpdateManager({ updater, version, enabled, safety, install, publish = () => {}, log = () => {}, timers = globalThis }) {
-  let state = { enabled, phase: enabled ? 'idle' : 'disabled', currentVersion: version, version: null, progress: 0, dismissed: false, message: '', manual: false, revision: 0 };
-  let checking = null, downloading = null, installing = null, interval, startup, retryTimer, disposed = false, failures = 0;
+function createUpdateManager({ updater, version, enabled, readiness = async () => ({ safe: true }), safety, install, publish = () => {}, log = () => {}, timers = globalThis }) {
+  let state = { enabled, phase: enabled ? 'idle' : 'disabled', currentVersion: version, version: null, progress: 0, dismissed: false, message: '', manual: false, restartPending: false, revision: 0 };
+  let checking = null, downloading = null, installing = null, interval, startup, retryTimer, restartTimer, disposed = false, failures = 0;
   const listeners = [];
   const snapshot = () => ({ ...state });
   const change = patch => { if (disposed) return; state = { ...state, ...patch, revision: state.revision + 1 }; publish(snapshot()); };
@@ -37,22 +38,42 @@ function createUpdateManager({ updater, version, enabled, safety, install, publi
     }).catch(fail).finally(() => { checking = null; });
     return checking;
   }
-  async function restart(normalExit = false) {
-    if (disposed || !enabled || state.phase !== 'downloaded') return false;
+  function deferRestart(result) {
+    change({ phase: 'downloaded', message: result.reason || 'Finish active work and pending operations before restarting.' });
+    if (state.restartPending && !disposed) {
+      restartTimer = timers.setTimeout(() => {
+        restartTimer = null;
+        if (state.restartPending) void restart(false, true);
+      }, RESTART_RETRY_MS);
+      restartTimer?.unref?.();
+    }
+    return false;
+  }
+  async function restart(normalExit = false, scheduled = false) {
     if (installing) return installing;
-    change({ phase: 'installing', message: '', dismissed: false });
-    installing = (async () => {
+    if (disposed || !enabled || state.phase !== 'downloaded') return false;
+    if (scheduled && !state.restartPending) return false;
+    timers.clearTimeout(restartTimer); restartTimer = null;
+    if (!normalExit && !scheduled) change({ restartPending: true, dismissed: false, message: '' });
+    // Assign the task before running callbacks so repeated clicks coalesce.
+    installing = Promise.resolve().then(async () => {
       try {
+        // While work is active, poll without freezing UI or blocking requests.
+        const ready = await readiness();
+        if (disposed || !normalExit && !state.restartPending) return false;
+        if (!ready.safe) return deferRestart(ready);
+        change({ phase: 'installing', message: '', dismissed: false });
         const result = await safety();
-        if (!result.safe) { change({ phase: 'downloaded', message: result.reason || 'Finish active work and pending operations before restarting.' }); return false; }
+        if (disposed) return false;
+        if (!result.safe) return deferRestart(result);
         await install(normalExit);
         return true;
       } catch {
         // The verified cached installer remains available for another attempt.
-        change({ phase: 'downloaded', message: 'FlowTask could not safely restart. Your update is saved; please retry.' });
+        change({ phase: 'downloaded', restartPending: false, message: 'FlowTask could not safely restart. Your update is saved; please retry.' });
         return false;
       } finally { installing = null; }
-    })();
+    });
     return installing;
   }
   if (enabled) {
@@ -84,8 +105,11 @@ function createUpdateManager({ updater, version, enabled, safety, install, publi
     startup = timers.setTimeout(() => { void check(false); }, 10000); startup?.unref?.();
     interval = timers.setInterval(() => { void check(false); }, FOUR_HOURS); interval?.unref?.();
   }
-  return { snapshot, check, restart, later: () => { if (state.phase !== 'installing') change({ dismissed: true }); return snapshot(); },
-    dispose() { disposed = true; timers.clearTimeout(startup); timers.clearTimeout(retryTimer); timers.clearInterval(interval); for (const [event, callback] of listeners) updater.removeListener(event, callback); }
+  return { snapshot, check, restart, later: () => {
+    if (state.phase !== 'installing') { timers.clearTimeout(restartTimer); restartTimer = null; change({ dismissed: true, restartPending: false, message: '' }); }
+    return snapshot();
+  },
+    dispose() { disposed = true; timers.clearTimeout(startup); timers.clearTimeout(retryTimer); timers.clearTimeout(restartTimer); timers.clearInterval(interval); for (const [event, callback] of listeners) updater.removeListener(event, callback); }
   };
 }
-module.exports = { createUpdateManager, FOUR_HOURS };
+module.exports = { createUpdateManager, FOUR_HOURS, RESTART_RETRY_MS };

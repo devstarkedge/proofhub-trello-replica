@@ -87,9 +87,18 @@ confirming its recorded process is no longer running.
   during final restart checks. IPC is restricted to the main renderer/frame and
   validated origin. No token, workspace identity or screenshot content is sent
   over updater status IPC.
-- Active attendance or work, including paused work, blocks installation. Failed
-  safety checks preserve update readiness and leave tracking running. Finish
-  attendance/work through the normal existing controls, then retry.
+- Active attendance or work, including paused work, blocks installation. Clicking
+  Restart to Update requests a restart once safe; it retries every 15 seconds
+  until attendance/work and pending uploads/changes finish. Readiness checks run
+  before the renderer freeze and network gate, so waiting never prevents checkout,
+  work actions or upload recovery. The card and profile menu show the waiting
+  state. Cancel restart/Later cancels this request and retains the downloaded
+  update. Download completion alone never schedules a restart.
+- Immediately before installation, repeat the native/server, renderer and request
+  checks under the existing hold. A newly active session or pending write defers
+  installation again. Installer/preparation errors release the hold, restore
+  tracking, retain the update and require an explicit retry. Scheduled restart
+  requests are in-memory only and are cleared when the process exits.
 - Safe restart uses the existing durable tracking shutdown/device-release path,
   then installs and reopens. It never checks out the user or closes a work session
   on the server. Normal unsafe exit retains the downloaded update and uses the
