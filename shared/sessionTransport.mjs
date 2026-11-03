@@ -1,7 +1,25 @@
-/** One refresh operation per client; never discard credentials for a network failure. */
+/** Scoped clients share the authentication client's single refresh operation. */
 import { actorFromToken } from './offlineQueue.mjs';
-export function installSessionTransport(api, storage, notify = () => {}) {
+export function sessionIdentity(storage) {
+  const token = storage.getItem('token') || '';
+  let version;
+  try { version = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).tokenVersion; } catch { /* Invalid tokens cannot cross identities. */ }
+  return { actor: actorFromToken(token), version, workspaceId: storage.getItem('workspaceId'), token };
+}
+export function isCurrentSession(identity, storage) {
+  const current = sessionIdentity(storage);
+  return identity && identity.workspaceId === current.workspaceId && identity.version === current.version &&
+    (identity.actor ? identity.actor === current.actor : identity.token === current.token);
+}
+const identityChanged = () => new DOMException('Account or workspace changed; reopen this item before retrying.', 'AbortError');
+
+export function installSessionTransport(api, storage, notify = () => {}, { refreshClient = api } = {}) {
   let refreshing;
+  api.interceptors.request.use(config => {
+    if (config._sessionIdentity && !isCurrentSession(config._sessionIdentity, storage)) throw identityChanged();
+    config._sessionIdentity ||= sessionIdentity(storage);
+    return config;
+  }, error => { throw error; }, { synchronous: true });
   const remember = response => {
     const data = response?.data;
     if (typeof data?.token === 'string' && typeof data?.refreshToken === 'string') {
@@ -13,10 +31,11 @@ export function installSessionTransport(api, storage, notify = () => {}) {
     return response;
   };
   api.refreshAccessToken = () => {
+    if (refreshClient !== api) return refreshClient.refreshAccessToken();
     if (!refreshing) {
       const refreshToken = storage.getItem('refreshToken');
       if (!refreshToken) return Promise.reject(new Error('Sign in to continue'));
-      refreshing = api.post('/api/auth/refresh', { refreshToken }, { skipOfflineQueue: true, _refreshCredential: refreshToken })
+      refreshing = api.post('/api/auth/refresh', { refreshToken }, { skipOfflineQueue: true, _refreshCredential: refreshToken, timeout: 15000 })
         .then(response => response.data.token)
         .catch(error => { if (error.response?.status === 401 && storage.getItem('refreshToken') === refreshToken) notify(null); throw error; })
         .finally(() => { refreshing = null; });
@@ -31,16 +50,27 @@ export function installSessionTransport(api, storage, notify = () => {}) {
     const original = String(request.headers?.Authorization || request.headers?.authorization || '').replace(/^Bearer\s+/i, '');
     const current = storage.getItem('token');
     if (!original || !actorFromToken(original) || actorFromToken(original) !== actorFromToken(current || '')) throw error;
+    if (!isCurrentSession(request._sessionIdentity, storage)) throw identityChanged();
     request._sessionRetry = true;
     request._sessionActor = actorFromToken(original);
     try {
-      const token = await api.refreshAccessToken();
+      // A delayed 401 may arrive after another client already rotated the token.
+      const token = original !== current ? current : await api.refreshAccessToken();
+      if (!isCurrentSession(request._sessionIdentity, storage)) throw identityChanged();
       request.headers ||= {};
       request.headers.Authorization = `Bearer ${token}`;
       return api(request);
     } catch (refreshError) {
       throw refreshError;
     }
+  });
+}
+
+export function installScopedSessionTransport(api, sessionClient, storage) {
+  installSessionTransport(api, storage, () => {}, { refreshClient: sessionClient });
+  api.interceptors.response.use(response => {
+    if (!isCurrentSession(response.config._sessionIdentity, storage)) throw identityChanged();
+    return response;
   });
 }
 

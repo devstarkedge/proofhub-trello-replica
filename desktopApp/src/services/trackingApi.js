@@ -1,11 +1,14 @@
 import axios from 'axios';
+import sessionApi from './api';
+import { installScopedSessionTransport, sessionIdentity, isCurrentSession } from '../../../shared/sessionTransport.mjs';
 const api = axios.create({ baseURL: `${import.meta.env.VITE_BACKEND_URL}/api/tracking`, timeout: 20000 });
+installScopedSessionTransport(api, sessionApi, localStorage);
 api.interceptors.request.use(config => {
   config.headers.Authorization = `Bearer ${localStorage.getItem('token') || ''}`;
   config.headers['x-workspace-id'] = localStorage.getItem('workspaceId') || '';
   return config;
 },undefined,{synchronous:true});
-const data = async request => {const workspaceId=localStorage.getItem('workspaceId'),token=localStorage.getItem('token');const result=(await request).data.data;if(workspaceId!==localStorage.getItem('workspaceId')||token!==localStorage.getItem('token')||result?.workspaceId&&String(result.workspaceId)!==String(workspaceId))throw new DOMException('Tracking identity changed','AbortError');return result;};
+const data = async request => {const identity=sessionIdentity(localStorage);const result=(await request).data.data;if(!isCurrentSession(identity,localStorage)||result?.workspaceId&&String(result.workspaceId)!==String(identity.workspaceId))throw new DOMException('Tracking identity changed','AbortError');return result;};
 export const getTrackingState = () => data(api.get('/me'));
 export const getWorkOptions = (projectId,signal,page={}) => data(api.get('/options', { params: { projectId,...page },signal }));
 export const getAgendas=()=>data(api.get('/agendas'));
@@ -23,12 +26,12 @@ export const getTaskTrackedTime = taskId => data(api.get(`/tasks/${taskId}/total
 export const getTimeline = (sessionId, before, filters={},signal) => data(api.get(`/sessions/${sessionId}/timeline`, { params: { ...filters,before },signal }));
 // Keep private R2 reads behind the existing authenticated backend proxy.
 export const getScreenshotBlob = async (screenshotId, _variant, signal, { etag } = {}) => {
-  const workspaceId = localStorage.getItem('workspaceId'), token = localStorage.getItem('token');
+  const identity = sessionIdentity(localStorage);
   const response = await api.get(`/screenshots/${screenshotId}/content`, {
     responseType: 'blob', signal, headers: etag ? { 'If-None-Match': etag } : {},
     validateStatus: status => status === 304 || (status >= 200 && status < 300)
   });
-  if (workspaceId !== localStorage.getItem('workspaceId') || token !== localStorage.getItem('token')) throw new DOMException('Tracking identity changed', 'AbortError');
+  if (!isCurrentSession(identity, localStorage)) throw new DOMException('Tracking identity changed', 'AbortError');
   const authorizedUntil = Number(response.headers['x-screenshot-authorized-until']);
   if (!Number.isFinite(authorizedUntil) || authorizedUntil <= Date.now()) throw new Error('Screenshot authorization expired');
   return { blob: response.status === 304 ? undefined : response.data, notModified: response.status === 304,

@@ -1,5 +1,7 @@
 import axios from 'axios';
 import { toast } from 'react-toastify';
+import sessionApi from './api';
+import { installScopedSessionTransport, sessionIdentity, isCurrentSession } from '../../../shared/sessionTransport.mjs';
 
 const baseURL = import.meta.env.VITE_BACKEND_URL;
 
@@ -7,20 +9,21 @@ const api = axios.create({
   baseURL: `${baseURL}/api/attendance`,
   headers: { 'Content-Type': 'application/json' }, timeout:20000
 });
+installScopedSessionTransport(api, sessionApi, localStorage);
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
   const workspaceId = localStorage.getItem('workspaceId');
   if (workspaceId) config.headers['x-workspace-id'] = workspaceId;
-  config.flowtaskIdentity={token,workspaceId};
+  config.flowtaskIdentity ||= sessionIdentity(localStorage);
   return config;
 },undefined,{synchronous:true});
 
 api.interceptors.response.use(
   (response) => {
     const identity=response.config.flowtaskIdentity;
-    if(identity&&(identity.token!==localStorage.getItem('token')||identity.workspaceId!==localStorage.getItem('workspaceId')))throw new DOMException('Attendance identity changed','AbortError');
+    if(identity&&!isCurrentSession(identity,localStorage))throw new DOMException('Attendance identity changed','AbortError');
     return response;
   },
   (error) => {

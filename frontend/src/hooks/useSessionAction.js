@@ -23,7 +23,14 @@ export default function useSessionAction(){
     window.dispatchEvent(new CustomEvent('flowtask:session-committed',{detail:{scope,kind:entry.kind}}));
   },[scope,workspaceId]);
   const recover=useCallback(()=>recoverSessionAction(scope,read,confirmed),[scope,read,confirmed]);
-  useEffect(()=>{recover();window.addEventListener('online',recover);return()=>window.removeEventListener('online',recover);},[recover]);
+  useEffect(()=>{
+    recover();
+    const events=['online','socket-connected','session-token-updated','desktop-resume'];
+    const resumed=()=>{if(document.visibilityState==='visible')recover();};
+    events.forEach(event=>window.addEventListener(event,recover));
+    document.addEventListener('visibilitychange',resumed);
+    return()=>{events.forEach(event=>window.removeEventListener(event,recover));document.removeEventListener('visibilitychange',resumed);};
+  },[recover]);
   const run=useCallback((descriptor,send)=>performSessionAction(scope,descriptor,send,{read,onConfirmed:confirmed}),[scope,read,confirmed]);
   const retry=useCallback(async()=>{const entry=actionSnapshot(scope);if(entry.phase!=='RECONCILIATION_REQUIRED')return;
     return run(entry,()=>entry.kind==='work'?changeWork(entry.action,{...entry.payload,operationId:entry.operationId}):entry.action==='checkin'?checkIn(entry.payload):checkOut(entry.payload));},[scope,run]);

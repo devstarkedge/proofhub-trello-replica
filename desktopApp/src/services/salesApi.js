@@ -1,4 +1,6 @@
 import axios from 'axios';
+import sessionApi from './api';
+import { installScopedSessionTransport } from '../../../shared/sessionTransport.mjs';
 import { toast } from 'react-toastify';
 
 const baseURL = import.meta.env.VITE_BACKEND_URL;
@@ -8,13 +10,14 @@ const rootApi = axios.create({
   baseURL: `${baseURL}/api`,
   headers: { 'Content-Type': 'application/json' },
 });
+installScopedSessionTransport(rootApi, sessionApi, localStorage);
 rootApi.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
   const workspaceId = localStorage.getItem('workspaceId');
   if (workspaceId) config.headers['x-workspace-id'] = workspaceId;
   return config;
-});
+},undefined,{synchronous:true});
 
 // Create axios instance with base config
 const api = axios.create({
@@ -23,6 +26,7 @@ const api = axios.create({
     'Content-Type': 'application/json'
   }
 });
+installScopedSessionTransport(api, sessionApi, localStorage);
 
 // Add auth token to requests
 api.interceptors.request.use(
@@ -38,8 +42,9 @@ api.interceptors.request.use(
     return config;
   },
   (error) => {
-    return Promise.reject(error);
-  }
+    throw error;
+  },
+  { synchronous: true }
 );
 
 // Handle errors globally

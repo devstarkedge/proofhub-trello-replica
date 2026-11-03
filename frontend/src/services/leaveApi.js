@@ -1,4 +1,6 @@
 import axios from 'axios';
+import sessionApi from './api';
+import { installScopedSessionTransport } from '../../../shared/sessionTransport.mjs';
 import { toast } from 'react-toastify';
 
 const baseURL = import.meta.env.VITE_BACKEND_URL;
@@ -7,6 +9,7 @@ const api = axios.create({
   baseURL: `${baseURL}/api/leave`,
   headers: { 'Content-Type': 'application/json' }
 });
+installScopedSessionTransport(api, sessionApi, localStorage);
 
 api.interceptors.request.use((config) => {
   if (['get', 'head'].includes(config.method) && !config.timeout) config.timeout = 20000;
@@ -15,7 +18,7 @@ api.interceptors.request.use((config) => {
   const workspaceId = localStorage.getItem('workspaceId');
   if (workspaceId && !config.headers['x-workspace-id']) config.headers['x-workspace-id'] = workspaceId;
   return config;
-});
+},undefined,{synchronous:true});
 
 api.interceptors.response.use(
   (response) => {

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { serializeTrackingWrite, withTrackingTransaction } from './tracking.writes.js';
 import { invalidateTrackingReads } from './tracking.readCache.js';
 import { randomUUID,createHash,timingSafeEqual } from 'node:crypto';
 import { TrackingDevice, WorkSession, ActivityInterval, TrackingScreenshot,TrackingCaptureLease,TrackingCaptureAnchor,TrackingPolicy } from './tracking.models.js';
@@ -75,17 +76,23 @@ export async function acceptMonitoringNotice({ workspaceId, userId, deviceId, no
   if(!saved)fail('Device authorization changed; retry',409);
   return saved;
 }
-export async function releaseDevice({workspaceId,userId,deviceId,revoke=false}){
+export function releaseDevice(args){
+  return serializeTrackingWrite(args.workspaceId,args.userId,()=>releaseDeviceUnlocked(args));
+}
+async function releaseDeviceUnlocked({workspaceId,userId,deviceId,revoke=false}){
   await ownedDevice(workspaceId,userId,deviceId);
   const at=new Date(),dbSession=await mongoose.startSession();
-  try{await dbSession.withTransaction(async()=>{
+  try{await withTrackingTransaction(dbSession,async()=>{
     await TrackingDevice.updateOne({_id:deviceId,workspaceId,user:userId},{$set:{activeSession:null,leaseUntil:at,releasedAt:at,state:revoke?'revoked':'disconnected',...(revoke?{revokedAt:at}: {})}},{session:dbSession});
     await TrackingCaptureLease.updateMany({device:deviceId,endedAt:{$gt:at}},{$set:{endedAt:at}},{session:dbSession});
   });}finally{await dbSession.endSession();}
   try{emitToUser(userId,'tracking:device-updated',{deviceId:String(deviceId),revoked:revoke},workspaceId);}catch{/* polling recovers */}
   return {released:true,revoked:revoke};
 }
-export async function heartbeat({ workspaceId, userId, deviceId, sessionId, state, takeover=false, noticeAuthorization }) {
+export function heartbeat(args) {
+  return serializeTrackingWrite(args.workspaceId,args.userId,()=>heartbeatUnlocked(args));
+}
+async function heartbeatUnlocked({ workspaceId, userId, deviceId, sessionId, state, takeover=false, noticeAuthorization }) {
   const ctx = await contextFor(workspaceId, userId,{includeProjects:false}), device = await ownedDevice(workspaceId, userId, deviceId);
   const policy = await policyFor(workspaceId), now = new Date();
   let session = sessionId ? await WorkSession.findOne({ _id: objectId(sessionId), workspaceId, user: userId }).lean() : null;
@@ -111,7 +118,7 @@ export async function heartbeat({ workspaceId, userId, deviceId, sessionId, stat
   const member=await WorkspaceMembership.findOne({workspace:workspaceId,user:userId,status:'active'}).lean(),departments=departmentsOf(member);
   if (startsLease || !device.anchor?.id || +new Date(device.anchor.expiresAt) <= +now || device.anchor.policyRevision!==policy.revision || JSON.stringify((device.anchor.departments||[]).map(String).sort())!==JSON.stringify([...departments].sort())) update.anchor = { id: randomUUID(), serverAt: now, expiresAt: new Date(+now + 86400000),departments,policyRevision:policy.revision,capturePolicy:captureSnapshot(policy) };
   let saved,transferredFrom=null;const dbSession=await mongoose.startSession();
-  try{await dbSession.withTransaction(async()=>{
+  try{await withTrackingTransaction(dbSession,async()=>{
     transferredFrom=null;
     if(canCapture){
       const authorized=await TrackingPolicy.updateOne({_id:policy._id,revision:policy.revision,enabled:true},{$inc:{__v:1}},{session:dbSession});
@@ -147,7 +154,10 @@ export async function heartbeat({ workspaceId, userId, deviceId, sessionId, stat
     reason: !policy.enabled ? 'Time Tracking disabled by workspace' : !policy.monitoringEnabled ? 'Monitoring disabled by workspace' : !session || session.status !== 'RUNNING' ? 'Work is not running' : !hasMonitoringNotice(device) ? 'Monitoring notice required' : !permitted?'Tracking permission required':null };
 }
 function numeric(value, max = 1e9) { return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= max; }
-export async function recordInterval(args) {
+export function recordInterval(args) {
+  return serializeTrackingWrite(args.workspaceId,args.userId,()=>recordIntervalUnlocked(args));
+}
+async function recordIntervalUnlocked(args) {
   const {workspaceId,userId,deviceId}=args;
   const filter={_id:deviceId,workspaceId,user:userId};
   try {
@@ -214,7 +224,7 @@ async function saveInterval({ workspaceId, userId, deviceId, payload }) {
   if (payload.inputAvailable && (!Number.isInteger(payload.mouseCount) || !numeric(payload.mouseCount) || !Number.isInteger(payload.keyboardCount) || !numeric(payload.keyboardCount))) fail('Invalid input counts');
   if (!numeric(payload.activeSeconds, seconds + 0.05) || !numeric(payload.idleSeconds, seconds + 0.05) || Math.abs(payload.activeSeconds + payload.idleSeconds - seconds) > 0.1) fail('Active and idle measurements must cover the exact interval');
   const dbSession = await mongoose.startSession(); let saved;
-  try { await dbSession.withTransaction(async () => {
+  try { await withTrackingTransaction(dbSession, async () => {
     const current=await WorkSession.findOne({_id:session._id,workspaceId,user:userId}).session(dbSession).lean();
     if(!current||current.endedAt&&+endedAt>+new Date(current.endedAt))fail('Activity was recorded after attendance checkout',409,'CAPTURE_AFTER_CHECKOUT');
     // A device row write serializes concurrent interval submissions; the

@@ -224,7 +224,7 @@ const AttendanceQuickControl = () => {
 
   return <>
     {sessionError&&<p role="status" className="text-xs">{sessionError} <button type="button" className="underline" onClick={load}>Retry</button></p>}
-    {sessionAction.phase==='RECONCILIATION_REQUIRED'&&<p role="alert" className="text-sm">{sessionAction.error} <button type="button" onClick={()=>sessionAction.recover()}>Verify status</button> <button type="button" onClick={()=>sessionAction.retry().catch(()=>{})}>Retry safely</button></p>}
+    {!status.activeSession&&sessionAction.phase==='RECONCILIATION_REQUIRED'&&<p role="alert" className="text-sm">{sessionAction.error} <button type="button" onClick={()=>sessionAction.recover()}>Verify status</button> <button type="button" onClick={()=>sessionAction.retry().catch(()=>{})}>Retry safely</button></p>}
     {status.activeSession
       ? <TrackingPanel compact attendanceHeader={modeControl} attendanceActions={content} attendanceDetails={attendanceDetails} attendanceWarning={Boolean(status.unresolvedMissedCheckout)} />
       : (content || !isDesktop || status.unresolvedMissedCheckout) && <div className="welcome-controls welcome-check-in">

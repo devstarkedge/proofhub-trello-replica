@@ -21,7 +21,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
   let uploadTask=null,manualRetryTask=null,uploadContinueTimer=null,uploadCooldownUntil=0;
   let locked=false,suspended=false,lastBoundary=0,lastState='unavailable',lastError='',lastErrorCode='',lastCaptureAllowed=false;
   let leaseDeadlineMono=0;
-  let realtime=null,haltRevision=0,captureEpoch=0,resyncRequested=false;
+  let realtime=null,haltRevision=0,captureEpoch=0,resyncRequested=false,stateChangeRetried=false;
   let updateHold=false,shutdownTask=null;
   const closedSessions=new Map(),closedAttendance=new Map();
   const transitions=new Map();
@@ -71,7 +71,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
     return window && event.sender===window.webContents && event.senderFrame===window.webContents.mainFrame && new URL(event.senderFrame.url).origin===getOrigin(); };
   const publish = (state=lastState,error=lastError,code=error===lastError?lastErrorCode:'') => {
     lastState=state;lastError=error;lastErrorCode=code;
-    const value={protocolVersion:2,capabilities:{retryUploads:true,claimMonitoring:true,finalizeSession:true,sessionTransitions:true,screenshotPipeline:3,capturePreviews:true,activityWork:true},workTransition:lastWorkTransition,state,error,errorCode:code,userId:credentials?.userId||null,workspaceId:credentials?.workspaceId||null,deviceId:device?._id||null,syncStatus:queue?.damagedFiles().length?'capture-failed':uploading?'uploading':uploadError?(uploadErrorCode==='SCREENSHOT_STORAGE_UNAVAILABLE'?'storage-unavailable':'retry-pending'):queue?.files().length?'pending-sync':'synced',queueBytes:queue?.usedBytes()||0,queueCapacityBytes:queue?.maxBytes||0,pending:(queue?.files()||[]).filter(name=>!protectedEntries.has(name)).length,protectedCopies:protectedEntries.size+(queue?.damagedFiles().length||0),uploadError,uploadErrorCode,nextUploadRetryAt,screenshotsPausedForInactivity:captureSchedule.inactive(),monitorIds:screen.getAllDisplays().map(d=>String(d.id)),appVersion:app.getVersion(),noticeRequired,noticeVersion,
+    const value={protocolVersion:2,capabilities:{retryUploads:true,claimMonitoring:true,finalizeSession:true,sessionTransitions:true,screenshotPipeline:3,capturePreviews:true,activityWork:true},workTransition:lastWorkTransition,state,error,errorCode:code,userId:credentials?.userId||null,workspaceId:credentials?.workspaceId||null,deviceId:device?._id||null,syncStatus:queue?.damagedFiles().length||protectedEntries.size?'capture-failed':uploading?'uploading':uploadError?(uploadErrorCode==='SCREENSHOT_STORAGE_UNAVAILABLE'?'storage-unavailable':'retry-pending'):queue?.files().length?'pending-sync':'synced',queueBytes:queue?.usedBytes()||0,queueCapacityBytes:queue?.maxBytes||0,pending:(queue?.files()||[]).filter(name=>!protectedEntries.has(name)).length,protectedCopies:protectedEntries.size+(queue?.damagedFiles().length||0),uploadError,uploadErrorCode,nextUploadRetryAt,screenshotsPausedForInactivity:captureSchedule.inactive(),monitorIds:screen.getAllDisplays().map(d=>String(d.id)),appVersion:app.getVersion(),noticeRequired,noticeVersion,
       policy:policy?{revision:policy.revision,enabled:policy.enabled,monitoringEnabled:policy.monitoringEnabled,intervalSeconds:policy.intervalSeconds,retentionDays:policy.retentionDays,monitors:policy.monitors,blur:policy.blur,format:'webp',personalPauseEnabled:policy.personalPauseEnabled}:null};
     value.automaticWorkPending=activityWork.running?activityWork.pending?.action||null:null;
     value.autoResumeArmed=activityWatchUntil>performance.now()&&work?.status==='PAUSED'&&!locked&&!suspended;
@@ -180,6 +180,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
   }
   async function boundary(reason=null) {
     if(!capturing||!work||!device||anchorMono===null)return;
+    if(performance.now()>=leaseDeadlineMono){haltCapture('Capture lease expired. Reconnect to renew monitoring authorization.');return;}
     const activeWork=work,activeDevice=device,activeQueue=queue,activeGeneration=generation,activeEpoch=++captureEpoch;
     if(!reason&&captureSchedule.inactive())reason='inactive';
     const allowedImage=()=>activeGeneration===generation&&activeEpoch===captureEpoch&&capturing&&!locked&&!suspended&&performance.now()<leaseDeadlineMono&&!captureSchedule.inactive();
@@ -230,6 +231,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
     // A slow OS capture cannot outlive its activity authorization or lease.
     if(images.length&&!allowedImage())return;
     const count=counters.boundary(isIdle());lastBoundary=count.endMono;
+    if(count.endMono>leaseDeadlineMono){haltCapture('Capture lease expired. Reconnect to renew monitoring authorization.');return;}
     if(!reason)captureSchedule.completed(count.endMono);
     const payload={operationId:randomUUID(),sessionId:activeWork._id,anchorId:activeDevice.anchor.id,
       startOffsetMs:count.startMono-anchorMono,endOffsetMs:count.endMono-anchorMono,
@@ -265,6 +267,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
         if(scope!==generation)return;
         let entry;try{entry=activeQueue.read(name);}catch{activeQueue.quarantine(name);uploadError='Damaged encrypted capture retained for inspection';uploadErrorCode='SCREENSHOT_LOCAL_INTEGRITY';continue;}
         if(entry.expiresAt&&entry.expiresAt<=Date.now()){activeQueue.remove(name);protectedEntries.delete(name);continue;}
+        if(entry.authorizationRejected){protectedEntries.add(name);continue;}
         protectedEntries.delete(name);
         if(entry.nextAttempt>Date.now()+60000){entry.nextAttempt=Date.now()+60000;activeQueue.update(name,entry);}
         if(entry.nextAttempt>Date.now())continue;
@@ -277,7 +280,13 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
           if(scope!==generation)return;
           entry.attempts=(entry.attempts||0)+1;entry.nextAttempt=Date.now()+Math.max(Math.min(60000,1000*2**Math.min(entry.attempts,6)),error.retryAfterMs||0);
           entry.lastUploadError=String(error.message||'Saved capture will retry').slice(0,300);entry.lastUploadErrorCode=String(error.code||'UPLOAD_UNAVAILABLE').slice(0,80);
-          uploadError=entry.lastUploadError;uploadErrorCode=entry.lastUploadErrorCode;nextUploadRetryAt=entry.nextAttempt;activeQueue.update(name,entry);
+          if(error.status===403&&error.code==='LEASE_EXPIRED'){
+            // A new lease cannot authorize activity captured outside an older
+            // lease. Retain the encrypted copy without retrying it forever.
+            entry.authorizationRejected=true;entry.nextAttempt=0;protectedEntries.add(name);
+            entry.lastUploadError='This saved capture is outside its authorized capture period and has been retained locally.';
+          }
+          uploadError=entry.lastUploadError;uploadErrorCode=entry.lastUploadErrorCode;nextUploadRetryAt=entry.authorizationRejected?null:entry.nextAttempt;activeQueue.update(name,entry);
           if(error.status===429){uploadCooldownUntil=Math.max(entry.nextAttempt,Date.now()+60000);nextUploadRetryAt=uploadCooldownUntil;break;}
         }
       }
@@ -287,7 +296,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
         if(!activeQueue.files().length&&!activeQueue.damagedFiles().length){uploadError='';uploadErrorCode='';nextUploadRetryAt=null;}
         // Drain more than four ready entries without waiting for a heartbeat.
         // Failed entries keep their backoff and cannot block later captures.
-        const due=activeQueue.files().some(name=>{try{return !(activeQueue.read(name).nextAttempt>Date.now());}catch{return false;}});
+        const due=activeQueue.files().some(name=>{try{const entry=activeQueue.read(name);return !entry.authorizationRejected&&!(entry.nextAttempt>Date.now());}catch{return false;}});
         if(due&&uploadCooldownUntil<=Date.now()&&!uploadContinueTimer){uploadContinueTimer=setTimeout(()=>{uploadContinueTimer=null;if(scope===generation)flush().catch(()=>{});},500);uploadContinueTimer.unref?.();}
       }
       publish();
@@ -298,16 +307,20 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
     if(!credentials||!queue||!device)return Promise.resolve(publish());
     const scope=generation,running=uploadTask;
     const task=(async()=>{
-      resetUploadDelays();
-      if(running){await running;if(scope!==generation)return publish();resetUploadDelays();}
+      resetUploadDelays({retryProtected:true});
+      if(running){await running;if(scope!==generation)return publish();resetUploadDelays({retryProtected:true});}
       await flush();return publish();
     })().finally(()=>{if(manualRetryTask===task)manualRetryTask=null;});
     manualRetryTask=task;return task;
   }
-  function resetUploadDelays(){
+  function resetUploadDelays({retryProtected=false}={}){
     if(!queue)return;
     nextUploadRetryAt=uploadCooldownUntil>Date.now()?uploadCooldownUntil:null;
     for(const name of queue.files()){let entry;try{entry=queue.read(name);}catch{continue;}
+      if(entry.authorizationRejected){
+        if(!retryProtected){protectedEntries.add(name);continue;}
+        delete entry.authorizationRejected;protectedEntries.delete(name);entry.nextAttempt=0;queue.update(name,entry);
+      }
       if(entry.nextAttempt){entry.nextAttempt=0;queue.update(name,entry);}
     }
   }
@@ -324,6 +337,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
       const current=await request('/me');if(scope!==generation)return;
       const beforeHeartbeat=performance.now();
       const next=await request(`/devices/${device._id}/heartbeat`,{sessionId:current.session?._id||null,state:lastState});if(scope!==generation)return;uploadLimits=next.uploadLimits||{};
+      stateChangeRetried=false;
       if(next.policy.revision<haltRevision)next.canCapture=false;
       if(next.session&&(closedSessions.has(String(next.session._id))||closedAttendance.has(String(next.session.attendanceSession)))){next.canCapture=false;next.session={...next.session,status:'CLOSED'};}
       // A heartbeat started before Pause/Resume can finish after its committed
@@ -360,7 +374,15 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
     }catch(error){
       if(scope!==generation)return;
       if([401,403,404].includes(error.status)){haltCapture(error.message);}
-      else if(error.status===409){if(['DEVICE_CONFLICT','DEVICE_TRANSFERRED'].includes(error.code))haltCapture();else await stopCapture();publish('unavailable',error.message,error.code||'');}
+      else if(error.status===409){
+        if(error.code==='DEVICE_STATE_CHANGED'){
+          // Discard the unconfirmed tail; it must not cross a release fence.
+          haltCapture(error.message);
+          if(!stateChangeRetried){stateChangeRetried=true;resyncRequested=true;}
+        }else if(['DEVICE_CONFLICT','DEVICE_TRANSFERRED'].includes(error.code))haltCapture();
+        else await stopCapture();
+        publish('unavailable',error.message,error.code||'');
+      }
       else{publish('offline',error.message);
         // Capture may continue offline only under the last authorized session,
         // policy/consent and bounded server anchor; work duration stays server-owned.
@@ -374,7 +396,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
     if(credentials?.userId===value?.userId&&credentials?.workspaceId===value?.workspaceId){const changed=credentials?.token!==value?.token;credentials=value;if(changed)connectRealtime();return publish();}
     // End capture synchronously before awaiting network or changing identity.
     // Completed encrypted entries remain in their user/workspace directory.
-    haltCapture();activityWork.clear();lastWorkTransition=null;activityObservedAt=0;activityWatchUntil=0;generation++;closedSessions.clear();closedAttendance.clear();transitions.clear();realtime?.disconnect();realtime=null;
+    haltCapture();activityWork.clear();lastWorkTransition=null;activityObservedAt=0;activityWatchUntil=0;stateChangeRetried=false;generation++;closedSessions.clear();closedAttendance.clear();transitions.clear();realtime?.disconnect();realtime=null;
     if(credentials&&device&&!device.revokedAt)await request(`/devices/${device._id}/release`,{}).catch(()=>{});
     credentials=value;device=null;work=null;policy=null;queue=null;anchorMono=null;manualRetryTask=null;uploadCooldownUntil=0;uploadError='';uploadErrorCode='';nextUploadRetryAt=null;protectedEntries.clear();haltRevision=0;noticeRequired=false;lastState='unavailable';lastError='';lastErrorCode='';publish();
     clearInterval(timer);timer=null;clearInterval(syncTimer);syncTimer=null;clearInterval(uploadTimer);uploadTimer=null;if(uploadContinueTimer)clearTimeout(uploadContinueTimer);uploadContinueTimer=null;

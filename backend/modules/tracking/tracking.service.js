@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { serializeTrackingWrite, withTrackingTransaction } from './tracking.writes.js';
 import { enqueueAttendanceReport } from '../../services/chat/attendanceReporting.service.js';
 import { invalidateTrackingReads } from './tracking.readCache.js';
 import { randomUUID, createHash } from 'node:crypto';
@@ -270,12 +271,15 @@ export async function currentState(workspaceId, userId) {
     session: publicWorkSession(session),
     devices: devices.map(d => ({ ...d, connected: Date.now() - +new Date(d.lastSeenAt || 0) < 45000 })) };
 }
-export async function changeWork({ workspaceId, userId, action, selection, operationId, expectedRevision, expectedSessionId, activityChange=null }) {
+export function changeWork(args) {
+  return serializeTrackingWrite(args.workspaceId, args.userId, () => changeWorkUnlocked(args));
+}
+async function changeWorkUnlocked({ workspaceId, userId, action, selection, operationId, expectedRevision, expectedSessionId, activityChange=null }) {
   if (typeof operationId !== 'string' || !/^[\w-]{8,128}$/.test(operationId)) fail('An operation ID is required');
   if (!['start', 'switch', 'pause', 'resume', 'link'].includes(action)) fail('Unknown work action');
   const operationDigest = digest({ action, selection: selection || null,...(activityChange?{activityChange}:{}) });
   const dbSession = await mongoose.startSession(); let result;
-  try { await dbSession.withTransaction(async () => {
+  try { await withTrackingTransaction(dbSession, async () => {
     const attendance = await AttendanceSession.findOne({ workspaceId, user: userId, status: 'ACTIVE' }).session(dbSession).lean();
     if (!attendance || attendance.missedCheckoutCutoffAt && +new Date(attendance.missedCheckoutCutoffAt) <= Date.now()) fail('Check in before starting or changing work', 409);
     let session = await WorkSession.findOne({ workspaceId, attendanceSession: attendance._id }).select('-operations -audit').session(dbSession).lean();
