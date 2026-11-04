@@ -21,7 +21,9 @@ class CaptureSchedule {
     this.nextAt = this.paused ? null : this.deadline(now);
   }
   deadline(now) {
-    return now + this.random(Math.max(MIN_DELAY_MS, this.intervalMs - JITTER_MS), this.intervalMs + JITTER_MS + 1);
+    // Randomize within the configured interval, with a hard upper bound.
+    // A ten-minute setting must never defer its first capture to minute 13.
+    return now + this.random(Math.max(MIN_DELAY_MS, this.intervalMs - JITTER_MS), this.intervalMs + 1);
   }
   inactive(now = this.now()) {
     return this.active && (this.paused || now - this.lastInputAt >= INACTIVITY_MS);

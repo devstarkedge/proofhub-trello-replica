@@ -1,6 +1,7 @@
+import { loginDestination } from '../../../shared/loginDestination.mjs';
 import { useState, useContext } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion as Motion } from 'framer-motion';
 import { toast } from 'react-toastify';
 import { Eye, EyeOff, Mail, Lock, LogIn, AlertCircle, CheckCircle } from 'lucide-react';
 import AuthContext from '../context/AuthContext';
@@ -26,7 +27,6 @@ const LoginPage = () => {
   // Only ever an internal path (e.g. back to /invite/:token after signing
   // in) — never trust/redirect to an absolute or external URL here.
   const returnTo = searchParams.get('returnTo');
-  const isSafeReturnTo = returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//');
 
   const { email, password } = formData;
 
@@ -90,9 +90,7 @@ const LoginPage = () => {
         return;
       }
 
-      // Resolve workspace membership before deciding where to land: a
-      // second workspace only ever shows the picker, it's never forced on
-      // the single-workspace case every existing user is in today.
+      // Resolve an authorized workspace before opening Home for this account.
       const workspaces = (user.role === 'admin' || user.isVerified)
         ? await loadWorkspaces()
         : [];
@@ -105,17 +103,7 @@ const LoginPage = () => {
       });
 
       // Membership is resolved; the global toast can display during navigation.
-        if (user.role !== 'admin' && !user.isVerified) {
-          navigate('/verify-pending');
-        } else if (isSafeReturnTo) {
-          navigate(returnTo);
-        } else if (workspaces.length === 0) {
-          navigate('/no-workspace');
-        } else if (workspaces.length > 1) {
-          navigate('/select-workspace');
-        } else {
-          navigate('/');
-        }
+      navigate(loginDestination({ user, workspaces, returnTo }), { replace: true, state: null });
     } catch (err) {
       setLoading(false); // Stop loading immediately on error
       
@@ -172,7 +160,7 @@ const LoginPage = () => {
         />
       </div>
 
-      <motion.div
+      <Motion.div
         initial={{ opacity: 0, y: 20, scale: 0.95 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.5 }}
@@ -181,7 +169,7 @@ const LoginPage = () => {
         {/* Glassmorphism card */}
         <div className="backdrop-blur-xl bg-white/10 border border-white/20 rounded-3xl shadow-2xl p-6 sm:p-8">
           {/* Header */}
-          <motion.div
+          <Motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
@@ -201,7 +189,7 @@ const LoginPage = () => {
             </div>
             <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Welcome Back</h2>
             <p className="text-white/70">Sign in to your account</p>
-          </motion.div>
+          </Motion.div>
 
           <form onSubmit={onSubmit} className="space-y-4 sm:space-y-6" autoComplete="off">
             {/* 
@@ -215,7 +203,7 @@ const LoginPage = () => {
             </div>
 
             {/* Email Field */}
-            <motion.div
+            <Motion.div
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.3 }}
@@ -250,19 +238,19 @@ const LoginPage = () => {
                 />
               </div>
               {errors.email && (
-                <motion.p
+                <Motion.p
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
                   className="mt-2 text-sm text-red-400 flex items-center gap-1"
                 >
                   <AlertCircle size={14} />
                   {errors.email}
-                </motion.p>
+                </Motion.p>
               )}
-            </motion.div>
+            </Motion.div>
 
             {/* Password Field */}
-            <motion.div
+            <Motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.4 }}
@@ -306,14 +294,14 @@ const LoginPage = () => {
                 </button>
               </div>
               {errors.password && (
-                <motion.p
+                <Motion.p
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
                   className="mt-2 text-sm text-red-400 flex items-center gap-1"
                 >
                   <AlertCircle size={14} />
                   {errors.password}
-                </motion.p>
+                </Motion.p>
               )}
               <div className="flex justify-end mt-2">
                 <Link
@@ -323,10 +311,10 @@ const LoginPage = () => {
                   Forgot Password?
                 </Link>
               </div>
-            </motion.div>
+            </Motion.div>
 
             {/* Submit Button */}
-            <motion.div
+            <Motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.5 }}
@@ -348,11 +336,11 @@ const LoginPage = () => {
                   </div>
                 )}
               </button>
-            </motion.div>
+            </Motion.div>
           </form>
 
           {/* Footer */}
-          <motion.div
+          <Motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.6 }}
@@ -362,9 +350,9 @@ const LoginPage = () => {
               New here? <Link to="/create-workspace" className="font-bold text-white underline underline-offset-2 decoration-orange-400 hover:text-orange-300 transition-colors">Create a workspace</Link> to get started,
               or ask your team's admin for an invite.
             </p>
-          </motion.div>
+          </Motion.div>
         </div>
-      </motion.div>
+      </Motion.div>
 
       <style jsx="true">{`
         @keyframes blob {

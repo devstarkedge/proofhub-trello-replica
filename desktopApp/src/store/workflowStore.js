@@ -1,4 +1,6 @@
-import { actorFromToken } from '../../../shared/offlineQueue.mjs';
+import { placeWorkflowCard, referenceId } from '../../../shared/workflowMoves.mjs';
+import { rememberWorkflow } from '../../../shared/projectOrder.mjs';
+import { captureRequestScope, requestScopeKey } from '../../../shared/requestScope.mjs';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { shallow } from 'zustand/shallow';
@@ -24,7 +26,10 @@ const buildCardsById = (cardsByList) => {
 // Track the current request to prevent race conditions
 let currentRequestId = 0;
 let cacheGeneration = 0;
-const cacheScope = () => `${actorFromToken(localStorage.getItem('token') || '')}:${localStorage.getItem('workspaceId') || ''}`;
+let mutationVersion = 0;
+const moveQueues = new Map();
+const moveKey = (scope, projectId) => `${cacheGeneration}:${scope}:${projectId}`;
+const cacheScope = () => requestScopeKey(captureRequestScope(localStorage));
 
 const useWorkflowStore = create(
   devtools(
@@ -45,35 +50,34 @@ const useWorkflowStore = create(
       setCardsByList: (cardsByList) => set({ cardsByList }),
       setLoading: (loading) => set({ loading }),
       setError: (error) => set({ error }),
-      setLoading: (loading) => set({ loading }),
-      setError: (error) => set({ error }),
       setLastUpdated: (timestamp) => set({ lastUpdated: timestamp }),
       
       // Cache for prefetched data
       prefetchedData: {},
       
+      invalidateProjectCache: (projectId) => set(state => ({
+        prefetchedData: projectId ? Object.fromEntries(Object.entries(state.prefetchedData).filter(([id]) => id !== String(projectId))) : {}
+      })),
+
       // Prefetch workflow data in background
       prefetchWorkflow: async (projectId) => {
         const generation = cacheGeneration;
         const scope = cacheScope();
+        const version = mutationVersion;
+        if (moveQueues.get(moveKey(scope, projectId))?.pending) return;
         const state = get();
         // Don't prefetch if we already have fresh data
-        if (state.prefetchedData[projectId]?.scope === scope && state.prefetchedData[projectId]?.generation === generation && (Date.now() - state.prefetchedData[projectId].timestamp < 60000)) {
+        if (state.prefetchedData[projectId]?.scope === scope && state.prefetchedData[projectId]?.generation === generation && (Date.now() - state.prefetchedData[projectId].timestamp < 30000)) {
            return;
         }
 
         try {
           const response = await Database.getWorkflowComplete(projectId);
-          if (response.success && response.data && cacheGeneration === generation && cacheScope() === scope) {
+          if (response.success && response.data && cacheGeneration === generation && cacheScope() === scope && mutationVersion === version) {
              set(state => ({
-               prefetchedData: {
-                 ...state.prefetchedData,
-                 [projectId]: {
-                   data: response.data,
-                   scope, generation,
-                   timestamp: Date.now()
-                 }
-               }
+               prefetchedData: rememberWorkflow(state.prefetchedData, projectId, {
+                 data: response.data, scope, generation, timestamp: Date.now()
+               })
              }));
           }
         } catch (err) {
@@ -82,6 +86,17 @@ const useWorkflowStore = create(
         }
       },
       initializeWorkflow: async (projectId) => {
+        const moves = moveQueues.get(moveKey(cacheScope(), projectId));
+        if (moves?.pending) {
+          // Coalesce realtime refreshes until the last queued write commits.
+          moves.refresh = true;
+          if (get().currentProjectId !== projectId || get().currentScope !== cacheScope()) {
+            currentRequestId += 1;
+            set({ board: null, lists: [], cardsByList: {}, cardsById: {}, loading: true,
+              error: null, currentProjectId: projectId, currentScope: cacheScope() });
+          }
+          return moves.tail;
+        }
         const requestId = ++currentRequestId;
         const scope = cacheScope();
         const generation = cacheGeneration;
@@ -102,7 +117,7 @@ const useWorkflowStore = create(
         } else {
           // Check for prefetched data first
           const prefetched = state.prefetchedData[projectId];
-          if (prefetched?.scope === cacheScope() && prefetched?.generation === cacheGeneration && (Date.now() - prefetched.timestamp < 300000)) { // 5 minutes validity
+          if (prefetched?.scope === cacheScope() && prefetched?.generation === cacheGeneration && (Date.now() - prefetched.timestamp < 30000)) { // Brief display cache; always refresh below.
              console.log('Using prefetched data for', projectId);
              const { board, lists, cardsByList } = prefetched.data;
              const cardsById = buildCardsById(cardsByList);
@@ -117,9 +132,7 @@ const useWorkflowStore = create(
                 currentScope: scope, currentProjectId: projectId
              });
              logger.debug('PROJECT_RESOLUTION_COMPLETE', { projectId, boardId: board?._id, source: 'prefetch' });
-             // Clear used prefetch to free memory? Optional. keeping it for now.
-             return;
-          }
+          } else {
 
           // New project or no data - show loader and clear old data
           set({ 
@@ -131,6 +144,7 @@ const useWorkflowStore = create(
             cardsById: {},
             currentScope: scope, currentProjectId: projectId
           });
+          }
         }
 
         try {
@@ -159,6 +173,9 @@ const useWorkflowStore = create(
             return;
           }
           
+          set(state => ({ prefetchedData: rememberWorkflow(state.prefetchedData, projectId, {
+            data: response.data, scope, generation, timestamp: Date.now()
+          }) }));
           // Set all data at once with normalized cardsById
           const cardsById = buildCardsById(cardsByList);
           set({
@@ -173,10 +190,12 @@ const useWorkflowStore = create(
         } catch (error) {
           if (requestId !== currentRequestId || generation !== cacheGeneration || scope !== cacheScope()) return;
 
+          get().invalidateProjectCache(projectId);
           console.error('Error initializing workflow:', error);
           logger.debug('PROJECT_CONTEXT_INVALID', { projectId, requestId, message: error.message });
           set({
             error: error.message || 'Failed to load workflow',
+            board: null, lists: [], cardsByList: {}, cardsById: {},
             loading: false
           });
         }
@@ -347,14 +366,12 @@ const useWorkflowStore = create(
       updateCard: async (cardId, updates) => {
         const state = get();
         let originalCard = null;
-        let sourceListId = null;
 
         // Find original card
         Object.keys(state.cardsByList).forEach(listId => {
           const card = state.cardsByList[listId].find(c => c._id === cardId);
           if (card) {
             originalCard = card;
-            sourceListId = listId;
           }
         });
 
@@ -446,24 +463,22 @@ const useWorkflowStore = create(
         set((state) => {
           const existingCard = state.cardsById[cardId];
           if (!existingCard) return {};
-          
-          const updatedCard = { ...existingCard, ...updates };
-          const newCardsByList = { ...state.cardsByList };
-          
-          Object.keys(newCardsByList).forEach(listId => {
-            const cardIndex = newCardsByList[listId].findIndex(c => c._id === cardId);
-            if (cardIndex !== -1) {
-              newCardsByList[listId] = newCardsByList[listId].map((card, idx) => 
-                idx === cardIndex ? updatedCard : card
-              );
-            }
-          });
-          
-          return { 
-            cardsByList: newCardsByList, 
-            cardsById: { ...state.cardsById, [cardId]: updatedCard },
-            lastUpdated: Date.now() 
-          };
+          if (Number.isInteger(updates.__v) && Number.isInteger(existingCard.__v) && updates.__v < existingCard.__v) return {};
+          const patch = { ...updates };
+          const moves = moveQueues.get(moveKey(cacheScope(), state.currentProjectId));
+          if (moves?.pending) {
+            // An earlier move's echo can also shift other pending cards.
+            // Defer board placement to the coalesced refresh after all saves.
+            delete patch.list; delete patch.position;
+            if (moves.cards.has(cardId)) delete patch.status;
+          }
+          const updatedCard = { ...existingCard, ...patch };
+          const relocating = patch.list !== undefined || patch.position !== undefined;
+          const cardsByList = relocating
+            ? placeWorkflowCard(state.cardsByList, cardId, updatedCard.list, updatedCard.position, patch)
+            : Object.fromEntries(Object.entries(state.cardsByList).map(([listId, cards]) => [listId,
+              cards.map(card => card._id === cardId ? updatedCard : card)]));
+          return { cardsByList, cardsById: buildCardsById(cardsByList), lastUpdated: Date.now() };
         });
       },
 
@@ -511,56 +526,79 @@ const useWorkflowStore = create(
         });
       },
 
-      // Move card with optimistic update
-      moveCard: async (cardId, newListId, newPosition, newStatus) => {
+      // Render drops immediately; persist them in board order in the background.
+      moveCard: (cardId, newListId, newPosition, newStatus) => {
         const state = get();
-        // Capture original state for rollback
-        const originalCardsByList = state.cardsByList;
-        
-        // Deep clone the map structure to avoid mutating original state arrays
-        const newCardsByList = { ...state.cardsByList };
-        // We also need to clone the arrays we're going to modify (source and dest lists)
-        // But since we don't know them easily without searching, let's wait until we find them.
-
-        let movedCard = null;
-
-        // Find and remove card from source list
-        Object.keys(newCardsByList).forEach(listId => {
-          const listCards = newCardsByList[listId];
-          const cardIndex = listCards.findIndex(card => card._id === cardId);
-          if (cardIndex !== -1) {
-            movedCard = { ...listCards[cardIndex], list: newListId, status: newStatus };
-            // Clone the list array before filtering (which creates a new array anyway, so filter is safe)
-            newCardsByList[listId] = listCards.filter(card => card._id !== cardId);
+        const original = state.cardsById[cardId];
+        if (!original) return Promise.resolve();
+        const projectId = state.currentProjectId;
+        const scope = cacheScope(), generation = cacheGeneration;
+        const key = moveKey(scope, projectId);
+        let queue = moveQueues.get(key);
+        if (!queue) {
+          queue = { tail: Promise.resolve(), pending: 0, cards: new Map(), refresh: false };
+          moveQueues.set(key, queue);
+        }
+        let entry = queue.cards.get(cardId);
+        if (!entry) {
+          const source = Object.keys(state.cardsByList).find(id => state.cardsByList[id].some(card => card._id === cardId));
+          entry = { pending: 0, confirmed: { list: source, position: original.position, status: original.status, __v: original.__v } };
+          queue.cards.set(cardId, entry);
+        }
+        const operationId = ++mutationVersion;
+        entry.latest = operationId; entry.pending += 1; queue.pending += 1;
+        currentRequestId += 1; // Discard any read started before this drop.
+        get().invalidateProjectCache(projectId);
+        const cardsByList = placeWorkflowCard(state.cardsByList, cardId, newListId, newPosition, { status: newStatus ?? original.status });
+        set({ cardsByList, cardsById: buildCardsById(cardsByList), lastUpdated: Date.now() });
+        const sameSession = () => generation === cacheGeneration && scope === cacheScope();
+        const sameView = () => sameSession() && get().currentProjectId === projectId;
+        const place = placement => {
+          if (!sameView() || !get().cardsById[cardId]) return;
+          const next = placeWorkflowCard(get().cardsByList, cardId, placement.list, placement.position, placement);
+          set({ cardsByList: next, cardsById: buildCardsById(next), lastUpdated: Date.now() });
+        };
+        const operation = queue.tail.then(async () => {
+          try {
+            // Queued writes must never inherit another account/workspace.
+            if (!sameSession()) throw new Error('Session changed; reopen this project before retrying');
+            const response = await Database.moveCard(cardId, newListId, newPosition);
+            if (response?.success === false) throw new Error(response.message || 'Failed to move card');
+            const saved = response?.data || {};
+            entry.confirmed = {
+              list: referenceId(saved.list || newListId),
+              position: saved.position ?? newPosition,
+              status: saved.status ?? newStatus ?? original.status,
+              __v: saved.__v ?? entry.confirmed.__v,
+            };
+            if (entry.latest === operationId) {
+              // Later drops of other cards may have shifted this card's index.
+              // Keep that visible order until those queued writes settle too.
+              const visible = get().cardsById[cardId];
+              place(queue.pending > 1 && visible
+                ? { ...entry.confirmed, position: visible.position }
+                : entry.confirmed);
+            }
+            return response;
+          } catch (error) {
+            // Undo only this card's placement, preserving other cards and edits.
+            // A later queued drop owns the UI and will reconcile its own result.
+            if (entry.latest === operationId) place(entry.confirmed);
+            throw error;
+          } finally {
+            entry.pending -= 1; queue.pending -= 1;
+            if (!entry.pending) queue.cards.delete(cardId);
+            mutationVersion += 1;
+            if (sameSession()) get().invalidateProjectCache(projectId);
+            if (!queue.pending) {
+              if (moveQueues.get(key) === queue) moveQueues.delete(key);
+              if (sameView() && queue.refresh) void get().initializeWorkflow(projectId);
+            }
           }
         });
-
-        if (!movedCard) return;
-
-        // Add to destination list at correct position
-        // CRITICAL: Must clone the destination array before modifying it
-        const destList = newCardsByList[newListId] ? [...newCardsByList[newListId]] : [];
-        destList.splice(newPosition, 0, movedCard);
-        
-        // Update positions in destination list
-        newCardsByList[newListId] = destList.map((card, index) => ({
-          ...card,
-          position: index
-        }));
-
-        // Optimistic update - both cardsByList and cardsById
-        const newCardsById = buildCardsById(newCardsByList);
-        set({ cardsByList: newCardsByList, cardsById: newCardsById, lastUpdated: Date.now() });
-
-        try {
-          await Database.moveCard(cardId, newListId, newPosition, newStatus);
-        } catch (error) {
-          console.error('Error moving card:', error);
-          // Rollback to exact previous state including cardsById
-          const originalCardsById = buildCardsById(originalCardsByList);
-          set({ cardsByList: originalCardsByList, cardsById: originalCardsById });
-          throw error;
-        }
+        // A failed operation must not cancel subsequent drops.
+        queue.tail = operation.catch(() => {});
+        return operation;
       },
 
       // Add list with optimistic update
@@ -878,6 +916,8 @@ const useWorkflowStore = create(
       reset: () => {
         currentRequestId += 1;
         cacheGeneration += 1;
+        mutationVersion += 1;
+        moveQueues.clear();
         set({
         board: null,
         lists: [],

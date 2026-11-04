@@ -1531,7 +1531,10 @@ export const updateCard = asyncHandler(async (req, res, next) => {
 export const moveCard = asyncHandler(async (req, res, next) => {
   await authorizeProjectResource(req, 'task', req.params.id, 'task.move');
   const { destinationListId, newPosition } = req.body;
-  const card = await Card.findById(req.params.id)
+  if (!mongoose.isValidObjectId(destinationListId) || !Number.isSafeInteger(newPosition) || newPosition < 0) {
+    return next(new ErrorResponse('Invalid destination list or task position', 400));
+  }
+  let card = await Card.findById(req.params.id)
     .populate('list', 'title')
     .populate('board');
 
@@ -1556,7 +1559,8 @@ export const moveCard = asyncHandler(async (req, res, next) => {
   }
 
   // Prevent cross-project hierarchy corruption
-  const currentBoardId = (card.board._id || card.board).toString();
+  const boardContext = card.board;
+  const currentBoardId = (boardContext._id || boardContext).toString();
   if (destinationList.board.toString() !== currentBoardId) {
     return next(new ErrorResponse("Destination list belongs to another project. Please use the cross-project move endpoint.", 400));
   }
@@ -1564,66 +1568,28 @@ export const moveCard = asyncHandler(async (req, res, next) => {
   // Store old status for notifications
   const oldStatus = card.status;
 
-  // If moving within same list
-  if (sourceListId.toString() === destinationListId) {
-    if (newPosition === oldPosition) {
-      return res.status(200).json({ success: true, data: card });
-    }
-
-    if (newPosition > oldPosition) {
-      await Card.updateMany(
-        {
-          list: sourceListId,
-          position: { $gt: oldPosition, $lte: newPosition },
-        },
-        { $inc: { position: -1 } }
-      );
-    } else {
-      await Card.updateMany(
-        {
-          list: sourceListId,
-          position: { $gte: newPosition, $lt: oldPosition },
-        },
-        { $inc: { position: 1 } }
-      );
-    }
-
-    card.position = newPosition;
-  } else {
-    // Moving to different list
-    // Update positions in source list
-    await Card.updateMany(
-      {
-        list: sourceListId,
-        position: { $gt: oldPosition },
-      },
-      { $inc: { position: -1 } }
-    );
-
-    // Update positions in destination list
-    await Card.updateMany(
-      {
-        list: destinationListId,
-        position: { $gte: newPosition },
-      },
-      { $inc: { position: 1 } }
-    );
-
-    card.list = destinationListId;
-    card.position = newPosition;
-
-    // Update status based on destination list title.
-    card.status = normalizeStatusFromListTitle(destinationList.title);
+  if (sourceListId.toString() === destinationListId && newPosition === oldPosition) {
+    return res.status(200).json({ success: true, data: card });
   }
 
-  await card.save();
+  // Reuse the existing transactional hierarchy move. A fresh, unpopulated
+  // document preserves tenant-reference validation; list reindexing and the
+  // card's list/status either commit together or roll back together.
+  card = await moveTaskHierarchy(card._id, {
+    boardId: currentBoardId,
+    expectedBoardId: currentBoardId,
+    listId: destinationListId,
+    position: newPosition,
+    status: sourceListId.toString() === destinationListId
+      ? oldStatus : normalizeStatusFromListTitle(destinationList.title),
+  });
 
   const statusChange = await dispatchTaskStatusChange({
     card,
     oldStatus,
     newStatus: card.status,
     actor: req.user,
-    board: card.board,
+    board: boardContext,
   });
 
   if (statusChange?.special === 'done') {
@@ -1657,12 +1623,13 @@ export const moveCard = asyncHandler(async (req, res, next) => {
       });
 
       // Emit real-time updates for both move and status change
-      emitToBoard(card.board.toString(), 'card-moved', {
+      emitToBoard(currentBoardId, 'card-moved', {
         cardId: card._id,
         sourceListId,
         destinationListId,
         newPosition,
         status: card.status,
+        revision: card.__v,
         movedBy: {
           id: req.user.id,
           name: req.user.name
@@ -1670,12 +1637,13 @@ export const moveCard = asyncHandler(async (req, res, next) => {
       });
 
       // Also emit a card-updated event for status change
-      emitToBoard(card.board.toString(), 'card-updated', {
+      emitToBoard(currentBoardId, 'card-updated', {
         cardId: card._id,
         updates: {
           list: destinationListId,
           position: newPosition,
-          status: card.status
+          status: card.status,
+          __v: card.__v
         },
         updatedBy: {
           id: req.user.id,
@@ -1689,7 +1657,7 @@ export const moveCard = asyncHandler(async (req, res, next) => {
           moved: true,
           fromList: sourceListTitle,
           toList: destinationList.title,
-          ...(statusChange ? { status: true, message: statusChange.message } : {})
+          ...(statusChange ? { status: card.status, special: statusChange.special, message: statusChange.message } : {})
         });
       }
 

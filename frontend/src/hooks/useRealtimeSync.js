@@ -24,6 +24,7 @@ export default function useRealtimeSync() {
       if (type === 'board-updated' && boardId && payload.updates) useProjectStore.getState().projectUpdated({ _id: boardId, ...payload.updates });
       if (type === 'access-changed' && String(boardId) === String(workflow.currentProjectId)) workflow.reset();
       if (/card|list|comment|subtask|attachment|task|board|data-changed/.test(eventType || '')) {
+        workflow.invalidateProjectCache(boardId);
         if (type === 'card-updated' && workflow.cardsById[payload.cardId] && payload.updates) workflow.updateCardLocal(payload.cardId, payload.updates);
         else if (type === 'card-deleted' && payload.cardId) workflow.removeCardFromSocket(payload.cardId);
         if (!boardId || String(boardId) === String(workflow.currentProjectId)) workflowDirty = true;

@@ -16,7 +16,6 @@ import { getTimeline, errorMessage } from '../../services/trackingApi';
 import { formatTrackingClock as duration } from '../../utils/duration';
 import ScreenshotGallery from './ScreenshotGallery';
 import useTrackingScope from './useTrackingScope';
-import { Button } from '../ui/button';
 
 const formatTime = (value, timezone) => {
   if (!value) return '';
@@ -44,7 +43,7 @@ const formatTimeRange = (start, end, timezone, fallbackEnd = 'Ongoing') => {
     if (startDateStr !== endDateStr) {
       return `${startTime} – ${endTime} (${endDateStr})`;
     }
-  } catch {}
+  } catch { /* Keep the formatted times if date comparison is unavailable. */ }
   return `${startTime} – ${endTime}`;
 };
 
@@ -272,12 +271,6 @@ export default function DailyTrackingDetailsModal({ session, timezone, filterKey
           </div>
         </div>
 
-        {/* Modal Footer */}
-        <div className="px-6 py-3.5 bg-gray-50/70 dark:bg-gray-800/30 border-t border-gray-100 dark:border-gray-800 flex justify-end flex-shrink-0">
-          <Button variant="outline" size="sm" onClick={onClose}>
-            Close
-          </Button>
-        </div>
       </section>
     </div>,
     document.body

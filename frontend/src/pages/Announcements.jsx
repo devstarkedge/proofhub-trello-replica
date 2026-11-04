@@ -1,653 +1,224 @@
-import { useState, useEffect, useContext, useRef, useCallback } from 'react';
-import { useSearchParams, useLocation } from 'react-router-dom';
-import { Bell, Plus, Search, Filter, Archive, Sparkles, TrendingUp } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Bell, Plus, Search, Archive, RefreshCw, Loader2, Sparkles, TrendingUp, Filter } from 'lucide-react';
 import { toast } from 'react-toastify';
 import AuthContext from '../context/AuthContext';
-import announcementService from '../services/announcementService.js';
-import AnnouncementCard from '../components/AnnouncementCard';
-import CreateAnnouncementModal from '../components/CreateAnnouncementModal';
-import AnnouncementDetailModal from '../components/AnnouncementDetailModal';
-
-import { AnnouncementsListSkeleton } from '../components/LoadingSkeleton';
-import { useAnnouncementActions } from '../hooks/useAnnouncementActions';
+import WorkspaceContext from '../context/WorkspaceContext';
+import announcementService from '../services/announcementService';
 import socketService from '../services/socket';
+import AnnouncementCard from '../components/AnnouncementCard';
+import { Button } from '../components/ui/button';
+import { filterAnnouncements, setAnnouncementReaction, entityId } from '../../../shared/announcementState.mjs';
+import { captureRequestScope, assertRequestScope } from '../../../shared/requestScope.mjs';
 
-const Announcements = () => {
-  const { user } = useContext(AuthContext);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const location = useLocation();
-  
-  const [announcements, setAnnouncements] = useState([]);
-  const [filteredAnnouncements, setFilteredAnnouncements] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isCreating, setIsCreating] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
+const CreateAnnouncementModal = lazy(() => import('../components/CreateAnnouncementModal'));
+const EditAnnouncementModal = lazy(() => import('../components/EditAnnouncementModal'));
+const AnnouncementDetailModal = lazy(() => import('../components/AnnouncementDetailModal'));
 
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [selectedAnnouncement, setSelectedAnnouncement] = useState(null);
-  const [showDetailModal, setShowDetailModal] = useState(false);
+function AnnouncementFeed({ scope, user, workspaceId }) {
+  const client = useQueryClient();
+  const [params, setParams] = useSearchParams();
+  const [search, setSearch] = useState('');
+  const [remoteSearch, setRemoteSearch] = useState('');
+  const [category, setCategory] = useState('all');
+  const [sort, setSort] = useState('latest');
+  const [archived, setArchived] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [selectedId, setSelectedId] = useState(() => params.get('open'));
+  const [busy, setBusy] = useState(false);
+  const pending = useRef(new Set());
+  const seen = useRef(new Set());
+  const rootKey = useMemo(() => ['announcements', scope], [scope]);
+  const feedKey = useMemo(() => [...rootKey, 'feed'], [rootKey]);
+  const detailKey = useMemo(() => [...rootKey, 'detail', selectedId], [rootKey, selectedId]);
+  const canCreate = ['admin', 'manager', 'hr'].includes(user.role);
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('latest');
-  const [showArchived, setShowArchived] = useState(false);
+  useEffect(() => { const timer = setTimeout(() => setRemoteSearch(search.trim()), 250); return () => clearTimeout(timer); }, [search]);
+  const query = useInfiniteQuery({
+    queryKey: [...feedKey, { search: remoteSearch, category, sort, archived }],
+    initialPageParam: 1,
+    queryFn: ({ pageParam, signal }) => announcementService.getAnnouncements({ page: pageParam, limit: 30,
+      search: remoteSearch, category, sort, isArchived: String(archived) }, signal),
+    getNextPageParam: last => last.pagination?.hasMore ? last.pagination.page + 1 : undefined,
+    placeholderData: (previous, previousQuery) => previousQuery?.queryKey[1] === scope ? previous : undefined,
+    staleTime: 15000, gcTime: 60000, maxPages: 10, retry: false, refetchOnWindowFocus: true
+  });
+  const rows = useMemo(() => [...new Map((query.data?.pages || []).flatMap(page => page.data || []).map(row => [row._id, row])).values()], [query.data]);
+  const visible = useMemo(() => filterAnnouncements(rows, { search, category, sort, archived }), [rows, search, category, sort, archived]);
+  const detail = useQuery({ queryKey: detailKey, enabled: Boolean(selectedId),
+    queryFn: ({ signal }) => announcementService.getAnnouncement(selectedId, signal).then(result => result.data),
+    staleTime: 0, gcTime: 60000, retry: false });
+  const unreadKey = [...rootKey, 'unread'];
+  const unread = useQuery({ queryKey: unreadKey, queryFn: () => announcementService.getUnreadCount(), staleTime: 30000, gcTime: 60000, retry: false });
+  const selected = detail.data || rows.find(row => row._id === selectedId);
 
-  const seenAnnouncementsRef = useRef(new Set()); // Track which announcements have been marked as seen
+  const patch = useCallback((id, update) => {
+    client.setQueriesData({ queryKey: feedKey }, data => data && ({ ...data, pages: data.pages.map(page => ({
+      ...page, data: page.data.map(row => row._id === id ? update(row) : row).filter(Boolean)
+    })) }));
+    client.setQueryData([...rootKey, 'detail', id], row => row ? update(row) : row);
+  }, [client, feedKey, rootKey]);
+  const refresh = useCallback(() => client.invalidateQueries({ queryKey: rootKey }, { cancelRefetch: false }), [client, rootKey]);
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'manager' || user?.role === 'hr';
-
-  // Socket.io connection for real-time updates
   useEffect(() => {
-    if (!user) return;
+    const open = params.get('open');
+    if (open) { setSelectedId(open); const next = new URLSearchParams(params); next.delete('open'); setParams(next, { replace: true }); }
+  }, [params, setParams]);
 
-    // Join announcements room via shared service
+  useEffect(() => {
+    let timer;
     socketService.joinAnnouncements();
-
-    // Listen for announcement events via window events (dispatched by socketService)
-    const handleAnnouncementCreated = (e) => {
-      const data = e.detail;
-      console.log('New announcement received:', data);
-      toast.info(`📢 ${data.notification?.title || 'New announcement!'}`);
-      
-      setAnnouncements(prev => {
-        if (prev.some(a => a._id === data.announcement._id)) return prev;
-        return [data.announcement, ...prev];
-      });
-      setUnreadCount(prev => prev + 1);
-    };
-
-    const handleAnnouncementUpdated = (e) => {
-      const data = e.detail;
-      console.log('Announcement updated:', data);
-      setAnnouncements(prev =>
-        prev.map(a => a._id === data.announcementId ? data.announcement : a)
-      );
-      if (selectedAnnouncement?._id === data.announcementId) {
-        setSelectedAnnouncement(data.announcement);
+    const events = ['created', 'updated', 'deleted', 'archived', 'pin-toggled', 'reaction-added', 'reaction-removed', 'comment-added', 'comment-deleted', 'attachment-deleted', 'attachment-restored'];
+    const receive = event => {
+      const payload = event.detail || {};
+      if (payload.workspaceId && String(payload.workspaceId) !== String(workspaceId)) return;
+      const id = entityId(payload.announcementId || payload.announcement);
+      if (event.type.endsWith('-deleted') && !event.type.includes('comment') && !event.type.includes('attachment')) {
+        patch(id, () => null); setSelectedId(value => value === id ? null : value); return;
       }
-    };
-
-    const handleAnnouncementDeleted = (e) => {
-      const data = e.detail;
-      console.log('Announcement deleted:', data);
-      setAnnouncements(prev => prev.filter(a => a._id !== data.announcementId));
-      if (selectedAnnouncement?._id === data.announcementId) {
-        setShowDetailModal(false);
-        setSelectedAnnouncement(null);
+      if (payload.reactions) { patch(id, row => ({ ...row, reactions: payload.reactions })); return; }
+      if (event.type.includes('reaction-')) return; // Older servers: reconcile the detail, not the entire feed.
+      if (payload.announcement) patch(id, row => ({ ...row, ...payload.announcement }));
+      if ('isPinned' in payload) patch(id, row => ({ ...row, isPinned: payload.isPinned }));
+      if ('isArchived' in payload) patch(id, row => ({ ...row, isArchived: payload.isArchived }));
+      if (event.type.includes('comment-') || event.type.includes('attachment-')) {
+        client.invalidateQueries({ queryKey: [...rootKey, 'detail', id] }, { cancelRefetch: false });
       }
-      toast.info('An announcement removed');
+      clearTimeout(timer); timer = setTimeout(refresh, 500);
     };
+    events.forEach(event => window.addEventListener(`socket-announcement-${event}`, receive));
+    const reconnect = () => refresh();
+    window.addEventListener('online', reconnect);
+    return () => { clearTimeout(timer); socketService.leaveAnnouncements(); events.forEach(event => window.removeEventListener(`socket-announcement-${event}`, receive)); window.removeEventListener('online', reconnect); };
+  }, [client, patch, refresh, rootKey, workspaceId]);
 
-    const handleAnnouncementArchived = () => {
-      fetchAnnouncements(showArchived);
-    };
-
-    const handleCommentAdded = (e) => {
-      const data = e.detail;
-      console.log('Comment added:', data);
-      if (selectedAnnouncement?._id === data.announcementId) {
-        fetchAnnouncementDetail(data.announcementId);
-      }
-      setAnnouncements(prev =>
-        prev.map(a => 
-          a._id === data.announcementId
-            ? { ...a, commentsCount: (a.commentsCount || 0) + 1 }
-            : a
-        )
-      );
-    };
-
-    const handleCommentDeleted = (e) => {
-      const data = e.detail;
-      console.log('Comment deleted:', data);
-      if (selectedAnnouncement?._id === data.announcementId) {
-        fetchAnnouncementDetail(data.announcementId);
-      }
-      setAnnouncements(prev =>
-        prev.map(a => 
-          a._id === data.announcementId
-            ? { ...a, commentsCount: Math.max((a.commentsCount || 0) - 1, 0) }
-            : a
-        )
-      );
-    };
-
-    const handleReactionAdded = (e) => {
-      const data = e.detail;
-      console.log('Reaction added:', data);
-      if (selectedAnnouncement?._id === data.announcementId) {
-        fetchAnnouncementDetail(data.announcementId);
-      }
-      fetchAnnouncements(showArchived);
-    };
-
-    const handleReactionRemoved = (e) => {
-      const data = e.detail;
-      console.log('Reaction removed:', data);
-      if (selectedAnnouncement?._id === data.announcementId) {
-        fetchAnnouncementDetail(data.announcementId);
-      }
-      fetchAnnouncements(showArchived);
-    };
-
-    const handlePinToggled = () => {
-      fetchAnnouncements(showArchived);
-    };
-
-    window.addEventListener('socket-announcement-created', handleAnnouncementCreated);
-    window.addEventListener('socket-announcement-updated', handleAnnouncementUpdated);
-    window.addEventListener('socket-announcement-deleted', handleAnnouncementDeleted);
-    window.addEventListener('socket-announcement-archived', handleAnnouncementArchived);
-    window.addEventListener('socket-announcement-comment-added', handleCommentAdded);
-    window.addEventListener('socket-announcement-comment-deleted', handleCommentDeleted);
-    window.addEventListener('socket-announcement-reaction-added', handleReactionAdded);
-    window.addEventListener('socket-announcement-reaction-removed', handleReactionRemoved);
-    window.addEventListener('socket-announcement-pin-toggled', handlePinToggled);
-
-    return () => {
-      socketService.leaveAnnouncements();
-      
-      window.removeEventListener('socket-announcement-created', handleAnnouncementCreated);
-      window.removeEventListener('socket-announcement-updated', handleAnnouncementUpdated);
-      window.removeEventListener('socket-announcement-deleted', handleAnnouncementDeleted);
-      window.removeEventListener('socket-announcement-archived', handleAnnouncementArchived);
-      window.removeEventListener('socket-announcement-comment-added', handleCommentAdded);
-      window.removeEventListener('socket-announcement-comment-deleted', handleCommentDeleted);
-      window.removeEventListener('socket-announcement-reaction-added', handleReactionAdded);
-      window.removeEventListener('socket-announcement-reaction-removed', handleReactionRemoved);
-      window.removeEventListener('socket-announcement-pin-toggled', handlePinToggled);
-    };
-  }, [user, showArchived, selectedAnnouncement]);
-
-  // Fetch announcements
-  const fetchAnnouncements = async (isArchived = false) => {
-    try {
-      setIsLoading(true);
-      const response = await announcementService.getAnnouncements({
-        isArchived: isArchived ? 'true' : 'false',
-        sort: sortBy,
-        category: categoryFilter,
-        search: searchTerm
-      });
-
-      if (response.success) {
-        setAnnouncements(response.data || []);
-      }
-    } catch (error) {
-      console.error('Error fetching announcements:', error);
-      toast.error('Failed to load announcements');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Fetch single announcement detail
-  const fetchAnnouncementDetail = async (announcementId) => {
-    try {
-      const response = await announcementService.getAnnouncement(announcementId);
-      if (response.success) {
-        setSelectedAnnouncement(response.data);
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error('Error fetching announcement detail:', error);
-      return false;
-    }
-  };
-
-  // Fetch unread count on mount
-  useEffect(() => {
-    const fetchUnreadCount = async () => {
-      try {
-        const response = await announcementService.getUnreadCount();
-        if (response.success) {
-          setUnreadCount(response.count);
-        }
-      } catch (error) {
-        console.error('Error fetching unread count:', error);
-      }
-    };
-    
-    if (user) fetchUnreadCount();
-  }, [user]);
-
-  // Handle deep linking from URL query parameter (push notification, Slack, email)
-  useEffect(() => {
-    const openAnnouncementId = searchParams.get('open');
-    if (openAnnouncementId && announcements.length > 0) {
-      const announcementToOpen = announcements.find(a => a._id === openAnnouncementId);
-      if (announcementToOpen) {
-        setSelectedAnnouncement(announcementToOpen);
-        setShowDetailModal(true);
-        // Clear the URL parameter after opening
-        setSearchParams({}, { replace: true });
-      } else {
-        // Announcement not in list, try to fetch it directly
-        fetchAnnouncementDetail(openAnnouncementId).then((found) => {
-          if (found) {
-            setShowDetailModal(true);
-          } else {
-            toast.info('This announcement is no longer available.');
-          }
-          setSearchParams({}, { replace: true });
-        });
-      }
-    }
-  }, [searchParams, announcements, setSearchParams]);
-
-  // Callback to mark announcement as seen (for Intersection Observer in cards)
-  const handleAnnouncementSeen = useCallback((announcementId) => {
-    if (seenAnnouncementsRef.current.has(announcementId)) return;
-    seenAnnouncementsRef.current.add(announcementId);
-    
-    // Mark as seen via API (non-blocking)
-    announcementService.markAsSeen(announcementId).then(() => {
-      setUnreadCount(prev => Math.max(0, prev - 1));
+  const markSeen = useCallback(id => {
+    if (seen.current.has(id)) return;
+    seen.current.add(id);
+    announcementService.markAsSeen(id).then(result => {
+      if (!result.success) { seen.current.delete(id); return; }
+      if (result.changed) client.setQueryData([...rootKey, 'unread'], previous => previous ? { ...previous, count: Math.max(0, previous.count - 1) } : previous);
     });
-  }, []);
+  }, [client, rootKey]);
 
-  useEffect(() => {
-    fetchAnnouncements(showArchived);
-  }, [showArchived, sortBy, categoryFilter, searchTerm]);
-
-  // Create announcement
-  const handleCreateAnnouncement = async (formData, files, onProgress) => {
+  const react = useCallback(async (id, emoji, present) => {
+    if (pending.current.has(id)) return false;
+    pending.current.add(id);
+    const requestScope = captureRequestScope(localStorage);
+    await client.cancelQueries({ queryKey: feedKey });
+    await client.cancelQueries({ queryKey: [...rootKey, 'detail', id] });
+    let before;
+    patch(id, row => { before ??= row.reactions || []; return { ...row, reactions: setAnnouncementReaction(row.reactions, emoji, user, present) }; });
     try {
-      setIsCreating(true);
-      const response = await announcementService.createAnnouncement(formData, files, onProgress);
-
-      if (response.success) {
-        toast.success(response.message || 'Announcement created successfully');
-        
-        // Show upload errors if any
-        if (response.uploadErrors && response.uploadErrors.length > 0) {
-          response.uploadErrors.forEach(err => {
-            toast.warning(`Failed to upload: ${err.originalName} - ${err.error}`);
-          });
-        }
-        
-        setShowCreateModal(false);
-        fetchAnnouncements(showArchived);
-      }
+      const result = await (present ? announcementService.addReaction(id, emoji) : announcementService.removeReaction(id, emoji));
+      assertRequestScope(localStorage, requestScope);
+      if (result.reactions) patch(id, row => ({ ...row, reactions: result.reactions }));
+      return true;
     } catch (error) {
-      console.error('Error creating announcement:', error);
-      toast.error(error.message || 'Failed to create announcement');
-    } finally {
-      setIsCreating(false);
-    }
-  };
+      try { assertRequestScope(localStorage, requestScope); } catch { return false; }
+      patch(id, row => ({ ...row, reactions: before || [] }));
+      client.invalidateQueries({ queryKey: [...rootKey, 'detail', id] });
+      toast.error(error.message || 'Could not update reaction. Please retry.'); return false;
+    } finally { pending.current.delete(id); }
+  }, [client, feedKey, patch, rootKey, user]);
 
-  // Handle attachment deleted in detail modal
-  const handleAttachmentDeleted = (attachmentId) => {
-    if (selectedAnnouncement) {
-      setSelectedAnnouncement(prev => ({
-        ...prev,
-        attachments: prev.attachments.filter(att => att._id !== attachmentId)
-      }));
-      
-      // Also update in the main list
-      setAnnouncements(prev => prev.map(ann => {
-        if (ann._id === selectedAnnouncement._id) {
-          return {
-            ...ann,
-            attachments: ann.attachments.filter(att => att._id !== attachmentId)
-          };
-        }
-        return ann;
-      }));
-    }
-  };
-
-  // Delete announcement
-  const handleDeleteAnnouncement = async (announcementId) => {
-    // Check if announcement still exists in state
-    const announcementExists = announcements.find(a => a._id === announcementId);
-    if (!announcementExists) {
-      toast.info('Announcement has already been deleted');
-      return;
-    }
-
-    if (window.confirm('Are you sure you want to delete this announcement?')) {
-      // Optimistically remove from UI
-      setAnnouncements(prev => prev.filter(a => a._id !== announcementId));
-      
-      try {
-        await announcementService.deleteAnnouncement(announcementId);
-      } catch (error) {
-        console.error('Error deleting announcement:', error);
-        // If it's a 404, it was already deleted, don't show error
-        if (error.message?.includes('not found') || error.statusCode === 404) {
-          toast.info('Announcement was already deleted');
-        } else {
-          toast.error(error.message || 'Failed to delete announcement');
-          // Restore announcement to UI on error
-          fetchAnnouncements(showArchived);
-        }
-      }
-    }
-  };
-
-  // Archive announcement
-  const handleArchiveAnnouncement = async (announcementId) => {
+  const change = async (row, kind) => {
+    if (pending.current.has(row._id)) return;
+    if (kind === 'delete' && !window.confirm('Delete this announcement and its attachments?')) return;
+    pending.current.add(row._id);
+    const requestScope = captureRequestScope(localStorage);
+    await client.cancelQueries({ queryKey: feedKey });
+    patch(row._id, value => kind === 'delete' ? null : ({ ...value, [kind === 'archive' ? 'isArchived' : 'isPinned']: kind === 'archive' ? !row.isArchived : !row.isPinned }));
     try {
-      const announcement = announcements.find(a => a._id === announcementId);
-      await announcementService.toggleArchive(announcementId, !announcement.isArchived);
-      toast.success(announcement.isArchived ? 'Announcement unarchived' : 'Announcement archived');
-      fetchAnnouncements(showArchived);
-    } catch (error) {
-      console.error('Error archiving announcement:', error);
-      toast.error('Failed to archive announcement');
-    }
+      const result = await (kind === 'delete' ? announcementService.deleteAnnouncement(row._id) : kind === 'archive' ? announcementService.toggleArchive(row._id, !row.isArchived) : announcementService.togglePin(row._id, !row.isPinned));
+      assertRequestScope(localStorage, requestScope);
+      if (result.data) patch(row._id, value => ({ ...value, ...result.data }));
+      if (kind === 'delete') setSelectedId(value => value === row._id ? null : value);
+    } catch (error) { toast.error(error.message || 'Could not save change'); }
+    finally { pending.current.delete(row._id); refresh(); }
   };
-
-  // Open announcement detail
-  const handleOpenAnnouncement = async (announcementId) => {
+  const comment = async (id, text, commentId) => {
+    if (pending.current.has(`comment:${id}`)) return false;
+    pending.current.add(`comment:${id}`); setBusy(true);
     try {
-      const response = await announcementService.getAnnouncement(announcementId);
-      if (response.success) {
-        setSelectedAnnouncement(response.data);
-        setShowDetailModal(true);
-      }
-    } catch (error) {
-      console.error('Error fetching announcement:', error);
-    }
+      await (commentId ? announcementService.deleteComment(id, commentId) : announcementService.addComment(id, text));
+      await client.invalidateQueries({ queryKey: [...rootKey, 'detail', id] });
+      client.invalidateQueries({ queryKey: feedKey }); return true;
+    } catch (error) { toast.error(error.message || 'Could not update comment'); return false; }
+    finally { pending.current.delete(`comment:${id}`); setBusy(false); }
   };
 
-  const handleAnnouncementActionSuccess = useCallback((action, announcementId, extraId) => {
-      if (action === 'comment-added' || action === 'comment-deleted' || action === 'reaction-added' || action === 'reaction-removed') {
-           // Socket usually handles this, but we can fetch detail to be sure if selected
-           if (selectedAnnouncement && selectedAnnouncement._id === announcementId) {
-               fetchAnnouncementDetail(announcementId);
-           }
-      }
-      if (action === 'attachment-deleted') {
-           handleAttachmentDeleted(extraId);
-      }
-      // Re-fetch list for good measure
-      fetchAnnouncements(showArchived);
-  }, [selectedAnnouncement, fetchAnnouncements, showArchived]);
+  return <main className="min-h-full w-full min-w-0 space-y-6 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-4 sm:p-6 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950" style={{ color: 'var(--color-text-primary)' }}>
+    <header className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 p-6 text-white shadow-2xl sm:p-8">
+      <div className="pointer-events-none absolute inset-0 bg-black/10" />
+      <div className="relative flex flex-col items-start justify-between gap-6 lg:flex-row lg:items-center">
+        <div className="flex min-w-0 items-center gap-4">
+          <div className="shrink-0 rounded-full bg-white/20 p-3"><Bell className="h-8 w-8" /></div>
+          <div className="min-w-0">
+            <h1 className="flex flex-wrap items-center gap-3 text-3xl font-bold sm:text-4xl">Announcements<Sparkles className="h-6 w-6 text-yellow-300" /></h1>
+            <p className="mt-2 text-base text-blue-100 sm:text-lg">Stay updated with the latest announcements and important updates</p>
+          </div>
+        </div>
+        {canCreate && <button type="button" onClick={() => setCreating(true)} className="flex shrink-0 items-center gap-3 rounded-xl bg-white px-6 py-3 font-semibold text-blue-600 shadow-lg transition-colors hover:bg-blue-50 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"><Plus className="h-5 w-5" />Create Announcement<TrendingUp className="h-4 w-4" /></button>}
+      </div>
+    </header>
 
-  const {
-      addComment,
-      deleteComment,
-      addReaction,
-      removeReaction,
-      deleteAttachment, // We can use the hook's deleteAttachment or the local one. The hook is better.
-      loadingAction
-  } = useAnnouncementActions(handleAnnouncementActionSuccess);
+    <section className="grid grid-cols-1 gap-6 md:grid-cols-3" aria-label="Announcement summary">
+      <div className="rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 p-6 text-white shadow-lg" title="Announcements loaded in this view">
+        <div className="flex items-center justify-between"><div><p className="text-sm font-medium text-green-100">Total Announcements</p><p className="text-3xl font-bold">{rows.length}</p></div><Bell className="h-8 w-8 text-green-200" /></div>
+      </div>
+      <div className="rounded-xl bg-gradient-to-br from-blue-500 to-cyan-600 p-6 text-white shadow-lg" title="Active announcements loaded in this view">
+        <div className="flex items-center justify-between"><div><p className="text-sm font-medium text-blue-100">Active</p><p className="text-3xl font-bold">{rows.filter(row => !row.isArchived).length}</p></div><TrendingUp className="h-8 w-8 text-blue-200" /></div>
+      </div>
+      <div className="rounded-xl bg-gradient-to-br from-purple-500 to-pink-600 p-6 text-white shadow-lg" title="Categories loaded in this view">
+        <div className="flex items-center justify-between"><div><p className="text-sm font-medium text-purple-100">Categories</p><p className="text-3xl font-bold">{new Set(rows.map(row => row.category)).size}</p></div><Filter className="h-8 w-8 text-purple-200" /></div>
+      </div>
+    </section>
 
+    <section className="space-y-6 rounded-2xl border border-white/20 bg-white/80 p-6 shadow-xl dark:border-gray-800 dark:bg-gray-900/80" aria-label="Announcement filters">
+      <label className="relative block w-full"><Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" /><input aria-label="Search announcements" placeholder="Search announcements..." value={search} onChange={event => setSearch(event.target.value)} className="w-full rounded-xl border border-gray-200 bg-white/50 py-3 pl-12 pr-4 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800/50" /></label>
+      <div className="flex flex-wrap items-center gap-4">
+        <label className="flex items-center gap-2 rounded-lg bg-gray-50 p-2 text-sm font-medium dark:bg-gray-800"><Filter className="h-4 w-4 text-gray-600 dark:text-gray-300" /><select aria-label="Sort announcements" value={sort} onChange={event => setSort(event.target.value)} className="border-none bg-transparent px-3 py-2 focus:outline-none"><option value="latest">Latest First</option><option value="pinned">Pinned First</option><option value="oldest">Oldest First</option><option value="category">By Category</option></select></label>
+        <select aria-label="Category" value={category} onChange={event => setCategory(event.target.value)} className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800"><option value="all">All Categories</option>{['General', 'HR', 'Urgent', 'System Update', 'Events', 'Custom'].map(value => <option key={value}>{value}</option>)}</select>
+        <button type="button" aria-label={archived ? 'Show active announcements' : 'Show archived announcements'} aria-pressed={archived} onClick={() => setArchived(value => !value)} className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm transition-colors ${archived ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200'}`}><Archive className="h-4 w-4" />{archived ? 'Archived' : 'Active'}</button>
+        <div className="ml-auto flex items-center gap-3 text-xs text-gray-500">
+          {!archived && unread.data?.count > 0 && <span className="rounded-full bg-blue-50 px-2 py-1 font-medium text-blue-600">{unread.data.count} new</span>}
+          {query.isFetching && <span role="status" className="flex items-center gap-1"><Loader2 size={13} className="animate-spin" />Updating</span>}
+          <button type="button" onClick={refresh} disabled={query.isFetching} aria-label="Refresh announcements" className="rounded-lg p-2 transition-colors hover:bg-gray-100 disabled:opacity-50 dark:hover:bg-gray-800"><RefreshCw size={16} className={query.isFetching ? 'animate-spin' : ''} /></button>
+        </div>
+      </div>
+    </section>
+    {query.error && <p role="alert" className="rounded-lg border border-red-200 p-4 text-sm text-red-600">Could not refresh announcements. <button className="underline" onClick={() => query.refetch()}>Retry</button></p>}
+    <p className="sr-only" aria-live="polite">{visible.length} announcement{visible.length === 1 ? '' : 's'} shown</p>
 
+    <section className="space-y-4 rounded-2xl border border-white/20 bg-white/80 p-4 shadow-xl sm:p-6 dark:border-gray-800 dark:bg-gray-900/80" aria-label="Announcements list">
+      {query.isPending ? <div role="status" className="space-y-4">{[1, 2, 3].map(value => <div key={value} className="h-48 animate-pulse rounded-lg border bg-gray-100 dark:bg-gray-800" />)}<span className="sr-only">Loading announcements</span></div> : <div className="space-y-4">{visible.map(row => <AnnouncementCard key={row._id} announcement={row} userId={user._id || user.id} userRole={user.role} onOpen={setSelectedId} onEdit={setEditing} onReaction={react} onPin={row => change(row, 'pin')} onArchive={row => change(row, 'archive')} onDelete={row => change(row, 'delete')} onSeen={markSeen} />)}</div>}
+      {!query.isPending && !query.isFetching && !query.error && !visible.length && <div className="px-6 py-16 text-center"><div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-gray-200 to-gray-300 dark:from-gray-700 dark:to-gray-800"><Bell className="h-10 w-10 text-gray-400" /></div><h2 className="text-2xl font-bold">{search ? 'No matching announcements' : 'No announcements yet'}</h2><p className="mt-2 text-gray-500">{search ? 'Try another search or category.' : archived ? 'No archived announcements to show' : 'Stay tuned for important updates from your team.'}</p></div>}
+      {query.hasNextPage && <div className="text-center"><Button variant="outline" disabled={query.isFetchingNextPage || query.isPlaceholderData || search.trim() !== remoteSearch} onClick={() => query.fetchNextPage()}>{query.isFetchingNextPage ? 'Loading…' : 'Load more announcements'}</Button></div>}
+    </section>
+    {selectedId && detail.isPending && !selected && <p role="status">Loading announcement…</p>}
+    {selectedId && detail.error && <p role="alert">This announcement could not be opened. <button className="underline" onClick={() => detail.refetch()}>Retry</button><button className="ml-3 underline" onClick={() => setSelectedId(null)}>Close</button></p>}
+    <Suspense fallback={<p role="status">Opening announcement…</p>}>
+      {creating && <CreateAnnouncementModal isOpen onClose={() => setCreating(false)} onSubmit={async (draft, files, progress) => {
+        const result = await announcementService.createAnnouncement(draft, files, progress);
+        if (!result.success) throw new Error(result.message || 'Could not create announcement');
+        result.uploadErrors?.forEach(error => toast.warning(`Attachment could not upload: ${error.originalName}`));
+        toast.success(result.message || 'Announcement published'); refresh();
+      }} />}
+      {editing && <EditAnnouncementModal key={editing._id} announcement={editing} onClose={() => setEditing(null)} onSave={async (id, draft) => {
+        const result = await announcementService.updateAnnouncement(id, draft);
+        patch(id, row => ({ ...row, ...result.data })); refresh(); toast.success('Announcement updated');
+      }} />}
+      {selected && !detail.error && <AnnouncementDetailModal isOpen announcement={selected} onClose={() => setSelectedId(null)} onAddComment={(id, text) => comment(id, text)} onDeleteComment={(id, commentId) => comment(id, null, commentId)} onAddReaction={(id, emoji) => react(id, emoji, true)} onRemoveReaction={(id, emoji) => react(id, emoji, false)} onAttachmentDeleted={attachmentId => patch(selectedId, row => ({ ...row, attachments: row.attachments.filter(file => file._id !== attachmentId) }))} isLoading={busy || detail.isPending} />}
+    </Suspense>
+  </main>;
+}
 
-
-  return (
-    <div className="min-h-full bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
-      <main className="p-6 space-y-6">
-          {/* Header Section */}
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="relative overflow-hidden bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 rounded-2xl p-8 text-white shadow-2xl"
-          >
-            <div className="absolute inset-0 bg-black/10 backdrop-blur-sm"></div>
-            <div className="relative z-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
-              <div className="flex items-center gap-4">
-                <motion.div
-                  animate={{ rotate: [0, 10, -10, 0] }}
-                  transition={{ duration: 2, repeat: Infinity, repeatDelay: 3 }}
-                  className="p-3 bg-white/20 rounded-full backdrop-blur-sm"
-                >
-                  <Bell className="w-8 h-8" />
-                </motion.div>
-                <div>
-                  <h1 className="text-4xl font-bold flex items-center gap-3">
-                    Announcements
-                    <Sparkles className="w-6 h-6 text-yellow-300" />
-                  </h1>
-                  <p className="text-blue-100 mt-2 text-lg">Stay updated with the latest announcements and important updates</p>
-                </div>
-              </div>
-              {isAdmin && (
-                <motion.button
-                  whileHover={{ scale: 1.05, boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)" }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => setShowCreateModal(true)}
-                  className="flex items-center gap-3 px-6 py-3 bg-white text-blue-600 rounded-xl font-semibold hover:bg-blue-50 transition-all duration-300 shadow-lg"
-                >
-                  <Plus className="w-5 h-5" />
-                  Create Announcement
-                  <TrendingUp className="w-4 h-4" />
-                </motion.button>
-              )}
-            </div>
-          </motion.div>
-
-          {/* Stats Cards */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-            className="grid grid-cols-1 md:grid-cols-3 gap-6"
-          >
-            <motion.div
-              whileHover={{ y: -5 }}
-              className="bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl p-6 text-white shadow-lg"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-green-100 text-sm font-medium">Total Announcements</p>
-                  <p className="text-3xl font-bold">{announcements.length}</p>
-                </div>
-                <Bell className="w-8 h-8 text-green-200" />
-              </div>
-            </motion.div>
-
-            <motion.div
-              whileHover={{ y: -5 }}
-              className="bg-gradient-to-br from-blue-500 to-cyan-600 rounded-xl p-6 text-white shadow-lg"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-blue-100 text-sm font-medium">Active</p>
-                  <p className="text-3xl font-bold">{announcements.filter(a => !a.isArchived).length}</p>
-                </div>
-                <TrendingUp className="w-8 h-8 text-blue-200" />
-              </div>
-            </motion.div>
-
-            <motion.div
-              whileHover={{ y: -5 }}
-              className="bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl p-6 text-white shadow-lg"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-purple-100 text-sm font-medium">Categories</p>
-                  <p className="text-3xl font-bold">{new Set(announcements.map(a => a.category)).size}</p>
-                </div>
-                <Filter className="w-8 h-8 text-purple-200" />
-              </div>
-            </motion.div>
-          </motion.div>
-
-          {/* Filters and Search */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.4 }}
-            className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-xl border border-white/20 p-6"
-          >
-            <div className="space-y-6">
-              {/* Search Bar */}
-              <div className="flex gap-4">
-                <div className="flex-1 relative">
-                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-red-800" />
-                  <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Search announcements..."
-                    className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50/50 backdrop-blur-sm"
-                  />
-                </div>
-              </div>
-
-              {/* Filter Controls */}
-              <div className="flex flex-wrap gap-4 items-center">
-                {/* Sort */}
-                <motion.div
-                  whileHover={{ scale: 1.02 }}
-                  className="flex items-center gap-2 bg-gray-50 rounded-lg p-2"
-                >
-                  <Filter className="w-4 h-4 text-gray-600" />
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value)}
-                    className="px-3 py-2 bg-transparent border-none focus:outline-none text-sm font-medium"
-                  >
-                    <option value="latest">Latest First</option>
-                    <option value="pinned">Pinned First</option>
-                    <option value="oldest">Oldest First</option>
-                    <option value="category">By Category</option>
-                  </select>
-                </motion.div>
-
-                {/* Category Filter */}
-                <motion.select
-                  whileHover={{ scale: 1.02 }}
-                  value={categoryFilter}
-                  onChange={(e) => setCategoryFilter(e.target.value)}
-                  className="px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-                >
-                  <option value="all">All Categories</option>
-                  <option value="General">General</option>
-                  <option value="HR">HR</option>
-                  <option value="Urgent">Urgent</option>
-                  <option value="System Update">System Update</option>
-                  <option value="Events">Events</option>
-                </motion.select>
-
-                {/* Archive Toggle */}
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => setShowArchived(!showArchived)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-300 ${
-                    showArchived
-                      ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  <Archive className="w-4 h-4" />
-                  {showArchived ? 'Archived' : 'Active'}
-                </motion.button>
-              </div>
-            </div>
-          </motion.div>
-
-          {/* Main Content */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.6 }}
-            className="bg-white/80 backdrop-blur-lg rounded-2xl shadow-xl border border-white/20 p-6"
-          >
-            <AnimatePresence mode="wait">
-              {isLoading ? (
-                 <motion.div
-                   key="loading"
-                   initial={{ opacity: 0 }}
-                   animate={{ opacity: 1 }}
-                   exit={{ opacity: 0 }}
-                 >
-                   <AnnouncementsListSkeleton />
-                 </motion.div>
-              ) : announcements.length === 0 ? (
-                <motion.div
-                  key="empty"
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  className="text-center py-16"
-                >
-                  <motion.div
-                    animate={{ rotate: [0, 5, -5, 0] }}
-                    transition={{ duration: 2, repeat: Infinity }}
-                    className="w-20 h-20 bg-gradient-to-br from-gray-200 to-gray-300 rounded-full mx-auto mb-6 flex items-center justify-center"
-                  >
-                    <Bell className="w-10 h-10 text-gray-400" />
-                  </motion.div>
-                  <h3 className="text-2xl font-bold text-gray-700 mb-2">No announcements yet</h3>
-                  <p className="text-gray-500 text-lg">
-                    {showArchived
-                      ? 'No archived announcements to show'
-                      : isAdmin
-                      ? 'Start by creating a new announcement to keep everyone informed'
-                      : 'Check back later for important updates'}
-                  </p>
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="announcements"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="space-y-4"
-                >
-                  <AnimatePresence>
-                    {announcements.map((announcement, index) => (
-                      <motion.div
-                        key={announcement._id}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 20 }}
-                        transition={{ duration: 0.4, delay: index * 0.1 }}
-                        whileHover={{ scale: 1.02 }}
-                        className="transform transition-all duration-300"
-                      >
-                        <AnnouncementCard
-                          announcement={announcement}
-                          onOpen={handleOpenAnnouncement}
-                          onPin={() => handleArchiveAnnouncement(announcement._id)}
-                          onArchive={handleArchiveAnnouncement}
-                          onDelete={handleDeleteAnnouncement}
-                          onSeen={handleAnnouncementSeen}
-                          userRole={user?.role}
-                          userId={user?._id}
-                          isUserAdmin={isAdmin}
-                        />
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </motion.div>
-      </main>
-
-      {/* Create Modal */}
-      <CreateAnnouncementModal
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        onSubmit={handleCreateAnnouncement}
-        isLoading={isCreating}
-      />
-
-      {/* Detail Modal */}
-      <AnnouncementDetailModal
-        isOpen={showDetailModal}
-        announcement={selectedAnnouncement}
-        onClose={() => setShowDetailModal(false)}
-        onAddComment={addComment}
-        onDeleteComment={deleteComment}
-        onAddReaction={addReaction}
-        onRemoveReaction={removeReaction}
-        onAttachmentDeleted={deleteAttachment}
-        isLoading={loadingAction}
-      />
-    </div>
-  );
-};
-
-export default Announcements;
+export default function Announcements() {
+  const { user } = useContext(AuthContext);
+  const { currentWorkspace } = useContext(WorkspaceContext);
+  const scope = JSON.stringify([currentWorkspace?._id, user?._id, user?.role, user?.roleId, user?.department, user?.permissionsVersion]);
+  return user && currentWorkspace ? <AnnouncementFeed key={scope} scope={scope} user={user} workspaceId={currentWorkspace._id} /> : null;
+}

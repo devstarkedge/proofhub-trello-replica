@@ -1,3 +1,8 @@
+import { isQueueActive } from '../queues/queueManager.js';
+import { announcementVisibility, announcementViewerKey, announcementListRequest, literalSearch } from '../services/announcementAccess.js';
+import { cachedAnnouncementRead } from '../services/announcementReadCache.js';
+import { writeAnnouncementReaction } from '../services/announcementReactions.js';
+import { announcementEmojis } from '../../shared/announcementState.mjs';
 import { ROOM } from '../realtime/events.js';
 import { announcementAudience } from '../services/workspaceAudience.js';
 import { emitAnnouncementEvent } from '../services/announcementEvents.js';
@@ -22,8 +27,8 @@ import { persistAnnouncementBroadcastState } from "../services/announcementBroad
 import * as workspaceContext from "../modules/workspaces/workspaceContext.js";
 
 // Helper function to calculate expiration date
-const calculateExpiryDate = (value, unit) => {
-  const date = new Date();
+const calculateExpiryDate = (value, unit, base = Date.now()) => {
+  const date = new Date(base);
   switch (unit) {
     case 'hours':
       date.setHours(date.getHours() + value);
@@ -51,121 +56,22 @@ const getSubscriberUserIds = announcementAudience;
 // @route   GET /api/announcements
 // @access  Private
 export const getAnnouncements = asyncHandler(async (req, res, next) => {
-  const { sort = 'latest', category, isArchived = false, search } = req.query;
-  const userId = req.user.id;
-  const userDepartment = req.user.department;
-  const userRole = req.user.role;
-
-  // Build visibility query - announcements visible to this user
-  const visibilityConditions = [
-    { 'subscribers.type': 'all' },
-    { 'subscribers.users': userId },
-    { createdBy: userId }
-  ];
-
-  // Add department filter if user has a department
-  // User.department is an array of ObjectIds, so we need to check if any of the user's
-  // departments are in the announcement's subscribers.departments array
-  if (userDepartment) {
-    const userDeptIds = Array.isArray(userDepartment) ? userDepartment : [userDepartment];
-    if (userDeptIds.length > 0) {
-      visibilityConditions.push({ 
-        $and: [
-          { 'subscribers.type': 'departments' },
-          { 'subscribers.departments': { $in: userDeptIds } }
-        ]
-      });
-    }
-  }
-
-  // Add role-based filter
-  if (userRole) {
-    visibilityConditions.push({ 'subscribers.roles': userRole });
-    
-    // Also check for 'managers' type if user is a manager
-    if (userRole === 'manager') {
-      visibilityConditions.push({ 'subscribers.type': 'managers' });
-    }
-  }
-
-  // Build main query
-  let query = {
-    $and: [
-      { $or: visibilityConditions },
-      { isArchived: isArchived === 'true' }
-    ]
-  };
-
-  // Apply category filter
-  if (category && category !== 'all') {
-    query.$and.push({ category });
-  }
-
-  // Apply search filter
-  if (search) {
-    query.$and.push({
-      $or: [
-        { title: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } }
-      ]
-    });
-  }
-
-  // Apply sorting
-  let sortQuery = {};
-  switch (sort) {
-    case 'latest':
-      sortQuery = { createdAt: -1 };
-      break;
-    case 'pinned':
-      sortQuery = { isPinned: -1, createdAt: -1 };
-      break;
-    case 'oldest':
-      sortQuery = { createdAt: 1 };
-      break;
-    case 'category':
-      sortQuery = { category: 1, createdAt: -1 };
-      break;
-    case 'scheduled':
-      sortQuery = { scheduledFor: 1, createdAt: -1 };
-      break;
-    default:
-      sortQuery = { createdAt: -1 };
-  }
-
-  // Fetch announcements
-  const announcements = await Announcement.find(query)
-    .populate('createdBy', 'name email avatar role')
-    .populate('subscribers.departments', 'name')
-    .populate('subscribers.users', 'name email avatar')
-    .populate('comments.author', 'name email avatar role')
-    .populate('reactions.users', 'name avatar')
-    .sort(sortQuery);
-
-  // Separate pinned and unpinned (only for relevant sorts)
-  if (sort !== 'oldest' && sort !== 'scheduled') {
-    const pinned = announcements.filter(a => a.isPinned).sort((a, b) => {
-      if (a.pinPosition !== b.pinPosition) {
-        return a.pinPosition - b.pinPosition;
-      }
-      return new Date(b.createdAt) - new Date(a.createdAt);
-    });
-
-    const unpinned = announcements.filter(a => !a.isPinned);
-    const result = [...pinned, ...unpinned];
-
-    return res.status(200).json({
-      success: true,
-      count: result.length,
-      data: result
-    });
-  }
-
-  res.status(200).json({
-    success: true,
-    count: announcements.length,
-    data: announcements
+  const options = announcementListRequest(req.query);
+  const { page, limit, search, category, sort, archived } = options;
+  const query = { $and: [announcementVisibility(req.user), { isArchived: archived }] };
+  if (category !== 'all') query.$and.push({ category });
+  if (search) query.$and.push({ $or: ['title', 'description'].map(field => ({ [field]: { $regex: literalSearch(search), $options: 'i' } })) });
+  const order = sort === 'oldest' ? { createdAt: 1, _id: 1 } : sort === 'scheduled' ? { scheduledFor: 1, createdAt: -1, _id: -1 }
+    : { isPinned: -1, pinPosition: 1, ...(sort === 'category' ? { category: 1 } : {}), createdAt: -1, _id: -1 };
+  const response = await cachedAnnouncementRead({ workspaceId: req.workspaceId, viewerId: req.user.id,
+    kind: 'feed', query: options, access: announcementViewerKey(req.user),
+    cache: page === 1 && !search && category === 'all' && sort === 'latest' }, async () => {
+    const rows = await Announcement.find(query).select('-comments -seenBy -readBy -acknowledgedBy -broadcastedTo')
+      .populate('createdBy', 'name avatar').sort(order).skip((page - 1) * limit).limit(limit + 1).lean();
+    return { success: true, count: Math.min(rows.length, limit), data: rows.slice(0, limit), pagination: { page, limit, hasMore: rows.length > limit } };
   });
+  res.set('Cache-Control', 'private, no-store');
+  res.status(200).json(response);
 });
 
 // @desc    Get single announcement
@@ -183,19 +89,11 @@ export const getAnnouncement = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Announcement not found', 404));
   }
 
-  // Mark as read
-  const isAlreadyRead = announcement.readBy.some(
-    r => r.userId.toString() === req.user.id
-  );
-
-  if (!isAlreadyRead) {
-    announcement.readBy.push({
-      userId: req.user.id,
-      readAt: new Date()
-    });
-    announcement.viewCount = (announcement.viewCount || 0) + 1;
-    await announcement.save();
-  }
+  const readAt = new Date();
+  const result = await Announcement.updateOne({ _id: announcement._id, 'readBy.userId': { $ne: req.user.id } }, {
+    $push: { readBy: { userId: req.user.id, readAt } }, $inc: { viewCount: 1 }
+  });
+  if (result.modifiedCount) { announcement.readBy.push({ userId: req.user.id, readAt }); announcement.viewCount = (announcement.viewCount || 0) + 1; }
 
   res.status(200).json({
     success: true,
@@ -243,7 +141,9 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
   }
 
   // Calculate expiry date
-  const expiresAt = calculateExpiryDate(lastFor.value, lastFor.unit);
+  const scheduledDate = scheduledFor ? new Date(scheduledFor) : null;
+  if (scheduledDate && (!Number.isFinite(+scheduledDate) || +scheduledDate <= Date.now())) return next(new ErrorResponse('Choose a future date and time', 400));
+  const expiresAt = calculateExpiryDate(Number(lastFor.value), lastFor.unit, scheduledDate || Date.now());
 
   // Prepare for attachments upload (we'll upload after creating the announcement)
   const attachments = [];
@@ -253,6 +153,7 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
   // Create announcement object
   const announcementData = {
     workspaceId,
+    deliveryPending: isQueueActive(),
     title,
     description,
     category: category === 'Custom' ? 'Custom' : category,
@@ -329,7 +230,12 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
   await announcement.populate('createdBy', 'name email avatar role');
 
   // If not scheduled, broadcast immediately
-  if (!announcementData.isScheduled) {
+  if (isQueueActive()) {
+    // Mongo retains delivery intent if enqueue fails. The existing maintenance
+    // worker repairs pending work without making the author repeat creation.
+    try { await scheduleAnnouncementBroadcast(announcement); }
+    catch (error) { console.error('[Announcement] Delivery pending recovery:', error.message); }
+  } else if (!announcementData.isScheduled) {
     // Use the saved announcement's subscribers to avoid mismatches and ensure structure
     const rawSubscribers = announcement.subscribers || subscribers || { type: 'all' };
     let subscriberIds = [];
@@ -396,6 +302,8 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
     chatHooks.onAnnouncementCreated(enrichedAnnouncement, req.user).catch(console.error);
       }
 
+
+
   // Schedule archive job at exact expiry time (for ALL announcements)
   scheduleAnnouncementArchive(announcement).catch(err =>
     console.error('[Announcement] Failed to schedule archive job:', err.message)
@@ -405,7 +313,7 @@ export const createAnnouncement = asyncHandler(async (req, res, next) => {
     success: true,
     message: announcementData.isScheduled
       ? 'Announcement scheduled successfully'
-      : 'Announcement created and broadcasted successfully',
+      : 'Announcement created. Delivery is processing in the background.',
     data: announcement,
     uploadErrors: uploadErrors.length > 0 ? uploadErrors : undefined
   });
@@ -462,21 +370,7 @@ export const updateAnnouncement = asyncHandler(async (req, res, next) => {
   await announcement.save();
   await announcement.populate('createdBy', 'name email avatar role');
 
-  // Notify subscribers of update
-  try {
-    const subscriberIds = await getSubscriberUserIds(announcement.subscribers);
-
-    if (subscriberIds && Array.isArray(subscriberIds)) {
-      subscriberIds.forEach(userId => {
-        getIO().to(ROOM.user(userId)).emit('announcement-updated', {
-          announcementId: announcement._id,
-          announcement: announcement.toJSON()
-        });
-      });
-    }
-  } catch (error) {
-    console.error('Error notifying subscribers about update:', error);
-  }
+  await emitAnnouncementEvent(announcement, 'announcement-updated', { announcementId: announcement._id, announcement: announcement.toJSON() });
 
   // Reschedule broadcast job if it's a scheduled announcement that hasn't broadcast yet
   if (announcement.isScheduled && !announcement.scheduleBroadcasted && announcement.scheduledFor) {
@@ -538,6 +432,7 @@ export const deleteAnnouncement = asyncHandler(async (req, res, next) => {
 
   // Delete once
   await Announcement.findByIdAndDelete(req.params.id);
+  await cancelAnnouncementJobs(req.params.id);
 
   chatHooks.onAnnouncementDeleted(announcementData, req.user).catch(console.error);
 
@@ -652,96 +547,21 @@ export const deleteComment = asyncHandler(async (req, res, next) => {
 // @desc    Add emoji reaction
 // @route   POST /api/announcements/:id/reactions
 // @access  Private
-export const addReaction = asyncHandler(async (req, res, next) => {
-  const { emoji } = req.body;
-  const validEmojis = ['👍', '❤️', '🎉', '🔥', '👀'];
-
-  if (!validEmojis.includes(emoji)) {
-    return next(new ErrorResponse('Invalid emoji', 400));
-  }
-
-  const announcement = await Announcement.findById(req.params.id);
-
-  if (!announcement) {
-    return next(new ErrorResponse('Announcement not found', 404));
-  }
-
-  let reaction = announcement.reactions.find(r => r.emoji === emoji);
-
-  if (!reaction) {
-    reaction = { emoji, users: [], count: 0 };
-    announcement.reactions.push(reaction);
-    reaction = announcement.reactions[announcement.reactions.length - 1];
-  }
-
-  const userAlreadyReacted = reaction.users.some(
-    u => u.toString() === req.user.id
-  );
-
-  if (!userAlreadyReacted) {
-    reaction.users.push(req.user.id);
-    reaction.count = reaction.users.length;
-  }
-
-  await announcement.save();
-  await announcement.populate('reactions.users', 'name avatar');
-
-  // Emit real-time update
-  await emitAnnouncementEvent(announcement, 'announcement-reaction-added', {
-    announcementId: announcement._id,
-    reaction
-  });
-
-  res.status(200).json({
-    success: true,
-    message: 'Reaction added successfully',
-    data: reaction
-  });
-});
-
-// @desc    Remove emoji reaction
-// @route   DELETE /api/announcements/:id/reactions/:emoji
-// @access  Private
-export const removeReaction = asyncHandler(async (req, res, next) => {
-  const { emoji } = req.params;
-  const validEmojis = ['👍', '❤️', '🎉', '🔥', '👀'];
-
-  if (!validEmojis.includes(emoji)) {
-    return next(new ErrorResponse('Invalid emoji', 400));
-  }
-
-  const announcement = await Announcement.findById(req.params.id);
-
-  if (!announcement) {
-    return next(new ErrorResponse('Announcement not found', 404));
-  }
-
-  const reaction = announcement.reactions.find(r => r.emoji === emoji);
-
-  if (!reaction) {
-    return next(new ErrorResponse('Reaction not found', 404));
-  }
-
-  reaction.users = reaction.users.filter(u => u.toString() !== req.user.id);
-  reaction.count = reaction.users.length;
-
-  if (reaction.count === 0) {
-    announcement.reactions = announcement.reactions.filter(r => r.emoji !== emoji);
-  }
-
-  await announcement.save();
-
-  // Emit real-time update
-  await emitAnnouncementEvent(announcement, 'announcement-reaction-removed', {
-    announcementId: announcement._id,
-    emoji
-  });
-
-  res.status(200).json({
-    success: true,
-    message: 'Reaction removed successfully'
-  });
-});
+async function changeReaction(req, res, next, present) {
+  const emoji = present ? req.body.emoji : req.params.emoji;
+  if (!announcementEmojis.includes(emoji)) return next(new ErrorResponse('Invalid emoji', 400));
+  const announcement = await writeAnnouncementReaction(Announcement, { _id: req.params.id }, emoji, req.user.id, present);
+  if (!announcement) return next(new ErrorResponse('Announcement not found', 404));
+  const reaction = announcement.reactions.find(row => row.emoji === emoji) || { emoji, users: [], count: 0 };
+  try {
+    await emitAnnouncementEvent(announcement, present ? 'announcement-reaction-added' : 'announcement-reaction-removed', {
+      announcementId: announcement._id, emoji, reaction, reactions: announcement.reactions
+    });
+  } catch (error) { console.warn('Reaction saved; realtime delivery unavailable:', error.message); }
+  res.status(200).json({ success: true, data: reaction, reactions: announcement.reactions });
+}
+export const addReaction = asyncHandler((req, res, next) => changeReaction(req, res, next, true));
+export const removeReaction = asyncHandler((req, res, next) => changeReaction(req, res, next, false));
 
 // @desc    Pin/Unpin announcement
 // @route   PUT /api/announcements/:id/pin
@@ -1198,79 +1018,20 @@ export const getAttachments = asyncHandler(async (req, res, next) => {
 // @route   POST /api/announcements/:id/seen
 // @access  Private
 export const markAsSeen = asyncHandler(async (req, res, next) => {
-  const announcement = await Announcement.findById(req.params.id);
-  
-  if (!announcement) {
-    return next(new ErrorResponse('Announcement not found', 404));
-  }
-
-  // Check if already seen
-  const alreadySeen = announcement.seenBy?.some(
-    s => s.userId.toString() === req.user.id
-  );
-
-  if (!alreadySeen) {
-    if (!announcement.seenBy) announcement.seenBy = [];
-    announcement.seenBy.push({
-      userId: req.user.id,
-      seenAt: new Date()
-    });
-    await announcement.save();
-  }
-
-  res.status(200).json({ 
-    success: true,
-    message: 'Announcement marked as seen'
+  const result = await Announcement.updateOne({ _id: req.params.id, 'seenBy.userId': { $ne: req.user.id } }, {
+    $push: { seenBy: { userId: req.user.id, seenAt: new Date() } }
   });
+  res.status(200).json({ success: true, changed: Boolean(result.modifiedCount) });
 });
 
 // @desc    Get unread announcement count for user
 // @route   GET /api/announcements/unread-count
 // @access  Private
 export const getUnreadCount = asyncHandler(async (req, res, next) => {
-  const userId = req.user.id;
-  const userDepartment = req.user.department;
-  const userRole = req.user.role;
-
-  // Build visibility query (same logic as getAnnouncements)
-  const visibilityConditions = [
-    { 'subscribers.type': 'all' },
-    { 'subscribers.users': userId },
-    { createdBy: userId }
-  ];
-
-  if (userDepartment) {
-    const userDeptIds = Array.isArray(userDepartment) ? userDepartment : [userDepartment];
-    if (userDeptIds.length > 0) {
-      visibilityConditions.push({ 
-        $and: [
-          { 'subscribers.type': 'departments' },
-          { 'subscribers.departments': { $in: userDeptIds } }
-        ]
-      });
-    }
-  }
-
-  if (userRole) {
-    visibilityConditions.push({ 'subscribers.roles': userRole });
-    if (userRole === 'manager') {
-      visibilityConditions.push({ 'subscribers.type': 'managers' });
-    }
-  }
-
-  // Count announcements user hasn't seen yet
-  const unreadCount = await Announcement.countDocuments({
-    $and: [
-      { $or: visibilityConditions },
-      { isArchived: false },
-      { 'seenBy.userId': { $ne: userId } }
-    ]
-  });
-
-  res.status(200).json({ 
-    success: true, 
-    count: unreadCount 
-  });
+  const count = await Announcement.countDocuments({ $and: [announcementVisibility(req.user), {
+    isArchived: false, expiresAt: { $gt: new Date() }, 'seenBy.userId': { $ne: req.user.id }
+  }] });
+  res.status(200).json({ success: true, count });
 });
 
 // @desc    Get engagement stats for an announcement (admin only)

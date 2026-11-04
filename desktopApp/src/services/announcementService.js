@@ -16,9 +16,9 @@ const createProgressTracker = (onProgress) => {
 
 const announcementService = {
   // Get all announcements
-  getAnnouncements: async (params = {}) => {
+  getAnnouncements: async (params = {}, signal) => {
     try {
-      const response = await api.get(API_BASE_URL, { params });
+      const response = await api.get(API_BASE_URL, { params, signal });
       return response.data;
     } catch (error) {
       throw error.response?.data || error.message;
@@ -26,9 +26,9 @@ const announcementService = {
   },
 
   // Get single announcement
-  getAnnouncement: async (id) => {
+  getAnnouncement: async (id, signal) => {
     try {
-      const response = await api.get(`${API_BASE_URL}/${id}`);
+      const response = await api.get(`${API_BASE_URL}/${id}`, { signal });
       return response.data;
     } catch (error) {
       throw error.response?.data || error.message;

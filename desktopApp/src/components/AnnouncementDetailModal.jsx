@@ -1,3 +1,4 @@
+import useModalFocus from '../hooks/useModalFocus';
 import React, { useState, useContext, useMemo } from "react";
 import { X, MessageCircle, Send, Trash2, Clock, Calendar, Download, ExternalLink, FileText, Image, File, Copy, Check, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { formatDistanceToNow, format as formatDate } from "date-fns";
@@ -109,12 +110,14 @@ const AnnouncementDetailModal = ({
 }) => {
   const { user } = useContext(AuthContext);
   const [commentText, setCommentText] = useState("");
-  const [hoveredReaction, setHoveredReaction] = useState(null);
+  const [, setHoveredReaction] = useState(null);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [copiedLink, setCopiedLink] = useState(null);
   const [deletingAttachment, setDeletingAttachment] = useState(null);
   const commentsEndRef = React.useRef(null);
+  const dialogRef = React.useRef(null);
+  useModalFocus({ open: isOpen, dialogRef, onClose, suspended: galleryOpen });
 
   // Auto-scroll to bottom of comments when new ones are added
   React.useEffect(() => {
@@ -143,8 +146,8 @@ const AnnouncementDetailModal = ({
       toast.error("Comment cannot be empty");
       return;
     }
-    await onAddComment(announcement._id, commentText);
-    setCommentText("");
+    const saved = await onAddComment(announcement._id, commentText);
+    if (saved !== false) setCommentText("");
   };
 
   const handleReactionClick = async (emoji) => {
@@ -170,7 +173,7 @@ const AnnouncementDetailModal = ({
       setCopiedLink(id);
       toast.success("Link copied to clipboard");
       setTimeout(() => setCopiedLink(null), 2000);
-    } catch (err) {
+    } catch {
       toast.error("Failed to copy link");
     }
   };
@@ -211,14 +214,14 @@ const AnnouncementDetailModal = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col md:flex-row">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={announcement.title} style={{ background: "var(--color-card-bg)", color: "var(--color-text-primary)" }} className="rounded-2xl border shadow-xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col md:flex-row">
         {/* Left Section - Announcement Content */}
         <div className="flex-1 overflow-y-auto p-6 border-r border-gray-200">
           {/* Header */}
           <div className="flex items-start justify-between mb-6">
             <div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              <h2 className="text-2xl font-semibold mb-2">
                 {announcement.title}
               </h2>
               <div className="flex flex-wrap gap-2">
@@ -241,6 +244,7 @@ const AnnouncementDetailModal = ({
             </div>
             <button
               onClick={onClose}
+              aria-label="Close announcement"
               className="p-2 hover:bg-gray-100 rounded-lg transition"
             >
               <X className="w-6 h-6 text-gray-600" />
@@ -248,7 +252,7 @@ const AnnouncementDetailModal = ({
           </div>
 
           {/* Author and Dates */}
-          <div className="bg-gray-50 rounded-lg p-4 mb-6 space-y-2">
+          <div className="rounded-xl border p-4 mb-6 space-y-2">
             <div className="flex items-center gap-2">
               {announcement.createdBy?.avatar ? (
                 <img

@@ -559,6 +559,9 @@ export const chatHooks = {
   async onAnnouncementCreated(announcement, actor) {
     if (!webhookDispatcher.isEnabled()) return;
     const payload = buildAnnouncementPayload(announcement, actor);
+    // The announcement worker can retry after a lost queue acknowledgement.
+    // Reuse the existing dispatcher's event identity for durable deduplication.
+    payload.eventId = `announcement-created-${announcement._id || announcement.id}`;
     await webhookDispatcher.dispatch(EVENTS.ANNOUNCEMENT_CREATED, payload);
   },
 

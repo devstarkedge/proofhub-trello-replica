@@ -1,3 +1,4 @@
+import { filterTrackingRows } from '../../../shared/trackingFilterState.mjs';
 import {prefetchTrackingReport} from '../services/trackingReadPrefetch';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -20,7 +21,7 @@ import {
   Loader2
 } from 'lucide-react';
 import TrackingDialog from '../components/Tracking/TrackingDialog';
-import { getTrackingDashboard, getWorkOptions, getAgendas, errorMessage } from '../services/trackingApi';
+import { getTrackingDashboard, getTrackingFilterOptions, getAgendas, errorMessage } from '../services/trackingApi';
 import WorkspaceContext from '../context/WorkspaceContext';
 import AuthContext from '../context/AuthContext';
 import Avatar from '../components/Avatar';
@@ -215,22 +216,22 @@ function AgentStatus({ user }) {
 export default function TimeTrackingPage() {
   const { currentWorkspace } = useContext(WorkspaceContext) || {};
   const { user: authUser } = useContext(AuthContext) || {};
-  const workspaceId = currentWorkspace?._id;
   const [filters, setFilters] = useState(initial);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [selected, setSelected] = useState(null);
-  const [projects, setProjects] = useState([]);
-  const [mainTasks, setMainTasks] = useState([]);
+
+
   const [agendas, setAgendas] = useState([]);
   const [debounced, setDebounced] = useState(filters);
   const [detailFilters, setDetailFilters] = useState(initialDetailFilters);
-  const [detailTasks, setDetailTasks] = useState([]);
+
   const scope = useTrackingScope();
   const sentinel = useRef(null);
   const client = useQueryClient();
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebounced(filters), 300);
+    setDebounced(previous => ({ ...filters, search: previous.search }));
+    const timer = setTimeout(() => setDebounced(filters), 200);
     return () => clearTimeout(timer);
   }, [filters]);
 
@@ -240,6 +241,7 @@ export default function TimeTrackingPage() {
     queryFn: ({ pageParam, signal }) =>
       getTrackingDashboard({ ...debounced, summaryOnly: false, deferTotals: true, cursor: pageParam || undefined }, signal),
     getNextPageParam: last => last.nextCursor || undefined,
+    placeholderData: (previous, previousQuery) => previousQuery?.queryKey[1] === scope ? previous : undefined,
     staleTime: 30000,
     gcTime: 60000,
     retry: false
@@ -248,10 +250,10 @@ export default function TimeTrackingPage() {
   useEffect(() => {
     let timer;
     const refresh = e => {
-      if (e && !/^(tracking:|attendance:)/.test(e.detail?.type || '')) return;
+      if (e && !/^(tracking:|attendance:|card|task|board|assigned|authz|access)/.test(e.detail?.type || '')) return;
       clearTimeout(timer);
       timer = setTimeout(() => {
-        for(const section of ['dashboard','dashboard-activity','dashboard-overview'])client.invalidateQueries({queryKey:['tracking-private',scope,section]},{cancelRefetch:false});
+        for(const section of ['dashboard','dashboard-activity','dashboard-overview','filter-options'])client.invalidateQueries({queryKey:['tracking-private',scope,section]},{cancelRefetch:false});
       }, 750);
     };
     window.addEventListener('flowtask:realtime', refresh);
@@ -282,18 +284,18 @@ export default function TimeTrackingPage() {
   useEffect(() => {
     setSelected(null);
     setDetailFilters(initialDetailFilters);
-    setDetailTasks([]);
+
   }, [scope]);
 
   useEffect(() => {
     setDetailFilters(initialDetailFilters);
-    setDetailTasks([]);
+
   }, [selected?.userId]);
 
   const { hasNextPage, isFetchingNextPage, isError, fetchNextPage } = query;
 
   useEffect(() => {
-    if (!hasNextPage || isFetchingNextPage || isError) return;
+    if (!hasNextPage || isFetchingNextPage || isError || query.isPlaceholderData) return;
     const observer = new IntersectionObserver(
       entries => {
         if (Array.isArray(entries) && entries.some(e => e.isIntersecting)) fetchNextPage();
@@ -302,47 +304,23 @@ export default function TimeTrackingPage() {
     );
     if (sentinel.current) observer.observe(sentinel.current);
     return () => observer.disconnect();
-  }, [hasNextPage, isFetchingNextPage, isError, fetchNextPage]);
+  }, [hasNextPage, isFetchingNextPage, isError, fetchNextPage, query.isPlaceholderData]);
 
+  const reportOptions = useQuery({ queryKey: ['tracking-private', scope, 'filter-options', 'projects'],
+    enabled: isFiltersOpen, queryFn: ({ signal }) => getTrackingFilterOptions({ signal }), staleTime: 15000, gcTime: 60000, retry: false });
+  const reportTasks = useQuery({ queryKey: ['tracking-private', scope, 'filter-options', 'tasks', filters.projectId],
+    enabled: Boolean(filters.projectId), queryFn: ({ signal }) => getTrackingFilterOptions({ projectId: filters.projectId, signal }), staleTime: 15000, gcTime: 60000, retry: false });
+  const detailOptions = useQuery({ queryKey: ['tracking-private', scope, 'filter-options', 'owner-projects', selected?.userId],
+    enabled: Boolean(selected?.userId), queryFn: ({ signal }) => getTrackingFilterOptions({ userId: selected.userId, signal }), staleTime: 15000, gcTime: 60000, retry: false });
+  const detailTaskOptions = useQuery({ queryKey: ['tracking-private', scope, 'filter-options', 'owner-tasks', selected?.userId, detailFilters.projectId],
+    enabled: Boolean(selected?.userId && detailFilters.projectId), queryFn: ({ signal }) => getTrackingFilterOptions({ userId: selected.userId, projectId: detailFilters.projectId, signal }), staleTime: 15000, gcTime: 60000, retry: false });
+  const projects = reportOptions.data?.projects || [], mainTasks = reportTasks.data?.tasks || [];
+  const detailProjects = detailOptions.data?.projects || [], detailTasks = detailTaskOptions.data?.tasks || [];
   useEffect(() => {
     let live = true;
-    setProjects([]);
-    setAgendas([]);
-    if (!isFiltersOpen && !selected) return () => { live = false; };
-    getWorkOptions()
-      .then(next => live && setProjects(next.projects))
-      .catch(() => {});
-    getAgendas()
-      .then(next => live && setAgendas(next))
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [workspaceId, scope, isFiltersOpen, selected]);
-
-  useEffect(() => {
-    let live = true;
-    setMainTasks([]);
-    if (!filters.projectId) return;
-    getWorkOptions(filters.projectId)
-      .then(next => live && setMainTasks(next.tasks))
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [filters.projectId, workspaceId, scope]);
-
-  useEffect(() => {
-    let live = true;
-    setDetailTasks([]);
-    if (!detailFilters.projectId) return;
-    getWorkOptions(detailFilters.projectId)
-      .then(next => live && setDetailTasks(next.tasks))
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [detailFilters.projectId, workspaceId, scope]);
+    if (isFiltersOpen || selected) getAgendas().then(next => { if (live) setAgendas(next); }).catch(() => {});
+    return () => { live = false; };
+  }, [scope, isFiltersOpen, selected]);
 
   const change = (key, value) => {
     setFilters(prev => ({
@@ -422,7 +400,7 @@ export default function TimeTrackingPage() {
         ['INDIVIDUAL', 'Individual agenda']
       ]
     ],
-    ['Project', 'projectId', projects.map(p => [p._id, p.name])],
+    ['Project', 'projectId', detailProjects.map(p => [p._id, p.name])],
     ['Task', 'taskId', detailTasks.map(t => [t._id, t.title])],
     ['Agenda', 'agendaId', agendas.map(a => [a._id, a.title])]
   ];
@@ -633,6 +611,8 @@ export default function TimeTrackingPage() {
         )}
 
         {data?.activityUnavailable&&<p role="alert" className="px-5 py-2 text-xs text-amber-700">Activity details could not refresh. Attendance and work rows remain available. <button type="button" className="underline" onClick={()=>query.refetch()}>Retry activity</button></p>}
+        {query.isFetching && <p role="status" className="px-5 py-2 text-xs text-gray-500">Updating filtered results…</p>}
+        {(reportOptions.error || reportTasks.error || detailOptions.error || detailTaskOptions.error) && <p role="alert" className="px-5 py-2 text-xs text-red-600">Filter choices could not load. <button onClick={() => { reportOptions.refetch(); if (filters.projectId) reportTasks.refetch(); if (selected) { detailOptions.refetch(); if (detailFilters.projectId) detailTaskOptions.refetch(); } }}>Retry choices</button></p>}
         {/* Table View */}
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-sm">
@@ -648,7 +628,7 @@ export default function TimeTrackingPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-              {data?.users.map(u => (
+              {filterTrackingRows(data?.users || [], filters).map(u => (
                 <tr
                   key={u.userId}
                   className="hover:bg-gray-50/60 dark:hover:bg-gray-800/40 transition-colors"
@@ -906,7 +886,7 @@ export default function TimeTrackingPage() {
                   className="text-xs h-8 cursor-pointer"
                   onClick={() => {
                     setDetailFilters(initialDetailFilters);
-                    setDetailTasks([]);
+
                   }}
                 >
                   Reset filters

@@ -1,5 +1,8 @@
+import { invalidateAnnouncementReads } from '../services/announcementReadCache.js';
+import Notification from '../models/Notification.js';
+import { chatHooks } from '../utils/chatHooks.js';
+import { slackHooks } from '../utils/slackHooks.js';
 import { announcementAudience } from '../services/workspaceAudience.js';
-import { emitToUser } from '../realtime/emitters.js';
 import { emitAnnouncementEvent } from '../services/announcementEvents.js';
 /**
  * Announcement Worker (Event-Driven)
@@ -19,7 +22,6 @@ import Workspace from '../models/Workspace.js';
 import WorkspaceMembership from '../models/WorkspaceMembership.js';
 import '../models/User.js';
 import '../models/Notification.js';
-import { getIO } from '../realtime/index.js';
 import notificationService from '../utils/notificationService.js';
 import '../schedulers/announcementScheduler.js';
 import '../config/index.js';
@@ -85,19 +87,21 @@ const JOB_HANDLERS = {
     // No workspaceId travels on this job (enqueued by announcementScheduler.js,
     // which only knows the announcementId) — look it up unscoped first.
     const announcement = await workspaceContext.runUnscoped(async () => await Announcement.findById(announcementId)
-      .populate('createdBy')
-      .populate('subscribers.users')
-      .populate('subscribers.departments'));
+      .populate('createdBy', 'name email avatar')
+      .populate('subscribers.users', 'name email avatar')
+      .populate('subscribers.departments', 'name'));
 
     if (!announcement) {
       return { skipped: true, reason: 'not found' };
     }
 
     // Idempotency: already broadcasted
-    if (announcement.scheduleBroadcasted) {
+    if (announcement.scheduleBroadcasted && !announcement.deliveryPending) {
       return { skipped: true, reason: 'already broadcasted' };
     }
 
+    if (announcement.isArchived || +announcement.expiresAt <= Date.now()) return { skipped: true, reason: 'archived or expired' };
+    if (announcement.isScheduled && +announcement.scheduledFor > Date.now()) return { skipped: true, reason: 'not due' };
     const effectiveWorkspaceId = await resolveEffectiveWorkspaceId(announcement, jobWorkspaceId);
     if (!effectiveWorkspaceId) {
       console.warn(`[Worker:Announcement] broadcast:${announcementId} skipped: no workspace found`);
@@ -136,6 +140,8 @@ const JOB_HANDLERS = {
       return { skipped: true, reason: 'already archived' };
     }
 
+    if (+announcement.expiresAt > Date.now()) return { skipped: true, reason: 'expiry extended' };
+
     const effectiveWorkspaceId = await resolveEffectiveWorkspaceId(announcement, jobWorkspaceId);
 
     const updateFields = {
@@ -167,6 +173,7 @@ const JOB_HANDLERS = {
     );
 
     if (effectiveWorkspaceId) {
+      await invalidateAnnouncementReads(effectiveWorkspaceId);
       try {
         await workspaceContext.run({ workspaceId: effectiveWorkspaceId }, async () => {
           await emitAnnouncementEvent(announcement, 'announcement-archived', {
@@ -191,7 +198,8 @@ async function broadcastAnnouncement(announcement, announcementId) {
     // Create notifications — routed through notificationService (not a
     // direct insertMany) so each recipient's settings.notifications.announcements
     // toggle is actually honored.
-    const notifications = subscriberIds.map((userId) => ({
+    const delivered = new Set((await Notification.distinct('user', { entityId: announcement._id, type: 'announcement_created' })).map(String));
+    const notifications = subscriberIds.filter(userId => !delivered.has(String(userId))).map((userId) => ({
       type: 'announcement_created',
       title: 'New Announcement',
       message: `${announcement.createdBy.name} posted: ${announcement.title}`,
@@ -199,9 +207,12 @@ async function broadcastAnnouncement(announcement, announcementId) {
       sender: announcement.createdBy._id,
       entityId: announcement._id,
       entityType: 'Announcement',
+      metadata: { announcementId: String(announcement._id), url: `/announcements?open=${announcement._id}` },
     }));
 
+    await chatHooks.onAnnouncementCreated({ ...announcement.toJSON(), subscriberIds }, announcement.createdBy);
     await notificationService.createBulkNotifications(notifications);
+    await slackHooks.onAnnouncementPosted(announcement, subscriberIds, announcement.createdBy);
 
     // Persist first so a recipient's immediate seen/read update cannot make
     // the worker's in-memory document stale before broadcast state is saved.
@@ -209,18 +220,10 @@ async function broadcastAnnouncement(announcement, announcementId) {
       scheduled: true,
     });
 
-    // Emit real-time
-    const io = getIO();
-    subscriberIds.forEach((userId) => {
-      emitToUser(userId, 'announcement-created', {
-        announcement: announcement.toJSON(),
-        notification: {
-          type: 'announcement_created',
-          title: 'New Announcement',
-          message: `${announcement.createdBy.name} posted: ${announcement.title}`,
-        },
-      });
+    await emitAnnouncementEvent(announcement, 'announcement-created', {
+      announcement: announcement.toJSON(), notification: { type: 'announcement_created', title: 'New Announcement', message: announcement.title }
     });
+    await Announcement.updateOne({ _id: announcement._id }, { $set: { deliveryPending: false } });
 
     // Send emails (fire-and-forget)
     notificationService.sendAnnouncementEmails(announcement, subscriberIds);

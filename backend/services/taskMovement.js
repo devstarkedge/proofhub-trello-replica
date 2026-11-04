@@ -15,7 +15,7 @@ export async function authorizeDestination(req, boardId, listId) {
   return { project, list };
 }
 
-export async function moveTaskHierarchy(cardId, { boardId, listId, position, status, expectedRevision }) {
+export async function moveTaskHierarchy(cardId, { boardId, listId, position, status, expectedRevision, expectedBoardId }) {
   const session = await mongoose.startSession(); let moved;
   const labelsFor = async (ids, sourceBoard) => {
     if (String(sourceBoard) === String(boardId)) return ids || [];
@@ -31,6 +31,7 @@ export async function moveTaskHierarchy(cardId, { boardId, listId, position, sta
     await session.withTransaction(async () => {
       const card = await Card.findById(cardId).session(session);
       if (!card) throw new ErrorResponse('Task no longer exists', 404);
+      if (expectedBoardId !== undefined && String(card.board) !== String(expectedBoardId)) throw new ErrorResponse('Task changed projects; refresh before moving it again', 409);
       if (expectedRevision !== undefined && card.__v !== expectedRevision) throw new ErrorResponse('Task changed since this move; refresh before moving it again', 409);
       const sourceBoard = card.board, sourceList = card.list;
       await Card.updateMany({ _id: { $ne: card._id }, list: sourceList, position: { $gt: card.position }, isArchived: false }, { $inc: { position: -1 } }, { session });

@@ -26,6 +26,11 @@ import {
 import { protect } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
 import { uploadToCloudinaryMiddleware } from '../middleware/upload.js';
+import mongoose from 'mongoose';
+import Announcement from '../models/Announcement.js';
+import asyncHandler from '../middleware/asyncHandler.js';
+import { announcementVisibility } from '../services/announcementAccess.js';
+import { ErrorResponse } from '../middleware/errorHandler.js';
 
 const router = express.Router();
 
@@ -73,6 +78,15 @@ router.get('/unread-count', getUnreadCount);
 
 // Get all announcements
 router.get('/', getAnnouncements);
+
+// Every detail, reaction, comment and attachment route uses the same audience
+// predicate as the feed. A guessed ID is never an audience grant.
+router.use('/:id', asyncHandler(async (req, res, next) => {
+  if (!mongoose.isObjectIdOrHexString(req.params.id)) return next(new ErrorResponse('Announcement not found', 404));
+  const row = await Announcement.exists({ _id: req.params.id, ...announcementVisibility(req.user) });
+  if (!row) return next(new ErrorResponse('Announcement not found', 404));
+  next();
+}));
 
 // Get single announcement
 router.get('/:id', getAnnouncement);

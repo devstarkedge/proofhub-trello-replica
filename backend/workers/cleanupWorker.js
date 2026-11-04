@@ -1,3 +1,4 @@
+import { recoverPendingAnnouncementDeliveries } from '../schedulers/announcementScheduler.js';
 import { processAllAttendanceEvents } from '../modules/attendance/attendanceEvents.service.js';
 import { processFileDeletionJobs } from '../services/fileDeletionJobs.js';
 /**
@@ -19,7 +20,11 @@ import { reconcileAllOverdueSessions } from '../modules/attendance/attendanceSes
 import config from '../config/index.js';
 
 const JOB_HANDLERS = {
-  async 'cleanup-file-jobs'() { return processFileDeletionJobs(); },
+  async 'cleanup-file-jobs'() {
+    try { await recoverPendingAnnouncementDeliveries(); }
+    catch (error) { console.warn('[Announcement] Pending delivery will retry:', error.message); }
+    return processFileDeletionJobs();
+  },
   async 'attendance-event-delivery'(){await processAllAttendanceEvents();return {status:'ok'};},
   /**
    * Permanently delete attachments that have been in trash for 30+ days.

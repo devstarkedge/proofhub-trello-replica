@@ -1,3 +1,4 @@
+import { collectTrackingFilterOptions } from '../../../shared/trackingFilterState.mjs';
 import axios from 'axios';
 import sessionApi from './api';
 import { installScopedSessionTransport, sessionIdentity, isCurrentSession } from '../../../shared/sessionTransport.mjs';
@@ -47,3 +48,5 @@ export const getScreenshotDetails=(id,signal)=>data(api.get(`/screenshots/${id}/
 export const getWorkHistory=(id,offset,signal)=>data(api.get(`/sessions/${id}/history`,{params:{offset},signal}));
 
 export const getReportPreviews=(params,signal)=>data(api.get('/reports/previews',{params,signal}));
+
+export const getTrackingFilterOptions = (options = {}) => collectTrackingFilterOptions((params, signal) => data(api.get('/filter-options', { params, signal })), options);

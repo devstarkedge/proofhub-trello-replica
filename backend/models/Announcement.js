@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { announcementReadCachePlugin } from '../services/announcementReadCache.js';
 import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
 const reactionSchema = new mongoose.Schema({
@@ -199,6 +200,7 @@ const announcementSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  deliveryPending: { type: Boolean, default: false },
   scheduleBroadcasted: {
     type: Boolean,
     default: false
@@ -305,6 +307,7 @@ announcementSchema.index({ 'readBy.userId': 1 });
 announcementSchema.index({ 'acknowledgedBy.userId': 1 });
 
 announcementSchema.plugin(workspaceScopePlugin);
+announcementSchema.plugin(announcementReadCachePlugin);
 
 // Virtual for calculating remaining time
 announcementSchema.virtual('remainingTime').get(function() {

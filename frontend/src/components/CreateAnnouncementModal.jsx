@@ -1,7 +1,8 @@
+import useModalFocus from '../hooks/useModalFocus';
 import { sessionFetch as fetch } from '../services/sessionFetch';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Upload, Calendar, Clock, Users, Pin, Sparkles, Send, FileText, Image, File as FileIcon, AlertCircle, CheckCircle, RefreshCw, HardDrive, Loader2 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { toast } from 'react-toastify';
@@ -113,6 +114,9 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
   // Upload progress tracking
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
+
+  const dialogRef = useRef(null);
+  useModalFocus({ open: isOpen, dialogRef, onClose, blocked: isLoading || isUploading });
 
   // Google Drive picker integration
   const { openPicker, isLoading: isPickerLoading, isAvailable: isDriveAvailable } = useGoogleDrivePicker();
@@ -305,9 +309,11 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
   }, [files]);
 
   // Cleanup object URLs on unmount
+  const previewsRef = useRef(fileStates);
+  previewsRef.current = fileStates;
   useEffect(() => {
     return () => {
-      Object.values(fileStates).forEach(state => {
+      Object.values(previewsRef.current).forEach(state => {
         if (state.preview) {
           URL.revokeObjectURL(state.preview);
         }
@@ -457,6 +463,8 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isLoading || isUploading) return;
+    if (formData.scheduledFor && +formData.scheduledFor <= Date.now()) { toast.error("Choose a future date and time"); return; }
 
     if (!formData.title.trim()) {
       toast.error('Title is required');
@@ -506,6 +514,7 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
       onClose();
     } catch (error) {
       console.error('Error creating announcement:', error);
+      toast.error(error.message || 'Could not publish announcement. Your draft is preserved.');
       
       // Mark files as error
       const errorStates = {};
@@ -585,23 +594,26 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
   return (
     <AnimatePresence>
       {isOpen && (
-        <motion.div
+        <Motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-          onClick={onClose}
+          onClick={() => { if (!isLoading && !isUploading) onClose(); }}
         >
-          <motion.div
+          <Motion.div
             initial={{ opacity: 0, scale: 0.9, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden border border-white/20"
+            ref={dialogRef} tabIndex={-1}
+            role="dialog" aria-modal="true" aria-label="Create announcement"
+            style={{ background: "var(--color-card-bg)", color: "var(--color-text-primary)" }}
+            className="rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden border"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="relative bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 p-6 text-white">
+            <div className="relative bg-blue-600 p-6 text-white">
               <div className="absolute inset-0 bg-black/10 backdrop-blur-sm"></div>
               <div className="relative flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -617,7 +629,7 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                 </div>
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={() => { if (!isLoading && !isUploading) onClose(); }}
                   className="p-2 hover:bg-white/20 rounded-xl transition-all duration-200 backdrop-blur-sm active:scale-95 hover:rotate-90"
                 >
                   <X className="w-6 h-6" />
@@ -697,7 +709,7 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                   {/* Custom Category */}
                   <AnimatePresence>
                     {formData.category === 'Custom' && (
-                      <motion.div
+                      <Motion.div
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: "auto" }}
                         exit={{ opacity: 0, height: 0 }}
@@ -716,7 +728,7 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                           maxLength={50}
                           className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50/50 backdrop-blur-sm transition-all duration-300"
                         />
-                      </motion.div>
+                      </Motion.div>
                     )}
                   </AnimatePresence>
 
@@ -786,7 +798,7 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                         </label>
                         <div className="bg-gray-50/50 backdrop-blur-sm rounded-xl p-4 border border-gray-100 max-h-64 overflow-y-auto">
                           <div className="space-y-3">
-                            {departments.map((dept, index) => (
+                            {departments.map((dept) => (
                               <label
                                 key={dept._id}
                                 className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all duration-200 ${
@@ -856,7 +868,7 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                             className="bg-gray-50/50 backdrop-blur-sm rounded-xl p-4 border border-gray-100"
                           >
                             <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-                              {targetUsers.slice(0, 20).map((user, index) => (
+                              {targetUsers.slice(0, 20).map((user) => (
                                 <div
                                   key={user._id}
                                   className="flex items-center gap-2 bg-white rounded-full px-3 py-1 border border-gray-200 shadow-sm"
@@ -946,7 +958,9 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                         timeIntervals={15}
                         timeCaption="Time"
                         dateFormat="MMMM d, yyyy h:mm aa"
-                        minDate={new Date()}
+                        minDate={new Date(new Date().setHours(0, 0, 0, 0))}
+                        isClearable
+                        filterTime={time => +time > Date.now()}
                         placeholderText="Select date and time"
                         shouldCloseOnSelect={true}
                         className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50/50 backdrop-blur-sm transition-all duration-300"
@@ -1089,7 +1103,7 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                           </div>
                           
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-64 overflow-y-auto p-1">
-                            {files.map((file, idx) => {
+                            {files.map((file) => {
                               const state = fileStates[file.name] || { status: 'pending', progress: 0 };
                               const isImage = ALLOWED_TYPES.images.includes(file.type);
                               
@@ -1190,7 +1204,7 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
               >
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={() => { if (!isLoading && !isUploading) onClose(); }}
                   disabled={isLoading || isUploading}
                   className="flex-1 px-6 py-3 border border-gray-300 rounded-xl text-gray-700 font-semibold hover:bg-gray-100 transition-all duration-200 bg-white/50 backdrop-blur-sm disabled:opacity-50 active:scale-[0.98]"
                 >
@@ -1217,8 +1231,8 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
                 </button>
               </div>
             </form>
-          </motion.div>
-        </motion.div>
+          </Motion.div>
+        </Motion.div>
       )}
     </AnimatePresence>
   );
@@ -1263,8 +1277,8 @@ const styles = `
   }
 
   .react-datepicker-custom .react-datepicker__day:hover {
-    background-color: rgba(255, 255, 255, 0.2) !important;
-    color: white !important;
+    background-color: var(--color-primary, #2563eb) !important;
+    color: var(--color-text-on-primary, #fff) !important;
   }
 
   .react-datepicker-custom .react-datepicker__day--selected {
@@ -1273,8 +1287,8 @@ const styles = `
   }
 
   .react-datepicker-custom .react-datepicker__day--today {
-    background: rgba(255, 255, 255, 0.1);
-    color: white;
+    background: var(--color-bg-tertiary, #eff6ff);
+    color: var(--color-primary, #2563eb) !important;
     font-weight: 600;
   }
 

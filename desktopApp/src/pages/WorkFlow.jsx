@@ -575,6 +575,7 @@ useEffect(() => {
 
     } catch (error) {
       console.error('Error moving card:', error);
+      throw error; // Let Board show a failure instead of a success toast.
     }
   }, [lists, moveCard]);
 

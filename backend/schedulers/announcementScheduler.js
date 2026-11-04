@@ -238,3 +238,25 @@ export async function recoverAnnouncementSchedules() {
     logger.info(`[Scheduler:Announcement] recovered ${recovered} jobs on startup`);
   }
 }
+
+// Bounded repair uses the existing minute maintenance job and command connection.
+// Jobs carry only IDs; business content stays in MongoDB.
+export async function recoverPendingAnnouncementDeliveries() {
+  if (!isQueueActive()) return;
+  const rows = await workspaceContext.runUnscoped(async () => await Announcement.find({
+    deliveryPending: true, isArchived: false, expiresAt: { $gt: new Date() },
+    $or: [{ isScheduled: { $ne: true } }, { scheduledFor: { $lte: new Date() } }]
+  }).select('_id workspaceId scheduledFor').sort({ createdAt: 1 }).limit(20).lean());
+  for (const row of rows) {
+    const existing = await announcementQueue.getJob(broadcastJobId(String(row._id)));
+    if (existing) {
+      const state = await existing.getState();
+      if (state === 'failed') {
+        if (typeof existing.retry === 'function') await existing.retry();
+        else { await existing.remove(); await scheduleAnnouncementBroadcast(row); }
+      }
+      continue;
+    }
+    await scheduleAnnouncementBroadcast(row);
+  }
+}

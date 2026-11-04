@@ -518,32 +518,19 @@ class DatabaseService {
     return await res.json();
   }
 
-  async moveCard(cardId, destinationListId, newPosition, newStatus) {
-    const headers = buildHeaders();
-
-    // First, update the card's position and list
-    const moveRes = await fetch(`${baseURL}/api/cards/${cardId}/move`, {
+  async moveCard(cardId, destinationListId, newPosition) {
+    // The move endpoint commits list, position and status together. A second
+    // status PATCH can fail after a successful move and cause a false rollback.
+    const res = await fetch(`${baseURL}/api/cards/${cardId}/move`, {
       method: 'PUT',
-      headers,
+      headers: buildHeaders(),
       body: JSON.stringify({ destinationListId, newPosition })
     });
-    
-    if (!moveRes.ok) {
-      throw new Error('Failed to move card');
+    const result = await res.json();
+    if (!res.ok || result.success === false) {
+      throw new Error(result.message || 'Failed to move card');
     }
-
-    // Then, update the card's status
-    const updateRes = await fetch(`${baseURL}/api/cards/${cardId}`, {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify({ status: newStatus })
-    });
-
-    if (!updateRes.ok) {
-      throw new Error('Failed to update card status');
-    }
-
-    return await updateRes.json();
+    return result;
   }
 
   // ========== COPY / MOVE TASK APIs ==========

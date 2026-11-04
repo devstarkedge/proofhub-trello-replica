@@ -1,3 +1,4 @@
+import { newestProjects } from '../../../shared/projectOrder.mjs';
 
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
@@ -41,7 +42,7 @@ const useProjectStore = create(
           try {
             const response = await Database.getDepartmentsWithAssignments({ signal: controller.signal, compact: true });
             if (version !== departmentRequestVersion) return;
-            const departmentsData = response.data || [];
+            const departmentsData = (response.data || []).map(dept => ({ ...dept, projects: newestProjects(dept.projects) }));
             const membersMap = {}, projectsMap = {};
             departmentsData.forEach(dept => {
               membersMap[dept._id] = dept.membersWithAssignments || [];
@@ -57,7 +58,7 @@ const useProjectStore = create(
           } finally {
             if (departmentRequest === request) {
               departmentRequest = null;
-              if (request.refreshAfter && version === departmentRequestVersion) return get().fetchDepartments(true);
+              if (request.refreshAfter && version === departmentRequestVersion) await get().fetchDepartments(true);
             }
           }
         })();
@@ -65,7 +66,7 @@ const useProjectStore = create(
       },
 
       // Optimistic Add Project
-      addProject: async (departmentId, projectData) => {
+      addProject: async () => {
         // We don't implement full optimistic update here because creation usually returns
         // new data we need (ID, etc). But we can try if needed. 
         // For now, standard wait-then-refresh pattern is safer for creation, 
@@ -106,13 +107,13 @@ const useProjectStore = create(
                   // Replace temp project with real one
                   const updatedProjects = [...projects];
                   updatedProjects[index] = newProject;
-                  return { ...dept, projects: updatedProjects };
+                  return { ...dept, projects: newestProjects(updatedProjects) };
                 }
               }
               // Add new project if not replacing
               return {
                 ...dept,
-                projects: [...projects, newProject]
+                projects: newestProjects([newProject, ...projects])
               };
             }
             return dept;
@@ -205,7 +206,7 @@ const useProjectStore = create(
               const newProjects = projects.filter(p => !existingIds.has(p._id));
               return {
                 ...dept,
-                projects: [...dept.projects, ...newProjects]
+                projects: newestProjects([...dept.projects, ...newProjects])
               };
             }
             return dept;

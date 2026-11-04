@@ -120,7 +120,7 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
   const listIds = lists.map(l => l._id);
   const cardFilter = { $and: [{ list: { $in: listIds }, isArchived: false }, await resourceReadFilter(req, 'task', projectId)] };
   const cards = await Card.find(cardFilter)
-    .select('title list description position status priority labels assignees board coverImage startDate dueDate estimation start_date end_date subtaskStats loggedTime')
+    .select('title list description position status priority labels assignees board coverImage startDate dueDate estimation start_date end_date subtaskStats loggedTime __v')
     .populate('assignees', 'name email avatar role')
     .populate('members', 'name email avatar')
     .populate('coverImage', 'url secureUrl thumbnailUrl fileName fileType isCover')

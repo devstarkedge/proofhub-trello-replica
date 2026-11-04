@@ -1,3 +1,4 @@
+import { trackingFilterOptions } from './tracking.filterOptions.js';
 import express from 'express';
 import { protect } from '../../middleware/authMiddleware.js';
 import asyncHandler from '../../middleware/asyncHandler.js';
@@ -38,6 +39,7 @@ const audit = (req, action, targetType, targetId, after = null) => recordAuditLo
   before: null, after, category: 'attendance_management', meta: { workspaceId: req.workspaceId }
 });
 router.get('/me', asyncHandler(async (req,res) => send(res, await currentState(req.workspaceId, req.user.id))));
+router.get('/filter-options', asyncHandler(async (req,res) => { res.set('Cache-Control', 'private, no-store'); send(res, await trackingFilterOptions(req.workspaceId, req.user.id, req.query)); }));
 router.get('/options', asyncHandler(async (req,res) => {res.set('Cache-Control','private, no-store');send(res, await workOptions(req.workspaceId, req.user.id, req.query.projectId,req.query));}));
 router.get('/agendas',asyncHandler(async(req,res)=>send(res,await listAgendas(req.workspaceId,req.user.id))));
 router.get('/dashboard',asyncHandler(async(req,res)=>{

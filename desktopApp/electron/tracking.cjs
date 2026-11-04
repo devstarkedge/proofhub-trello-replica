@@ -488,9 +488,10 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
         if(busy)return;
         const inactive=captureSchedule.inactive(now),elapsed=now-lastBoundary;
         const checkpoint=checkpointPending||elapsed>=MAX_ACTIVITY_WINDOW_MS||inactive&&elapsed>=Math.min((policy?.intervalSeconds||600)*1000,MAX_ACTIVITY_WINDOW_MS);
-        if(checkpoint||captureSchedule.due(now)){
+        const captureDue=captureSchedule.due(now);
+        if(checkpoint||captureDue){
           busy=true;
-          try{checkpointPending=false;captureTask=boundary(checkpoint?(inactive?'inactive':'activity-only'):null);await captureTask;}
+          try{checkpointPending=false;captureTask=boundary(checkpoint&&!captureDue?(inactive?'inactive':'activity-only'):null);await captureTask;}
           finally{captureTask=null;busy=false;}
           // Upload retries must not hold up the next capture or heartbeat.
           flush().catch(()=>{});

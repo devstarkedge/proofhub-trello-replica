@@ -2910,3 +2910,6 @@ html[data-density="compact"] .analytics-kpi {
   min-height: 118px !important;
   padding: 12px !important;
 }
+/* Keep today legible when it is also selected. */
+:root[data-color] .react-datepicker__day--today.react-datepicker__day--selected,
+:root[data-color] .react-datepicker__day--today.react-datepicker__day--keyboard-selected { color: var(--color-text-on-primary, #fff) !important; }

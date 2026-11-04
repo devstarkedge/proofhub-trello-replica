@@ -1,198 +1,63 @@
-import React, { useRef, useEffect } from 'react';
-import { Pin, Clock, Users, MessageCircle, Paperclip, X } from 'lucide-react';
+import { createElement, memo, useEffect, useRef } from 'react';
+import { Archive, ArchiveRestore, Pin, Pencil, X, MessageCircle, Paperclip, Users } from 'lucide-react';
 import { formatDistanceToNow, formatDate } from 'date-fns';
+import { announcementEmojis, entityId } from '../../../shared/announcementState.mjs';
 
-const AnnouncementCard = ({
-  announcement,
-  onOpen,
-  onPin,
-  onArchive,
-  onDelete,
-  onSeen, // Callback when announcement enters viewport
-  userRole,
-  userId,
-  isUserAdmin
-}) => {
-  const cardRef = useRef(null);
+const relativeDate = date => Number.isFinite(+new Date(date)) ? formatDistanceToNow(new Date(date), { addSuffix: true }) : '';
+const expiryDate = date => Number.isFinite(+new Date(date)) ? formatDate(new Date(date), 'MMM d, yyyy') : '—';
+const categoryStyle = category => ({ HR: 'bg-purple-100 text-purple-700', Urgent: 'bg-red-100 text-red-700', 'System Update': 'bg-blue-100 text-blue-700', Events: 'bg-yellow-100 text-yellow-700' }[category] || 'bg-gray-100 text-gray-700');
 
-  // Intersection Observer for seen tracking
+export default memo(function AnnouncementCard({ announcement: row, onOpen, onEdit, onPin, onArchive, onDelete, onReaction, onSeen, userId, userRole }) {
+  const element = useRef(null);
   useEffect(() => {
-    if (!onSeen || !cardRef.current) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            // Announcement is visible in viewport (50%+ visible)
-            onSeen(announcement._id);
-            // Disconnect after first sight to avoid duplicate calls
-            observer.disconnect();
-          }
-        });
-      },
-      { threshold: 0.5 } // Trigger when 50% of card is visible
-    );
-
-    observer.observe(cardRef.current);
-
+    if (!onSeen || !element.current || row.isArchived) return;
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) { onSeen(row._id); observer.disconnect(); }
+    }, { threshold: 0.5 });
+    observer.observe(element.current);
     return () => observer.disconnect();
-  }, [announcement._id, onSeen]);
-
-  const handleReactionClick = (emoji) => {
-    onOpen?.(announcement._id);
-  };
-
-  const uniqueReactions = React.useMemo(() => {
-    if (!announcement.reactions || announcement.reactions.length === 0) return [];
-    
-    // Deduplicate reactions to prevent duplicate key errors
-    const reactionMap = {};
-    
-    announcement.reactions.forEach(reaction => {
-      if (!reactionMap[reaction.emoji]) {
-        reactionMap[reaction.emoji] = { ...reaction };
-      } else {
-        // Validation: Merge counts
-        reactionMap[reaction.emoji].count += reaction.count;
-        
-        // Merge users for tooltip
-        if (reaction.users) {
-          const existingIds = new Set((reactionMap[reaction.emoji].users || []).map(u => (u._id || u).toString()));
-          const newUsers = reaction.users.filter(u => !existingIds.has((u._id || u).toString()));
-          reactionMap[reaction.emoji].users = [...(reactionMap[reaction.emoji].users || []), ...newUsers];
-        }
-      }
-    });
-
-    return Object.values(reactionMap);
-  }, [announcement.reactions]);
-
-  const canEdit = isUserAdmin || announcement.createdBy?._id === userId;
-
-  return (
-    <div
-      ref={cardRef}
-      className={`bg-white border-2 rounded-lg p-4 cursor-pointer transition-all hover:shadow-lg ${
-        announcement.isPinned
-          ? 'border-blue-400 bg-blue-50 shadow-md'
-          : 'border-gray-200 hover:border-gray-300'
-      }`}
-      onClick={() => onOpen?.(announcement._id)}
-    >
-      {/* Header */}
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-start gap-3 flex-1">
-          {announcement.isPinned && (
-            <Pin className="w-5 h-5 text-blue-600 mt-1 flex-shrink-0" fill="currentColor" />
-          )}
-          <div className="flex-1">
-            <h3 className="text-lg font-bold text-gray-900 mb-1">{announcement.title}</h3>
-            <div className="flex flex-wrap gap-2 items-center mb-2">
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                announcement.category === 'HR'
-                  ? 'bg-purple-100 text-purple-700'
-                  : announcement.category === 'Urgent'
-                  ? 'bg-red-100 text-red-700'
-                  : announcement.category === 'System Update'
-                  ? 'bg-blue-100 text-blue-700'
-                  : announcement.category === 'Events'
-                  ? 'bg-yellow-100 text-yellow-700'
-                  : 'bg-gray-100 text-gray-700'
-              }`}>
-                {announcement.category}
-              </span>
-              <span className="text-xs text-gray-500">
-                {formatDistanceToNow(new Date(announcement.createdAt), { addSuffix: true })}
-              </span>
-            </div>
+  }, [onSeen, row._id, row.isArchived]);
+  const creator = entityId(row.createdBy) === String(userId);
+  const canEdit = creator || ['admin', 'manager'].includes(userRole);
+  const canOrganize = creator || userRole === 'admin';
+  const attachments = row.attachments?.filter(file => !file.isDeleted).length || 0;
+  const actions = [
+    canEdit && onEdit && [Pencil, 'Edit announcement', () => onEdit(row)],
+    canOrganize && onPin && !row.isArchived && [Pin, row.isPinned ? 'Unpin announcement' : 'Pin announcement', () => onPin(row)],
+    canOrganize && onArchive && [row.isArchived ? ArchiveRestore : Archive, row.isArchived ? 'Restore announcement' : 'Archive announcement', () => onArchive(row)],
+    canEdit && onDelete && [X, 'Delete announcement', () => onDelete(row)]
+  ].filter(Boolean);
+  return <article ref={element} className={`rounded-lg border-2 p-4 shadow-sm transition-shadow hover:shadow-lg ${row.isPinned ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/20' : 'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900'}`} style={{ color: 'var(--color-text-primary)' }}>
+    <header className="mb-3 flex items-start justify-between gap-3">
+      <button type="button" className="flex min-w-0 flex-1 items-start gap-3 text-left focus-visible:outline-2 focus-visible:outline-blue-500" onClick={() => onOpen?.(row._id)}>
+        {row.isPinned && <Pin className="mt-1 h-5 w-5 shrink-0 text-blue-600" fill="currentColor" aria-label="Pinned" />}
+        <div className="min-w-0 flex-1">
+          <h2 className="mb-1 break-words text-lg font-bold leading-snug">{row.title}</h2>
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className={`rounded-full px-3 py-1 text-sm font-medium ${categoryStyle(row.category)}`}>{row.category === 'Custom' ? row.customCategory : row.category}</span>
+            <span className="text-xs text-gray-500">{relativeDate(row.createdAt)}</span>
           </div>
         </div>
-
-        {/* Actions */}
-        {canEdit && (
-          <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-            {onArchive && (
-              <button
-                onClick={() => onArchive(announcement._id)}
-                className="p-2 hover:bg-gray-100 rounded-md transition"
-                title="Archive"
-              >
-                <Clock className="w-4 h-4 text-gray-600" />
-              </button>
-            )}
-            {onDelete && (
-              <button
-                onClick={() => onDelete(announcement._id)}
-                className="p-2 hover:bg-red-100 rounded-md transition"
-                title="Delete"
-              >
-                <X className="w-4 h-4 text-red-600" />
-              </button>
-            )}
-          </div>
-        )}
+      </button>
+      <div className="flex shrink-0 flex-wrap justify-end gap-1">{actions.map(([Icon, label, action]) => <button key={label} type="button" onClick={action} title={label} aria-label={label} className={`rounded-md p-2 transition-colors ${label === 'Delete announcement' ? 'text-red-600 hover:bg-red-100' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'}`}>{createElement(Icon, { size: 16 })}</button>)}</div>
+    </header>
+    <button type="button" aria-label={`Read ${row.title}`} className="mb-3 block w-full text-left focus-visible:outline-2 focus-visible:outline-blue-500" onClick={() => onOpen?.(row._id)}>
+      <p className="line-clamp-2 break-words text-sm leading-relaxed text-gray-700 dark:text-gray-300">{row.description}</p>
+    </button>
+    {!!attachments && <div className="mb-3 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300"><Paperclip className="h-4 w-4" /><span>{attachments} attachment{attachments === 1 ? '' : 's'}</span></div>}
+    <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-3 dark:border-gray-700">
+      <div className="flex flex-wrap items-center gap-2">{announcementEmojis.map(emoji => {
+        const reaction = row.reactions?.find(item => item.emoji === emoji);
+        const selected = reaction?.users?.some(member => entityId(member) === String(userId));
+        return <button key={emoji} type="button" aria-label={`React ${emoji}`} aria-pressed={Boolean(selected)} onClick={() => onReaction?.(row._id, emoji, !selected)} className={`flex items-center gap-1 rounded border px-2 py-1 text-sm transition-colors ${selected ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-transparent bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>
+          {emoji}<span className="ml-1 text-xs tabular-nums">{reaction?.count || 0}</span>
+        </button>;
+      })}</div>
+      <div className="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-300">
+        {row.commentsCount > 0 && <button type="button" onClick={() => onOpen?.(row._id)} className="flex items-center gap-1" aria-label={`Open ${row.commentsCount} comments`}><MessageCircle size={16} />{row.commentsCount}</button>}
+        {row.subscribers?.users?.length > 0 && <span className="flex items-center gap-1"><Users size={16} />{row.subscribers.users.length}</span>}
       </div>
-
-      {/* Description */}
-      <p className="text-gray-700 text-sm mb-3 line-clamp-2">
-        {announcement.description}
-      </p>
-
-      {/* Attachments Preview */}
-      {announcement.attachments && announcement.attachments.length > 0 && (
-        <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
-          <Paperclip className="w-4 h-4" />
-          <span>{announcement.attachments.length} attachment{announcement.attachments.length !== 1 ? 's' : ''}</span>
-        </div>
-      )}
-
-      {/* Footer */}
-      <div className="flex items-center justify-between pt-3 border-t border-gray-200">
-        {/* Reactions */}
-        <div className="flex gap-2 items-center">
-          {uniqueReactions.length > 0 ? (
-            uniqueReactions.map((reaction) => (
-              <button
-                key={reaction.emoji}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleReactionClick(reaction.emoji);
-                }}
-                className="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm transition flex items-center gap-1"
-                title={reaction.users?.map(u => u.name).join(', ')}
-              >
-                <span>{reaction.emoji}</span>
-                <span className="text-xs text-gray-600">{reaction.count}</span>
-              </button>
-            ))
-          ) : (
-            <span className="text-xs text-gray-500">No reactions</span>
-          )}
-        </div>
-
-        {/* Comments and Pin */}
-        <div className="flex items-center gap-3">
-          {announcement.commentsCount > 0 && (
-            <div className="flex items-center gap-1 text-sm text-gray-600">
-              <MessageCircle className="w-4 h-4" />
-              <span>{announcement.commentsCount}</span>
-            </div>
-          )}
-          {announcement.subscribers?.users?.length > 0 && (
-            <div className="flex items-center gap-1 text-sm text-gray-600">
-              <Users className="w-4 h-4" />
-              <span>{announcement.subscribers.users.length}</span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Expiry Info */}
-      <div className="mt-2 text-xs text-gray-500">
-        Expires: {formatDate(new Date(announcement.expiresAt), 'MMM d, yyyy')}
-      </div>
-    </div>
-  );
-};
-
-export default AnnouncementCard;
+    </footer>
+    <p className="mt-2 text-xs text-gray-500">Expires: {expiryDate(row.expiresAt)}{row.isArchived ? ' · Archived' : row.isScheduled && +new Date(row.scheduledFor) > Date.now() ? ` · Scheduled ${relativeDate(row.scheduledFor)}` : ''}</p>
+  </article>;
+});
