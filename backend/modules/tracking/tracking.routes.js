@@ -2,6 +2,7 @@ import express from 'express';
 import { protect } from '../../middleware/authMiddleware.js';
 import asyncHandler from '../../middleware/asyncHandler.js';
 import { rateLimiter } from '../../middleware/rateLimiter.js';
+import { canUseTrackingTelemetryFallback } from '../../middleware/trackingTelemetryBudget.js';
 import { recordAuditLog } from '../permissions/auditLogService.js';
 import { id } from '../../authz/engine.js';
 import { can } from './tracking.authorization.js';
@@ -22,7 +23,7 @@ import {observeTrackingRead} from './tracking.readCache.js';
 
 const router = express.Router();
 router.use(protect);
-router.use(rateLimiter({ windowMs: 60000, maxRequests: 180, allowReadFallback: true, keyFn: req => `${req.workspaceId}:${req.user.id}`, message: 'Too many tracking requests; retry shortly.' }));
+router.use(rateLimiter({ windowMs: 60000, maxRequests: 180, allowReadFallback: true, allowWriteFallback:canUseTrackingTelemetryFallback, keyFn: req => `${req.workspaceId}:${req.user.id}`, message: 'Too many tracking requests; retry shortly.' }));
 const actor = req => ({ workspaceId: req.workspaceId, userId: req.user.id });
 const send = (res, data) => res.json({ success: true, data });
 const sendCached = async (res, load) => {
@@ -118,7 +119,7 @@ router.post('/devices/:deviceId/revoke', asyncHandler(async (req,res) => {
   await releaseDevice({...actor(req),deviceId:req.params.deviceId,revoke:true});
   await audit(req, 'TRACKING_DEVICE_REVOKED', 'TrackingDevice', req.params.deviceId); send(res, { revoked: true });
 }));
-router.post('/devices/:deviceId/heartbeat', asyncHandler(async (req,res) => send(res, await heartbeat({ ...actor(req), deviceId: req.params.deviceId, sessionId: req.body?.sessionId, state: req.body?.state }))));
+router.post('/devices/:deviceId/heartbeat', asyncHandler(async (req,res) => send(res, await heartbeat({ ...actor(req), deviceId: req.params.deviceId, sessionId: req.body?.sessionId, state: req.body?.state, resolveCurrentSession:req.body?.resolveCurrentSession===true, includeEvidenceCursor:req.body?.includeEvidenceCursor===true }))));
 router.post('/devices/:deviceId/activity/:action',asyncHandler(async(req,res)=>{
   if(req.get('origin'))fail('Automatic work changes require the FlowTask desktop app',403,'DESKTOP_DEVICE_REQUIRED');
   send(res,await changeWorkOnActivity({...actor(req),deviceId:req.params.deviceId,action:req.params.action,sessionId:req.body?.sessionId,operationId:req.body?.operationId,expectedRevision:req.body?.expectedRevision,idleSeconds:req.body?.idleSeconds,noticeAuthorization:req.get('x-desktop-notice-authorization')}));

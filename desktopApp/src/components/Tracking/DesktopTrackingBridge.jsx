@@ -14,6 +14,17 @@ export default function DesktopTrackingBridge() {
   const [status,setStatus]=useState(null);
   const lastAutomaticReceipt=useRef('');
   const lastAuthRecovery=useRef({});
+  const lastMonitoringConnection=useRef({});
+  useEffect(()=>{
+    const scope=`${workspaceId}:${userId}`;
+    const scoped=isAuthenticated&&String(status?.userId)===String(userId)&&String(status?.workspaceId)===String(workspaceId);
+    const healthy=scoped&&['monitoring','paused','ready','disabled'].includes(status?.state)&&!status?.error&&!status?.errorCode;
+    const previous=lastMonitoringConnection.current;
+    lastMonitoringConnection.current={scope,healthy};
+    // Refresh server diagnostics as soon as native monitoring recovers, so a
+    // stale session-read error does not keep Needs attention visible.
+    if(healthy&&(!previous.healthy||previous.scope!==scope))void trackingStore(scope,workspaceId).reload();
+  },[isAuthenticated,userId,workspaceId,status?.state,status?.error,status?.errorCode,status?.userId,status?.workspaceId]);
   useEffect(()=>{
     if(!isDesktop||!isAuthenticated||!userId||!workspaceId||status?.errorCode!=='ACCESS_REFRESH_REQUIRED')return;
     if(String(status.userId)!==String(userId)||String(status.workspaceId)!==String(workspaceId))return;
@@ -38,7 +49,13 @@ export default function DesktopTrackingBridge() {
     lastAutomaticReceipt.current=key;
     trackingStore(`${workspaceId}:${userId}`,workspaceId).apply(receipt);
   },[status?.workTransition,isAuthenticated,userId,workspaceId]);
-  useEffect(()=>{const tracking=window.flowtaskDesktop?.tracking;if(!isDesktop||!tracking)return;tracking.getStatus().then(setStatus).catch(()=>{});return tracking.onStatus(setStatus);},[isDesktop]);
+  useEffect(()=>{
+    const tracking=window.flowtaskDesktop?.tracking;if(!isDesktop||!tracking)return;
+    let live=true,received=false;
+    const stop=tracking.onStatus(value=>{received=true;if(live)setStatus(value);});
+    tracking.getStatus().then(value=>{if(live&&!received)setStatus(value);}).catch(()=>{});
+    return()=>{live=false;stop?.();};
+  },[isDesktop]);
   useEffect(() => {
     const tracking = window.flowtaskDesktop?.tracking;
     if (!isDesktop||!tracking) return;

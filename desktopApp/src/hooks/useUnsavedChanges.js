@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 
 const FIELD_LABELS = {
   title: 'Title',
@@ -52,7 +52,14 @@ const useUnsavedChanges = ({ initialValues, currentValues }) => {
       .map((field) => FIELD_LABELS[field]);
   }, [initialValues, currentValues]);
 
-  return { isDirty: dirtyFields.length > 0, dirtyFields };
+  const isDirty = dirtyFields.length > 0;
+  useEffect(() => {
+    if (!isDirty) return;
+    const protectChanges = event => event.preventDefault();
+    window.addEventListener('beforeunload', protectChanges);
+    return () => window.removeEventListener('beforeunload', protectChanges);
+  }, [isDirty]);
+  return { isDirty, dirtyFields };
 };
 
 export default useUnsavedChanges;

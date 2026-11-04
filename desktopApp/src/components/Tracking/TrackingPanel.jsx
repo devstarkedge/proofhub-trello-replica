@@ -396,7 +396,7 @@ export default function TrackingPanel({
     : null;
   const busy = sessionAction.busy || Boolean(error) || expired || Boolean(scopedNative?.automaticWorkPending);
   const capture = isDesktop
-    ? scopedNative?.state || device?.state || 'unavailable'
+    ? scopedNative?.reconnecting ? 'Reconnecting automatically' : scopedNative?.state || device?.state || 'unavailable'
     : device
     ? `Connected desktop · ${device.state}`
     : 'Capture unavailable · desktop app required';

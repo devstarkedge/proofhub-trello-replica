@@ -4,7 +4,7 @@ import { Download, RefreshCw } from 'lucide-react';
 import { Button } from './ui/button';
 import { hasPendingSessionActions } from '../services/sessionActions';
 import { hasPendingWorkspacePreferences } from '../services/workspacePreferences';
-import { applyUpdateStatus, useDesktopUpdates, updateStatusText, checkDesktopUpdates, restartDesktopUpdate, postponeDesktopUpdate } from '../services/desktopUpdates';
+import { applyUpdateStatus, useDesktopUpdates, updateStatusText, checkDesktopUpdates, restartDesktopUpdate, postponeDesktopUpdate, cancelDesktopUpdate } from '../services/desktopUpdates';
 
 export default function DesktopUpdateBridge() {
   const state = useDesktopUpdates();
@@ -40,10 +40,12 @@ export default function DesktopUpdateBridge() {
     <p className="mt-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>Installed {state.currentVersion}{state.version ? ` · New version ${state.version}` : ''}</p>
     {state.phase === 'downloading' && <progress className="mt-3 h-2 w-full accent-blue-600" max="100" value={state.progress} aria-label="Update download progress" />}
     {state.message && <p className="mt-2 text-xs leading-relaxed" style={{ color: 'var(--color-text-secondary)' }}>{state.message}</p>}
-    {state.phase === 'downloaded' && <p className="mt-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>{state.restartPending ? 'Restart is scheduled. FlowTask will update and reopen after attendance, work, saved changes and uploads have finished. You can keep working.' : 'Restart now if safe, or schedule a restart after attendance, work, saved changes and uploads have finished.'}</p>}
+    {state.phase === 'downloaded' && <p className="mt-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>{state.restartPending ? state.restartMode === 'idle' ? 'Update scheduled after attendance, work and pending uploads finish. You can keep working.' : 'Restart requested. Activity will be saved and your current work session will continue after FlowTask reopens.' : 'Restart now to save activity and continue the same session after updating. Later schedules the update after attendance and work finish.'}</p>}
+    {state.phase === 'installing' && <p className="mt-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>Saving activity and preparing the update. Attendance and work remain saved on the server.</p>}
     <div className="mt-3 flex justify-end gap-2">
-      <Button size="sm" variant="outline" disabled={state.phase === 'installing'} onClick={postponeDesktopUpdate}>{state.restartPending ? 'Cancel restart' : state.phase === 'downloaded' ? 'Later' : 'Dismiss'}</Button>
-      {state.phase === 'downloaded' && <Button size="sm" disabled={state.restartPending} onClick={restartDesktopUpdate}><RefreshCw size={14} />{state.restartPending ? 'Restart scheduled' : 'Restart to Update'}</Button>}
+      {state.restartPending && state.phase === 'downloaded' && <Button size="sm" variant="outline" onClick={cancelDesktopUpdate}>Cancel</Button>}
+      <Button size="sm" variant="outline" disabled={state.phase === 'installing' || state.restartPending && state.restartMode === 'idle'} onClick={postponeDesktopUpdate}>{state.phase === 'downloaded' ? state.restartPending && state.restartMode === 'idle' ? 'Scheduled' : 'Later' : 'Dismiss'}</Button>
+      {state.phase === 'downloaded' && <Button size="sm" disabled={state.restartPending && state.restartMode === 'now'} onClick={restartDesktopUpdate}><RefreshCw size={14} />{state.restartPending && state.restartMode === 'now' ? 'Restart requested' : 'Restart to Update'}</Button>}
       {state.phase === 'error' && <Button size="sm" onClick={checkDesktopUpdates}>Retry</Button>}
     </div>
   </aside>, document.body);
@@ -52,5 +54,5 @@ export default function DesktopUpdateBridge() {
 export function DesktopUpdateMenuItem() {
   const state = useDesktopUpdates();
   if (!state.enabled) return null;
-  return <button type="button" onClick={state.phase === 'downloaded' ? restartDesktopUpdate : checkDesktopUpdates} disabled={state.restartPending || ['checking', 'downloading', 'installing'].includes(state.phase)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm disabled:opacity-60" style={{ color: 'var(--color-text-primary)' }}><Download size={18} /><span>{state.phase === 'downloaded' && !state.restartPending ? 'Restart to Update' : updateStatusText(state)}<span className="block text-xs" style={{ color: 'var(--color-text-muted)' }}>FlowTask {state.currentVersion}{state.version ? ` → ${state.version}` : ''}</span></span></button>;
+  return <button type="button" onClick={state.phase === 'downloaded' ? restartDesktopUpdate : checkDesktopUpdates} disabled={state.restartPending && state.restartMode === 'now' || ['checking', 'downloading', 'installing'].includes(state.phase)} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm disabled:opacity-60" style={{ color: 'var(--color-text-primary)' }}><Download size={18} /><span>{state.phase === 'downloaded' && !(state.restartPending && state.restartMode === 'now') ? 'Restart to Update' : updateStatusText(state)}<span className="block text-xs" style={{ color: 'var(--color-text-muted)' }}>FlowTask {state.currentVersion}{state.version ? ` → ${state.version}` : ''}</span></span></button>;
 }

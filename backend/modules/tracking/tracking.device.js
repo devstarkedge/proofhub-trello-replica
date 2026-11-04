@@ -92,10 +92,12 @@ async function releaseDeviceUnlocked({workspaceId,userId,deviceId,revoke=false})
 export function heartbeat(args) {
   return serializeTrackingWrite(args.workspaceId,args.userId,()=>heartbeatUnlocked(args));
 }
-async function heartbeatUnlocked({ workspaceId, userId, deviceId, sessionId, state, takeover=false, noticeAuthorization }) {
+async function heartbeatUnlocked({ workspaceId, userId, deviceId, sessionId, state, takeover=false, noticeAuthorization, resolveCurrentSession=false, includeEvidenceCursor=false }) {
   const ctx = await contextFor(workspaceId, userId,{includeProjects:false}), device = await ownedDevice(workspaceId, userId, deviceId);
   const policy = await policyFor(workspaceId), now = new Date();
-  let session = sessionId ? await WorkSession.findOne({ _id: objectId(sessionId), workspaceId, user: userId }).lean() : null;
+  let session = resolveCurrentSession === true && !takeover
+    ? await WorkSession.findOne({workspaceId,user:userId,endedAt:null,status:{$in:['RUNNING','PAUSED']}}).sort({startedAt:-1}).lean()
+    : sessionId ? await WorkSession.findOne({ _id: objectId(sessionId), workspaceId, user: userId }).lean() : null;
   if (session) session = await reconcileSession(session._id);
   const permitted = policy.enabled && policy.monitoringEnabled && hasMonitoringNotice(device) && can(ctx, 'tracking.log', { workspaceId, user: userId });
   const canCapture = Boolean(permitted && session?.status === 'RUNNING');
@@ -136,6 +138,7 @@ async function heartbeatUnlocked({ workspaceId, userId, deviceId, sessionId, sta
         await TrackingCaptureLease.updateMany({device:owner._id,session:session._id,endedAt:{$gt:now}},{$set:{endedAt:now}},{session:dbSession});
       }
     }
+    update.lastSeenAt=new Date();
     saved=await TrackingDevice.findOneAndUpdate({_id:device._id,revokedAt:null,releasedAt:device.releasedAt||null},{$set:update,...(takeover?{$unset:{monitoringDisplacedAt:1}}:{}),...(update.anchor?{$push:{anchors:{$each:[update.anchor],$slice:-8}}}:{})},{new:true,session:dbSession}).lean();
     if(!saved){
       // A release/takeover can change the CAS fence after the initial read.
@@ -149,7 +152,10 @@ async function heartbeatUnlocked({ workspaceId, userId, deviceId, sessionId, sta
     if(canCapture)await TrackingCaptureLease.findOneAndUpdate({device:device._id,version:saved.leaseVersion},{$set:{endedAt:saved.leaseUntil,expiresAt:policy.retentionDays===null?null:new Date(+saved.leaseUntil+policy.retentionDays*86400000)},$setOnInsert:{workspaceId,user:userId,session:session._id,startedAt:saved.leaseStartedAt}},{upsert:true,runValidators:true,session:dbSession});
   });}catch(error){if(error.code===11000)fail('Another desktop owns monitoring. Choose Use this desktop to switch.',409,'DEVICE_CONFLICT');throw error;}finally{await dbSession.endSession();}
   if(transferredFrom)try{emitToUser(userId,'tracking:device-updated',{deviceId:transferredFrom,displaced:true,replacementDeviceId:String(device._id)},workspaceId);}catch{/* polling recovers */}
-  return { serverNow: now, device: saved, policy, session, canCapture,canAutoResume,activityWatchUntil:canAutoResume?new Date(+now+300000):null,transferredFrom,
+  const cursor=includeEvidenceCursor===true&&session?await ActivityInterval.findOne({workspaceId,user:userId,session:session._id,device:device._id}).sort({endedAt:-1}).select('endedAt').lean():null;
+  return { serverNow: now, serverSentAt:new Date(), currentSessionResolved:resolveCurrentSession===true&&!takeover,
+    ...(includeEvidenceCursor===true?{evidenceCursor:cursor?{sessionId:String(session._id),endedAt:cursor.endedAt}:null}:{}),
+    device: saved, policy, session, canCapture,canAutoResume,activityWatchUntil:canAutoResume?new Date(+now+300000):null,transferredFrom,
     noticeVersion:MONITORING_NOTICE_VERSION,uploadLimits:screenshotUploadLimits(),needsNotice:policy.enabled&&policy.monitoringEnabled&&!hasMonitoringNotice(device),
     reason: !policy.enabled ? 'Time Tracking disabled by workspace' : !policy.monitoringEnabled ? 'Monitoring disabled by workspace' : !session || session.status !== 'RUNNING' ? 'Work is not running' : !hasMonitoringNotice(device) ? 'Monitoring notice required' : !permitted?'Tracking permission required':null };
 }
@@ -180,7 +186,7 @@ async function saveInterval({ workspaceId, userId, deviceId, payload }) {
   const allowed = ['operationId','sessionId','anchorId','startOffsetMs','endOffsetMs','mouseCount','keyboardCount','activeSeconds','idleSeconds','coverage','inputAvailable','screenshotAvailable','inputActiveSeconds','inputEligibleSeconds','activityBasis'];
   if (Object.keys(payload).some(k => !allowed.includes(k))) fail('Only privacy-safe interval counters are accepted');
   const hash = digest(payload), replay = await ActivityInterval.findOne({ workspaceId, device: device._id, operationId: payload.operationId }).lean();
-  if (replay) { if (replay.digest !== hash) fail('Interval ID was reused with different data', 409); return replay; }
+  if (replay) { if (replay.digest !== hash) fail('Interval ID was reused with different data', 409,'INTERVAL_ID_CONFLICT'); return replay; }
   if (!hasMonitoringNotice(device)) fail('Monitoring consent is no longer effective', 403);
   const session = await WorkSession.findOne({ _id: objectId(payload.sessionId), workspaceId, user: userId }).lean();
   if (!session) fail('Work session not found', 404);
@@ -213,7 +219,7 @@ async function saveInterval({ workspaceId, userId, deviceId, payload }) {
   // A final upload after checkout may straddle the close boundary. Preserve
   // the exact screenshot boundaries, flag partial coverage, and never use
   // this evidence to add work duration or to scale unknown counters.
-  if (covered <= 0) fail('Activity is outside working segments', 409);
+  if (covered <= 0) fail('Activity is outside working segments', 409,'INTERVAL_NO_WORK_COVERAGE');
   const partial = covered + 0.01 < seconds;
   const distinctInput = payload.activityBasis === 'distinct-input-seconds-v1';
   if (payload.activityBasis && !distinctInput) fail('Unsupported activity measurement');
@@ -234,7 +240,7 @@ async function saveInterval({ workspaceId, userId, deviceId, payload }) {
     const overlap = await ActivityInterval.findOne({ workspaceId, session: session._id, startedAt: { $lt: endedAt }, endedAt: { $gt: startedAt } }).session(dbSession).lean();
     if (overlap) {
       if (overlap.operationId === payload.operationId && overlap.digest === hash) { saved = overlap; return; }
-      fail('Activity intervals must not overlap', 409);
+      fail('Activity intervals must not overlap', 409,'INTERVAL_OVERLAP');
     }
     [saved] = await ActivityInterval.create([{
       workspaceId, user: userId, session: session._id, device: device._id, operationId: payload.operationId, digest: hash,

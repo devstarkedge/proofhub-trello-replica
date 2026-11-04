@@ -74,8 +74,8 @@ confirming its recorded process is no longer running.
 
 - Windows packaged builds check after a 10-second startup delay and every four
   hours. Development and smoke-test processes never check the production feed.
-- The profile menu exposes Check for Updates. Progress and an update-ready card
-  use the existing theme; Later dismisses the card without discarding the update.
+- The profile menu exposes Check for Updates. The update-ready card offers
+  Restart to Update, Later (install when idle), and Cancel for a pending request.
 - Stable/newer/compatible version selection, cached-download verification,
   checksums, differential download and Windows signature validation (when a
   signing publisher is configured) stay delegated to pinned electron-updater.
@@ -87,24 +87,48 @@ confirming its recorded process is no longer running.
   during final restart checks. IPC is restricted to the main renderer/frame and
   validated origin. No token, workspace identity or screenshot content is sent
   over updater status IPC.
-- Active attendance or work, including paused work, blocks installation. Clicking
-  Restart to Update requests a restart once safe; it retries every 15 seconds
-  until attendance/work and pending uploads/changes finish. Readiness checks run
-  before the renderer freeze and network gate, so waiting never prevents checkout,
-  work actions or upload recovery. The card and profile menu show the waiting
-  state. Cancel restart/Later cancels this request and retains the downloaded
-  update. Download completion alone never schedules a restart.
+- Restart to Update saves an activity-only final checkpoint, then installs and
+  reopens while preserving the same server-owned attendance/work session. Durable
+  screenshots stay in their encrypted user/workspace queues and retry after
+  reopen. Pending activity checkpoints that cannot be saved keep the app open.
+- Later requests idle-only installation: active attendance or work (including
+  paused work), pending uploads, and unsaved changes defer installation. It retries
+  every 15 seconds without freezing the renderer. Cancel clears this request;
+  download completion alone never schedules a restart. The waiting card explains
+  the requested behavior and any current blocker.
 - Immediately before installation, repeat the native/server, renderer and request
-  checks under the existing hold. A newly active session or pending write defers
-  installation again. Installer/preparation errors release the hold, restore
+  checks under a native hold. Already-started heartbeats, captures and uploads
+  settle before verification, so periodic synchronization cannot starve restart.
+  New UI writes are briefly gated; Socket.IO polling stays connected. A newly
+  active session defers idle-only installation. Dirty card editors and uncertain
+  session operations defer both modes. Installer/preparation errors release the hold, restore
   tracking, retain the update and require an explicit retry. Scheduled restart
   requests are in-memory only and are cleared when the process exits.
 - Safe restart uses the existing durable tracking shutdown/device-release path,
   then installs and reopens. It never checks out the user or closes a work session
   on the server. Normal unsafe exit retains the downloaded update and uses the
   pre-existing normal-exit checkpoint flow without installing it.
-- Pending captures from another workspace/profile also block installation until
-  that profile's normal upload recovery drains them. Nothing is silently deleted.
+- Pending captures from another workspace/profile block idle-only installation.
+  Explicit restart preserves them in place. Nothing is silently deleted.
+- Monitoring timeouts retry automatically with bounded backoff (1 to 15 seconds),
+  alongside normal heartbeats and online/resume events. Successful authorization
+  clears the error in pushed native status; the renderer refreshes stale server
+  diagnostics immediately, clearing Needs attention once recovery is verified.
+  Revocation, consent and permission requirements remain authoritative.
+- From 1.0.6, heartbeat requests run independently from local sampling/capture.
+  A slow network request cannot monopolize the capture lock. Modern backends
+  resolve the authenticated user's current work in the heartbeat itself; older
+  backends retain the status-read compatibility path. Heartbeats have a bounded
+  30-second timeout and still cannot authorize collection past their capture lease.
+- The heartbeat supplies a response timestamp after its database work. Desktop
+  anchor mapping uses that timestamp, preserves the screenshot deadline on anchor
+  renewal, and never starts a new window before already-recorded evidence ends.
+  Permanent interval conflicts are retained locally and skip automatic retry
+  slots so valid new captures can continue. Manual recovery remains available.
+- Deploy the backend changes with the desktop update: authenticated heartbeat,
+  interval and screenshot-delivery traffic uses a bounded per-user/workspace
+  fallback limiter during Redis outages. Device ownership, consent and leases
+  remain checked by the normal handlers; other business writes still fail closed.
 - Failed downloads retry twice with backoff; the periodic/manual checks can retry
   later. Generic updater diagnostics rotate in userData/updater.log; headers,
   tokens and signed download URLs are not logged.
@@ -127,8 +151,16 @@ Automated lifecycle, IPC, release-publishing and native tracking tests do not
 establish a live installed-app upgrade. Before calling a production rollout
 verified, use a disposable Windows VM: manually install 1.0.2, authenticate and
 check theme/data persistence, publish a newer stable updater-enabled version,
-observe background progress, confirm active attendance and pending uploads defer
-restart, finish them normally, install safely, and confirm the new version and
-preserved data after reopening. Never perform this test on an actively monitored
+observe background progress, confirm Later waits for active attendance/uploads,
+confirm explicit restart checkpoints activity and resumes the same server work
+session, and confirm the new version and preserved data after reopening. Also
+interrupt/recover connectivity and check badge removal without page refresh.
+Never perform this test on an actively monitored
 workstation. Publishing and this installed-to-installed upgrade need separate
 execution; no production release is uploaded merely by implementing this code.
+
+The running updater belongs to the currently installed executable. Downloading
+1.0.5 does not hot-replace updater logic in an older running main process. If an
+older version refuses restart, finish attendance/work and use a normal safe exit,
+or install the new setup over the existing installation after work finishes.
+Preserve the existing user-data directory; do not uninstall first.

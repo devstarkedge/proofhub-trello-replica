@@ -5,8 +5,9 @@ const RESTART_RETRY_MS = 15000;
 // No Electron globals: the lifecycle and safety contract can be verified without
 // downloading/installing a release or touching a real person's tracking state.
 function createUpdateManager({ updater, version, enabled, readiness = async () => ({ safe: true }), safety, install, publish = () => {}, log = () => {}, timers = globalThis }) {
-  let state = { enabled, phase: enabled ? 'idle' : 'disabled', currentVersion: version, version: null, progress: 0, dismissed: false, message: '', manual: false, restartPending: false, revision: 0 };
+  let state = { enabled, phase: enabled ? 'idle' : 'disabled', currentVersion: version, version: null, progress: 0, dismissed: false, message: '', manual: false, restartPending: false, restartMode: null, revision: 0 };
   let checking = null, downloading = null, installing = null, interval, startup, retryTimer, restartTimer, disposed = false, failures = 0;
+  let restartRequest = 0;
   const listeners = [];
   const snapshot = () => ({ ...state });
   const change = patch => { if (disposed) return; state = { ...state, ...patch, revision: state.revision + 1 }; publish(snapshot()); };
@@ -40,30 +41,26 @@ function createUpdateManager({ updater, version, enabled, readiness = async () =
   }
   function deferRestart(result) {
     change({ phase: 'downloaded', message: result.reason || 'Finish active work and pending operations before restarting.' });
-    if (state.restartPending && !disposed) {
-      restartTimer = timers.setTimeout(() => {
-        restartTimer = null;
-        if (state.restartPending) void restart(false, true);
-      }, RESTART_RETRY_MS);
-      restartTimer?.unref?.();
-    }
     return false;
   }
   async function restart(normalExit = false, scheduled = false) {
-    if (installing) return installing;
+    if (state.phase === 'installing') return installing || false;
     if (disposed || !enabled || state.phase !== 'downloaded') return false;
     if (scheduled && !state.restartPending) return false;
     timers.clearTimeout(restartTimer); restartTimer = null;
-    if (!normalExit && !scheduled) change({ restartPending: true, dismissed: false, message: '' });
+    if (!normalExit && !scheduled && (!state.restartPending || state.restartMode !== 'now')) { restartRequest++; change({ restartPending: true, restartMode: 'now', dismissed: false, message: '' }); }
+    if (installing) return installing;
+    const request = restartRequest;
+    const options = { allowActive: !normalExit && state.restartMode === 'now' };
     // Assign the task before running callbacks so repeated clicks coalesce.
     installing = Promise.resolve().then(async () => {
       try {
         // While work is active, poll without freezing UI or blocking requests.
-        const ready = await readiness();
-        if (disposed || !normalExit && !state.restartPending) return false;
+        const ready = await readiness(options);
+        if (disposed || request !== restartRequest || !normalExit && !state.restartPending) return false;
         if (!ready.safe) return deferRestart(ready);
         change({ phase: 'installing', message: '', dismissed: false });
-        const result = await safety();
+        const result = await safety(options);
         if (disposed) return false;
         if (!result.safe) return deferRestart(result);
         await install(normalExit);
@@ -72,7 +69,16 @@ function createUpdateManager({ updater, version, enabled, readiness = async () =
         // The verified cached installer remains available for another attempt.
         change({ phase: 'downloaded', restartPending: false, message: 'FlowTask could not safely restart. Your update is saved; please retry.' });
         return false;
-      } finally { installing = null; }
+      } finally {
+        installing = null;
+        if (!disposed && state.restartPending && state.phase === 'downloaded') {
+          restartTimer = timers.setTimeout(() => {
+            restartTimer = null;
+            if (state.restartPending) void restart(false, true);
+          }, request === restartRequest ? RESTART_RETRY_MS : 0);
+          restartTimer?.unref?.();
+        }
+      }
     });
     return installing;
   }
@@ -106,7 +112,14 @@ function createUpdateManager({ updater, version, enabled, readiness = async () =
     interval = timers.setInterval(() => { void check(false); }, FOUR_HOURS); interval?.unref?.();
   }
   return { snapshot, check, restart, later: () => {
-    if (state.phase !== 'installing') { timers.clearTimeout(restartTimer); restartTimer = null; change({ dismissed: true, restartPending: false, message: '' }); }
+    if (state.phase === 'downloaded') {
+      restartRequest++;
+      change({ dismissed: false, restartPending: true, restartMode: 'idle', message: 'Update scheduled after attendance, work and pending uploads finish.' });
+      void restart(false, true);
+    } else if (state.phase !== 'installing') change({ dismissed: true });
+    return snapshot();
+  }, cancel: () => {
+    if (state.phase !== 'installing') { restartRequest++; timers.clearTimeout(restartTimer); restartTimer = null; change({ dismissed: false, restartPending: false, restartMode: null, message: '' }); }
     return snapshot();
   },
     dispose() { disposed = true; timers.clearTimeout(startup); timers.clearTimeout(retryTimer); timers.clearTimeout(restartTimer); timers.clearInterval(interval); for (const [event, callback] of listeners) updater.removeListener(event, callback); }

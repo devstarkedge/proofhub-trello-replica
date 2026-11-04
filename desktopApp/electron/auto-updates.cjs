@@ -34,20 +34,19 @@ function installDesktopUpdates({ app, ipcMain, getWindow, getOrigin, tracking, w
     });
   }
   const manager = createUpdateManager({ updater, enabled, version: app.getVersion(), log, publish,
-    readiness: async () => {
+    readiness: async options => {
       if (mutations.size) return { safe: false, reason: 'Uploads or saved changes are still being sent. Waiting for them to finish.' };
-      return tracking.updateSafety();
+      return tracking.updateSafety({ ...options, ignoreBusy: true });
     },
-    safety: async () => {
+    safety: async options => {
       try {
         networkLocked = true;
         const renderer = await rendererSafety();
         if (!renderer.safe) { releaseHold(); return renderer; }
         if (mutations.size) { releaseHold(); return { safe: false, reason: 'Uploads or saved changes are still being sent. Please retry shortly.' }; }
-        const native = await tracking.updateSafety();
+        const native = await tracking.acquireUpdateHold(options);
         if (!native.safe || renderer.authenticated && !native.configured) { releaseHold(); return { safe: false, reason: native.reason || 'Wait for your desktop session to connect before restarting.' }; }
-        const held = tracking.holdForUpdate();
-        if (!held.safe || mutations.size) { releaseHold(); return { safe: false, reason: held.reason || 'Synchronization is still running. Please retry.' }; }
+        if (mutations.size) { releaseHold(); return { safe: false, reason: 'Synchronization is still running. Restart will retry.' }; }
         // Recheck renderer queues after the asynchronous server verification.
         const final = await rendererSafety();
         if (!final.safe) releaseHold();
@@ -65,7 +64,7 @@ function installDesktopUpdates({ app, ipcMain, getWindow, getOrigin, tracking, w
         if (!updater.quitAndInstallCalled) throw new Error('Installer did not start');
       } catch (error) {
         bypassExit = false;
-        await tracking.resumeAfterUpdateFailure(); releaseHold();
+        try { await tracking.resumeAfterUpdateFailure(); } finally { releaseHold(); }
         throw error;
       }
     }
@@ -74,6 +73,7 @@ function installDesktopUpdates({ app, ipcMain, getWindow, getOrigin, tracking, w
   ipcMain.handle('desktop-updates:status', guard(() => manager.snapshot()));
   ipcMain.handle('desktop-updates:check', guard(() => { if (Date.now() - lastCheck < 10000) return manager.snapshot(); lastCheck = Date.now(); void manager.check(true); return manager.snapshot(); }));
   ipcMain.handle('desktop-updates:later', guard(() => manager.later()));
+  ipcMain.handle('desktop-updates:cancel', guard(() => manager.cancel()));
   ipcMain.handle('desktop-updates:restart', guard(async () => { if (manager.snapshot().phase === 'installing') return manager.snapshot(); const result = await manager.restart(false); if (!result) releaseHold(); return manager.snapshot(); }));
   const prepared = (event, value) => {
     if (!trusted(event) || !rendererWait || value?.requestId !== rendererWait.requestId || typeof value.safe !== 'boolean' || typeof value.authenticated !== 'boolean') return;
@@ -84,7 +84,9 @@ function installDesktopUpdates({ app, ipcMain, getWindow, getOrigin, tracking, w
   // data cross the update bridge. Block new writes during the short restart gate.
   const filter = { urls: ['http://*/*', 'https://*/*'] };
   webRequest.onBeforeRequest(filter, (details, callback) => {
-    const mutation = !['GET', 'HEAD', 'OPTIONS'].includes(details.method);
+    let transport = false;
+    try { const url = new URL(details.url); transport = url.origin === getOrigin() && url.pathname === '/socket.io/' && url.searchParams.get('transport') === 'polling'; } catch { /* Treat unknown requests as writes. */ }
+    const mutation = !transport && !['GET', 'HEAD', 'OPTIONS'].includes(details.method);
     if (mutation && networkLocked) { callback({ cancel: true }); return; }
     if (mutation) mutations.add(details.id);
     callback({});
@@ -110,7 +112,7 @@ function installDesktopUpdates({ app, ipcMain, getWindow, getOrigin, tracking, w
     manager.dispose();
     ipcMain.removeListener('desktop-updates:prepared', prepared);
     app.removeListener('before-quit', beforeQuit);
-    for (const name of ['status', 'check', 'later', 'restart']) ipcMain.removeHandler(`desktop-updates:${name}`);
+    for (const name of ['status', 'check', 'later', 'cancel', 'restart']) ipcMain.removeHandler(`desktop-updates:${name}`);
     webRequest.onBeforeRequest(null); webRequest.onCompleted(null); webRequest.onErrorOccurred(null);
   });
   return { attachWindow, isHandlingExit: () => exitPending || manager.snapshot().phase === 'installing', status: manager.snapshot };

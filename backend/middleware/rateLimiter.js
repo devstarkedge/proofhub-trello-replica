@@ -17,10 +17,11 @@ export const rateLimiter = (options = {}) => {
     keyFn = req => req.ip || req.connection?.remoteAddress,
     workspaceFn = req => req.workspaceId || 'public',
     allowReadFallback = false,
+    allowWriteFallback = () => false,
   } = options;
   const policy = hash([windowMs, maxRequests, message, String(keyFn)].join('|'));
-  // Only explicitly opted-in authenticated reads can use a bounded local
-  // limiter during a Redis outage. Auth/public routes and writes fail closed.
+  // Explicitly opted-in authenticated reads/telemetry may use a bounded local
+  // limiter during an outage. All other writes and public routes fail closed.
   const store = !config.redis.enabled || allowReadFallback ? new Map() : null;
   if (store) {
     setInterval(() => {
@@ -39,7 +40,8 @@ export const rateLimiter = (options = {}) => {
         [count, remaining] = await (allowReadFallback ? withTimeout(operation, 250, 'Tracking read limiter') : operation);
       } catch (error) {
         reportRedisError('rate-limit', error);
-        if (!allowReadFallback || !['GET', 'HEAD'].includes(req.method) || !req.user || !req.workspaceId) {
+        const fallback=allowReadFallback&&req.user&&req.workspaceId&&(['GET','HEAD'].includes(req.method)||allowWriteFallback(req));
+        if (!fallback) {
           res.setHeader('Retry-After', '5');
           return res.status(503).json({ success: false, message: 'Request limiting is temporarily unavailable; retry later' });
         }

@@ -72,7 +72,7 @@ const CardDescription = memo(({
     const fetchVersionCount = async () => {
       if (cardId) {
         try {
-          const count = await versionService.getVersionCount('card', cardId);
+          const count = await versionService.getVersionCount('card_description', cardId);
           setVersionCount(count);
         } catch (error) {
           console.error('Error fetching version count:', error);

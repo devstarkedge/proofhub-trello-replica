@@ -11,7 +11,8 @@ import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 import logger from '../utils/logger.js';
 import { guardOfflineMutation } from './offlineMutation.js';
 import { rateLimiter } from './rateLimiter.js';
-const authenticatedBudget = rateLimiter({ ...config.rateLimit.global, keyFn: req => String(req.user._id || req.user.id), allowReadFallback: true });
+import { canUseTrackingTelemetryFallback } from './trackingTelemetryBudget.js';
+const authenticatedBudget = rateLimiter({ ...config.rateLimit.global, keyFn: req => String(req.user._id || req.user.id), allowReadFallback: true, allowWriteFallback:canUseTrackingTelemetryFallback });
 
 // ─── Auth Cache ─────────────────────────────────────────────────────────────
 // In-memory LRU cache for authenticated user lookups.

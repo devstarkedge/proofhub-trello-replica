@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('flowtaskDesktop', Object.freeze({
     check: () => ipcRenderer.invoke('desktop-updates:check'),
     restart: () => ipcRenderer.invoke('desktop-updates:restart'),
     later: () => ipcRenderer.invoke('desktop-updates:later'),
+    cancel: () => ipcRenderer.invoke('desktop-updates:cancel'),
     onStatus: callback => {
       const listener = (_event, value) => callback(value);
       ipcRenderer.on('desktop-updates:status', listener);
