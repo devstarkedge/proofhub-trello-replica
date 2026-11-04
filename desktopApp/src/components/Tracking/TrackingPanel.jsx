@@ -286,9 +286,12 @@ export default function TrackingPanel({
   attendanceHeader,
   attendanceActions,
   attendanceDetails,
-  attendanceWarning = false
+  attendanceWarning = false,
+  sessionError = '',
+  onRetrySession = null,
+  sessionLoading = false
 }) {
-  const { state, error, reload, expired } = useWorkTracking();
+  const { state, error, reload, expired, loading: trackingLoading } = useWorkTracking();
   const sessionAction = useSessionAction();
   const [detailsOpen, setDetailsOpen] = useState(false),
     [detailsView, setDetailsView] = useState('actions'),
@@ -327,6 +330,21 @@ export default function TrackingPanel({
   const [native, setNative] = useState(null),
     [retrying, setRetrying] = useState(false);
 
+  const activeError = sessionError || error;
+  const isRetrying = retrying || sessionLoading || Boolean(trackingLoading);
+  const handleRetryAll = async () => {
+    if (isRetrying) return;
+    setRetrying(true);
+    try {
+      await Promise.allSettled([
+        Promise.resolve(onRetrySession?.()),
+        Promise.resolve(reload?.())
+      ]);
+    } finally {
+      setRetrying(false);
+    }
+  };
+
   useEffect(() => {
     const tracking = window.flowtaskDesktop?.tracking;
     if (!isDesktop || !tracking) return;
@@ -359,12 +377,13 @@ export default function TrackingPanel({
           <span>Time Tracking</span>
           {attendanceHeader}
         </div>
-        <p role={error ? 'alert' : 'status'} className="py-3 text-sm">
-          {error || 'Loading work tracking…'}
+        <p role={activeError ? 'alert' : 'status'} className="py-3 text-sm">
+          {activeError || 'Loading work tracking…'}
         </p>
-        {error && (
-          <button className="welcome-action" onClick={reload}>
-            Retry tracking
+        {activeError && (
+          <button type="button" className="welcome-action" disabled={isRetrying} onClick={handleRetryAll}>
+            <RefreshCw size={12} className={isRetrying ? 'animate-spin' : ''} />
+            <span>{isRetrying ? 'Retrying…' : 'Retry tracking'}</span>
           </button>
         )}
         <div className="welcome-actions">{attendanceActions}</div>
@@ -379,7 +398,7 @@ export default function TrackingPanel({
       </div>
     ) : (
       <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 text-sm text-gray-500 dark:text-gray-400">
-        <p role="status">{error || 'Loading work tracking…'}</p>
+        <p role="status">{activeError || 'Loading work tracking…'}</p>
       </div>
     );
 
@@ -621,6 +640,26 @@ export default function TrackingPanel({
             </p>
           )}
           {recovery}
+          {activeError && (
+            <div className="welcome-session-notice" role="status">
+              <div className="welcome-session-notice-content">
+                <AlertCircle size={13} className="welcome-session-notice-icon" aria-hidden="true" />
+                <span className="welcome-session-notice-text" title={activeError}>
+                  {activeError}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="welcome-session-retry"
+                onClick={handleRetryAll}
+                disabled={isRetrying}
+                title="Retry connection"
+              >
+                <RefreshCw size={11} className={isRetrying ? 'animate-spin' : ''} />
+                <span>{isRetrying ? 'Retrying…' : 'Retry'}</span>
+              </button>
+            </div>
+          )}
           {attendanceDetails && <div className="welcome-attendance-info">{attendanceDetails}</div>}
           {paused && scopedNative?.autoResumeArmed && <p className="welcome-attendance-info">Work resumes automatically when keyboard or mouse activity returns.</p>}
           {latest?.agenda && latest.attributedTask && (

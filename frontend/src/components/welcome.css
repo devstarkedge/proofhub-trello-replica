@@ -46,6 +46,14 @@
 .welcome-capture-label { min-width: 0; overflow-wrap: anywhere; }
 .welcome-status-chip { display: inline-flex; align-items: center; gap: .3rem; border-radius: 1rem; padding: .15rem .45rem; background: #ffffff1a; color: #fff; cursor: pointer; }
 .welcome-warning-chip { background: #fbbf2426; color: #fef3c7; }
+.welcome-session-notice { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-top: .65rem; padding: .35rem .6rem; border-radius: .65rem; background: #fbbf241f; border: 1px solid #fbbf2440; color: #fef3c7; font-size: .72rem; line-height: 1.35; }
+.welcome-session-notice-content { display: flex; align-items: center; gap: .4rem; min-width: 0; flex: 1 1 auto; }
+.welcome-session-notice-icon { flex-shrink: 0; color: #fbbf24; }
+.welcome-session-notice-text { min-width: 0; overflow-wrap: anywhere; }
+.welcome-session-retry { display: inline-flex; align-items: center; gap: .3rem; flex-shrink: 0; padding: .2rem .55rem; border-radius: .45rem; background: #ffffff26; border: 1px solid #ffffff40; color: #fff; font-size: .7rem; font-weight: 600; cursor: pointer; transition: background .15s, opacity .15s; white-space: nowrap; }
+.welcome-session-retry:hover:not(:disabled) { background: #ffffff3d; }
+.welcome-session-retry:disabled { opacity: .6; cursor: wait; }
+.welcome-session-retry svg { flex-shrink: 0; }
 .welcome-header button:focus-visible, .welcome-header select:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 .welcome-details-popover { z-index: 105; width: min(25rem, calc(100vw - 1.5rem)); max-height: min(28rem, var(--radix-popover-content-available-height)); overflow: auto; overscroll-behavior: contain; padding: 1.1rem; border: 1px solid var(--color-border-default, #e2e8f0); border-radius: 1rem; background: var(--color-card-bg, #fff); color: var(--color-text-primary, #0f172a); box-shadow: 0 16px 48px #0f172a30; overflow-wrap: anywhere; }
 .welcome-details-popover a:focus-visible, .welcome-details-popover button:focus-visible { outline: 2px solid var(--color-primary, #2563eb); outline-offset: 3px; }
@@ -58,14 +66,17 @@
   .welcome-actions { gap: .35rem; }
   .welcome-action { padding: .45rem .6rem; font-size: .72rem; gap: .35rem; }
   .welcome-action-break { min-width: 6.25rem; }
+  .welcome-session-notice { flex-direction: column; align-items: flex-start; gap: .4rem; }
+  .welcome-session-retry { align-self: flex-end; }
 }
 @container (max-width: 280px) {
   .welcome-tracking-context { flex-direction: column; align-items: flex-start; gap: .5rem; }
   .welcome-timer { padding-left: 0; border-left: none; border-top: 1px solid #ffffff25; padding-top: .4rem; width: 100%; }
 }
 @container (min-width: 880px) {
-  .welcome-layout:has(.welcome-controls) { grid-template-columns: minmax(0, 1.25fr) minmax(25rem, 1fr); gap: 2rem; }
-  .welcome-layout:has(.welcome-controls) .welcome-copy { padding-right: 1.5rem; border-right: 1px solid #ffffff25; }
+  .welcome-layout:has(.welcome-controls) { grid-template-columns: minmax(0, 1.25fr) minmax(25rem, 1fr); align-items: center; gap: 2rem; }
+  .welcome-layout:has(.welcome-controls) > .welcome-copy { grid-column: 1; padding-right: 1.5rem; border-right: 1px solid #ffffff25; }
+  .welcome-layout:has(.welcome-controls) > .welcome-controls { grid-column: 2; }
 }
 @media (prefers-reduced-motion: reduce) {
   .welcome-header *, .welcome-header *::before { animation: none !important; transition: none !important; }
@@ -81,8 +92,8 @@
 .welcome-check-in-mode .welcome-work-mode { color: var(--color-text-primary); background: var(--color-card-bg); border: 1px solid var(--color-border-default); font-size: .875rem; }
 @container (min-width: 880px) {
   .welcome-layout:has(.welcome-check-in) { grid-template-columns: minmax(0, 1fr) auto; }
-  .welcome-layout:has(.welcome-check-in) .welcome-copy { border-right: 0; padding-right: 0; }
-  .welcome-check-in { align-items: flex-end; max-width: 22rem; }
+  .welcome-layout:has(.welcome-check-in) > .welcome-copy { grid-column: 1; border-right: 0; padding-right: 0; }
+  .welcome-layout:has(.welcome-check-in) > .welcome-check-in { grid-column: 2; align-items: flex-end; max-width: 22rem; }
 }
 
 .welcome-check-in > .welcome-action { white-space: nowrap; }

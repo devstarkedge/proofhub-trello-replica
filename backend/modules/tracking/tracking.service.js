@@ -180,7 +180,7 @@ export async function reconcileSession(sessionId,prepared=null) {
     session.pauses = session.pauses || [];
     session.audit = session.audit || [];
     const taskIds = [...new Set(session.segments.flatMap(s => [s.candidateTask, s.task]).filter(Boolean).map(id))];
-    const tasks = cached?.tasks ? cached.tasks.filter(t=>taskIds.includes(id(t._id))).map(t=>({...t})) : await Card.find({ _id: { $in: taskIds } }).select('+assignmentEvents').lean();
+    const tasks = cached?.tasks ? cached.tasks.filter(t=>taskIds.includes(id(t._id))).map(t=>({...t})) : taskIds.length ? await Card.find({ _id: { $in: taskIds } }).select('+assignmentEvents').lean() : [];
     const missing=taskIds.filter(taskId=>!(tasks||[]).some(t=>id(t._id)===taskId));
     if(missing.length){
       const archived=cached?.archived ? cached.archived.filter(e=>missing.includes(id(e.task))) : await TaskAssignmentEvent.find({task:{$in:missing}}).sort({at:1,sequence:1}).lean();

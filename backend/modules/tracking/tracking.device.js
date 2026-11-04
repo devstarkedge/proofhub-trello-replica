@@ -90,15 +90,22 @@ async function releaseDeviceUnlocked({workspaceId,userId,deviceId,revoke=false})
   return {released:true,revoked:revoke};
 }
 export function heartbeat(args) {
-  return serializeTrackingWrite(args.workspaceId,args.userId,()=>heartbeatUnlocked(args));
+  return serializeTrackingWrite(args.workspaceId,args.userId,()=>heartbeatUnlocked(args),{maxWaitMs:15000});
 }
 async function heartbeatUnlocked({ workspaceId, userId, deviceId, sessionId, state, takeover=false, noticeAuthorization, resolveCurrentSession=false, includeEvidenceCursor=false }) {
-  const ctx = await contextFor(workspaceId, userId,{includeProjects:false}), device = await ownedDevice(workspaceId, userId, deviceId);
-  const policy = await policyFor(workspaceId), now = new Date();
+  const ctx = await contextFor(workspaceId,userId,{includeProjects:false,batchReads:true});
+  const [device,policy] = await Promise.all([ownedDevice(workspaceId,userId,deviceId),policyFor(workspaceId)]);
+  const now = new Date();
   let session = resolveCurrentSession === true && !takeover
     ? await WorkSession.findOne({workspaceId,user:userId,endedAt:null,status:{$in:['RUNNING','PAUSED']}}).sort({startedAt:-1}).lean()
     : sessionId ? await WorkSession.findOne({ _id: objectId(sessionId), workspaceId, user: userId }).lean() : null;
-  if (session) session = await reconcileSession(session._id);
+  if (session) {
+    // Agenda-only work needs no project directory or assignment scan. Reuse
+    // this request's freshly authorized actor rather than rebuilding the full
+    // workspace context a second time on every 15-second heartbeat.
+    const agendaOnly=session.segments?.every(segment=>segment.agenda&&!segment.task&&!segment.candidateTask);
+    session = await reconcileSession(session._id,{session,policy,...(agendaOnly?{ownerContext:ctx}:{})});
+  }
   const permitted = policy.enabled && policy.monitoringEnabled && hasMonitoringNotice(device) && can(ctx, 'tracking.log', { workspaceId, user: userId });
   const canCapture = Boolean(permitted && session?.status === 'RUNNING');
   const canAutoResume=Boolean(permitted&&canResumeOnActivity(device,session));
@@ -117,20 +124,27 @@ async function heartbeatUnlocked({ workspaceId, userId, deviceId, sessionId, sta
   // A new capture lease needs a fresh server/monotonic origin. Reusing an
   // overnight origin can put the first window before its lease after clock
   // adjustments. Historical anchors remain durable for completed offline work.
-  const member=await WorkspaceMembership.findOne({workspace:workspaceId,user:userId,status:'active'}).lean(),departments=departmentsOf(member);
+  const member=ctx.resolvedRecords?.membership||await WorkspaceMembership.findOne({workspace:workspaceId,user:userId,status:'active'}).lean(),departments=departmentsOf(member);
   if (startsLease || !device.anchor?.id || +new Date(device.anchor.expiresAt) <= +now || device.anchor.policyRevision!==policy.revision || JSON.stringify((device.anchor.departments||[]).map(String).sort())!==JSON.stringify([...departments].sort())) update.anchor = { id: randomUUID(), serverAt: now, expiresAt: new Date(+now + 86400000),departments,policyRevision:policy.revision,capturePolicy:captureSnapshot(policy) };
   let saved,transferredFrom=null;const dbSession=await mongoose.startSession();
   try{await withTrackingTransaction(dbSession,async()=>{
     transferredFrom=null;
     if(canCapture){
-      const authorized=await TrackingPolicy.updateOne({_id:policy._id,revision:policy.revision,enabled:true},{$inc:{__v:1}},{session:dbSession});
-      if(!authorized.matchedCount)fail('Workspace configuration changed',409);
+      // Heartbeats must never write-lock the shared workspace policy: every
+      // employee otherwise contends on one document for each lease renewal.
+      // Read current policy in the transaction; disable cleanup writes these
+      // same device/work rows and cuts historical leases. Ordinary policy
+      // edits explicitly allow existing leases a five-minute capture grace.
+      const authorized=await TrackingPolicy.exists({_id:policy._id,revision:policy.revision,enabled:true,monitoringEnabled:true}).session(dbSession);
+      if(!authorized)fail('Workspace configuration changed; reconnecting.',409,'TRACKING_CONFLICT');
       const running=await WorkSession.updateOne({_id:session._id,status:'RUNNING'},{$inc:{evidenceRevision:1}},{session:dbSession});
       if(!running.matchedCount)fail('Work is no longer running',409);
       // Include old records without a lease deadline so they cannot retain
       // ownership forever. A recent legacy owner keeps the same five-minute grace.
-      await TrackingDevice.updateMany({workspaceId,user:userId,activeSession:session._id,$or:[{revokedAt:{$ne:null}},{leaseUntil:{$lte:now}},{leaseUntil:null,lastSeenAt:{$lte:new Date(+now-300000)}},{leaseUntil:null,lastSeenAt:null}]},{$set:{activeSession:null}},{session:dbSession});
-      const owner=await TrackingDevice.findOne({workspaceId,user:userId,activeSession:session._id,_id:{$ne:device._id}}).session(dbSession).lean();
+      // An existing live owner only renews its own lease. The unique session
+      // owner index and releasedAt CAS still fence a concurrent takeover.
+      if(startsLease||takeover)await TrackingDevice.updateMany({workspaceId,user:userId,activeSession:session._id,$or:[{revokedAt:{$ne:null}},{leaseUntil:{$lte:now}},{leaseUntil:null,lastSeenAt:{$lte:new Date(+now-300000)}},{leaseUntil:null,lastSeenAt:null}]},{$set:{activeSession:null}},{session:dbSession});
+      const owner=startsLease||takeover?await TrackingDevice.findOne({workspaceId,user:userId,activeSession:session._id,_id:{$ne:device._id}}).session(dbSession).lean():null;
       if(owner){
         if(!takeover)fail('Another desktop owns monitoring. Close it and wait up to 5 minutes, or choose Use this desktop.',409,'DEVICE_CONFLICT');
         transferredFrom=String(owner._id);

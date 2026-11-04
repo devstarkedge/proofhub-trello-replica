@@ -436,6 +436,15 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
     }catch(error){
       if(scope!==generation)return;
       if([401,403,404].includes(error.status)){haltCapture(error.message);if(error.status===401)publish('unavailable','Refreshing your desktop session.','ACCESS_REFRESH_REQUIRED');}
+      else if(error.status===409&&['WRITE_CONFLICT','TRACKING_CONFLICT'].includes(error.code)){
+        // A known-aborted server write is transient. Keep collecting under
+        // the existing bounded authorization while a fresh heartbeat retries;
+        // it must not reset the screenshot deadline on every conflict.
+        publish('offline',error.message,error.code);
+        if(lastCaptureAllowed&&performance.now()<leaseDeadlineMono)begin({connected:false});
+        else await stopCapture();
+        scheduleReconnect(error);publish();
+      }
       else if(error.status===409){
         if(error.code==='DEVICE_STATE_CHANGED'){
           // Discard the unconfirmed tail; it must not cross a release fence.

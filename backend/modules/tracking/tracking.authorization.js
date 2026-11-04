@@ -13,9 +13,9 @@ export const trackingProjectFields='_id workspaceId name visibility owner member
 // Respect the application's rollout mode. The existing Board access helper is
 // the authority for legacy visibility; V2 remains the authority in enforce
 // mode. Both paths use active WorkspaceMembership, never global User.role.
-export async function trackingContext(workspaceId,userId,{includeProjects=true,projectRecords=null,readOnly=false}={}) {
+export async function trackingContext(workspaceId,userId,{includeProjects=true,projectRecords=null,readOnly=false,batchReads=readOnly}={}) {
   const [ctx,members,projects]=await Promise.all([
-    buildContext(userId,workspaceId,{allowLegacy:process.env.AUTHZ_V2!=='enforce',includeRecords:true,batchReads:readOnly}),
+    buildContext(userId,workspaceId,{allowLegacy:process.env.AUTHZ_V2!=='enforce',includeRecords:true,batchReads}),
     readOnly?WorkspaceMembership.find({workspace:workspaceId,status:'active',kind:{$ne:'guest'}}).lean():null,
     readOnly&&includeProjects?Board.find({workspaceId,isDeleted:{$ne:true}}).select(trackingProjectFields).lean():null
   ]);

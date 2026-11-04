@@ -3,7 +3,7 @@ import {finalizeDesktopCapture} from '../../services/desktopTracking';
 import { formatHours } from '../../utils/duration';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'react-toastify';
-import { MapPin, LogIn, LogOut, CheckCircle2, Loader2, BriefcaseBusiness, ChevronDown } from 'lucide-react';
+import { MapPin, LogIn, LogOut, CheckCircle2, Loader2, BriefcaseBusiness, ChevronDown, AlertCircle, RefreshCw } from 'lucide-react';
 import * as attendanceApi from '../../services/attendanceApi';
 import WorkSelectionModal from '../Tracking/WorkSelectionModal';
 import {trackingStore} from '../../services/trackingState';
@@ -104,7 +104,7 @@ async function captureGps() {
 const AttendanceQuickControl = () => {
   const sessionAction=useSessionAction();
   const isDesktop = window.flowtaskDesktop?.isDesktop === true;
-  const {status,error:sessionError,reload:load,scope,workspaceId,expired}=useAttendanceSession();
+  const {status,error:sessionError,reload:load,scope,workspaceId,expired,loading:sessionLoading}=useAttendanceSession();
   const [showWorkSelection, setShowWorkSelection] = useState(false);
   const [showCheckOut,setShowCheckOut] = useState(false);
   const checkoutInactive=useCallback(()=>{setShowCheckOut(false);window.dispatchEvent(new Event('socket-attendance-updated'));},[]);
@@ -118,7 +118,18 @@ const AttendanceQuickControl = () => {
   useEffect(()=>{if(!operationRef.current)setSelectedWorkMode(status?.defaultWorkMode||null);},[status?.defaultWorkMode,scope]);
   useEffect(()=>{operationRef.current=null;setShowWorkSelection(false);setShowCheckOut(false);setPhase('idle');},[scope]);
 
-  if (!status) return <div className="welcome-controls welcome-check-in" role={sessionError?'alert':'status'}><p className="text-sm text-white/80">{sessionError||'Loading attendance…'}</p>{sessionError&&<button type="button" className="welcome-action" onClick={load}>Retry attendance</button>}</div>;
+  if (!status)
+    return (
+      <div className="welcome-controls welcome-check-in" role={sessionError ? 'alert' : 'status'}>
+        <p className="text-sm text-white/80">{sessionError || 'Loading attendance…'}</p>
+        {sessionError && (
+          <button type="button" className="welcome-action" disabled={sessionLoading} onClick={load}>
+            <RefreshCw size={13} className={sessionLoading ? 'animate-spin' : ''} />
+            <span>{sessionLoading ? 'Retrying…' : 'Retry attendance'}</span>
+          </button>
+        )}
+      </div>
+    );
   if (!status.attendanceApplicable) return null;
 
   // GPS is attempted ONLY when the backend's own resolution says today's
@@ -222,18 +233,79 @@ const AttendanceQuickControl = () => {
   else if (status.canCheckIn) content = isDesktop ? <button type="button" disabled={isBusy} onClick={handleCheckIn} className="welcome-action"><LogIn size={15} />Check In</button> : null;
   else content = <span className="welcome-attendance-label"><MapPin size={15} />{friendlyBlockingLabel(status.blockingReason)}</span>;
 
-  return <>
-    {sessionError&&<p role="status" className="text-xs">{sessionError} <button type="button" className="underline" onClick={load}>Retry</button></p>}
-    {!status.activeSession&&sessionAction.phase==='RECONCILIATION_REQUIRED'&&<p role="alert" className="text-sm">{sessionAction.error} <button type="button" onClick={()=>sessionAction.recover()}>Verify status</button> <button type="button" onClick={()=>sessionAction.retry().catch(()=>{})}>Retry safely</button></p>}
-    {status.activeSession
-      ? <TrackingPanel compact attendanceHeader={modeControl} attendanceActions={content} attendanceDetails={attendanceDetails} attendanceWarning={Boolean(status.unresolvedMissedCheckout)} />
-      : (content || !isDesktop || status.unresolvedMissedCheckout) && <div className="welcome-controls welcome-check-in">
+  return (
+    <>
+      {status.activeSession ? (
+        <TrackingPanel
+          compact
+          attendanceHeader={modeControl}
+          attendanceActions={content}
+          attendanceDetails={attendanceDetails}
+          attendanceWarning={Boolean(status.unresolvedMissedCheckout)}
+          sessionError={sessionError}
+          onRetrySession={load}
+          sessionLoading={sessionLoading || sessionAction.busy}
+        />
+      ) : (content || !isDesktop || status.unresolvedMissedCheckout || sessionError || sessionAction.phase === 'RECONCILIATION_REQUIRED') ? (
+        <div className="welcome-controls welcome-check-in">
           {content}
+          {sessionError && (
+            <div className="welcome-session-notice" role="status">
+              <div className="welcome-session-notice-content">
+                <AlertCircle size={13} className="welcome-session-notice-icon" aria-hidden="true" />
+                <span className="welcome-session-notice-text" title={sessionError}>
+                  {sessionError}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="welcome-session-retry"
+                onClick={load}
+                disabled={sessionLoading}
+                title="Retry attendance"
+              >
+                <RefreshCw size={11} className={sessionLoading ? 'animate-spin' : ''} />
+                <span>{sessionLoading ? 'Retrying…' : 'Retry'}</span>
+              </button>
+            </div>
+          )}
+          {sessionAction.phase === 'RECONCILIATION_REQUIRED' && (
+            <div className="welcome-session-notice" role="alert">
+              <span className="welcome-session-notice-text">{sessionAction.error}</span>
+              <button type="button" className="welcome-session-retry" onClick={() => sessionAction.recover()}>
+                Verify
+              </button>
+              <button
+                type="button"
+                className="welcome-session-retry"
+                onClick={() => sessionAction.retry().catch(e => toast.error(e?.message || 'Failed to retry'))}
+              >
+                Retry
+              </button>
+            </div>
+          )}
           {(status.completed || status.unresolvedMissedCheckout || !isDesktop) && attendanceDetails}
-        </div>}
-    {isDesktop && showCheckOut && <CheckOutConfirmationModal attendanceSessionId={status.activeSession?._id || checkoutSessionRef.current} onClose={()=>setShowCheckOut(false)} onInactive={checkoutInactive} onConfirm={confirmCheckOut} />}
-    {isDesktop && showWorkSelection && <WorkSelectionModal checkingIn attendanceOnly={attendanceOnly} workModeControl={modeControl} onClose={closeWorkSelection} onConfirm={confirmCheckIn} />}
-  </>;
+        </div>
+      ) : null}
+      {isDesktop && showCheckOut && (
+        <CheckOutConfirmationModal
+          attendanceSessionId={status.activeSession?._id || checkoutSessionRef.current}
+          onClose={() => setShowCheckOut(false)}
+          onInactive={checkoutInactive}
+          onConfirm={confirmCheckOut}
+        />
+      )}
+      {isDesktop && showWorkSelection && (
+        <WorkSelectionModal
+          checkingIn
+          attendanceOnly={attendanceOnly}
+          workModeControl={modeControl}
+          onClose={closeWorkSelection}
+          onConfirm={confirmCheckIn}
+        />
+      )}
+    </>
+  );
 
 };
 
