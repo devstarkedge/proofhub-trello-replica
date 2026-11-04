@@ -1,4 +1,5 @@
 import { actorFromToken } from '../../../shared/offlineQueue.mjs';
+import { captureRequestScope, assertRequestScope } from '../../../shared/requestScope.mjs';
 import { installSessionTransport } from '../../../shared/sessionTransport.mjs';
 import axios from 'axios';
 import { addMutation, processMutations } from './backgroundSync';
@@ -17,6 +18,7 @@ const api = axios.create({
 // Add a request interceptor to check network status and include token
 api.interceptors.request.use(
   (config) => {
+    config._requestScope ||= captureRequestScope(localStorage, config.headers?.['x-workspace-id']);
     config._requestActor ||= actorFromToken(localStorage.getItem('token') || '');
     config._requestWorkspace ||= config.headers?.['x-workspace-id'] || localStorage.getItem('workspaceId');
     if (config._sessionActor && actorFromToken(localStorage.getItem('token') || '') !== config._sessionActor) {
@@ -49,6 +51,7 @@ api.interceptors.request.use(
 // Add a response interceptor for offline handling
 api.interceptors.response.use(
   (response) => {
+    if (response.config?._requestScope) assertRequestScope(localStorage, response.config._requestScope, { identityOnly: /\/api\/auth\/(refresh|logout)(?:[/?]|$)/.test(response.config.url || '') });
     backendConnectivity.succeeded();
     return response;
   },
@@ -61,6 +64,8 @@ api.interceptors.response.use(
           baseURL: error.config.baseURL,
         method: error.config.method,
         body: error.config.data,
+        actorId: error.config._requestActor,
+        workspaceId: error.config._requestWorkspace,
         timestamp: Date.now(),
       });
       // Return a resolved promise to prevent the error from propagating

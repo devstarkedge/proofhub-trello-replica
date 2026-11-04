@@ -1,5 +1,6 @@
 import { modulePublisher } from '../realtime/modulePublication.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
+import { boundedInteger, pageNumber } from '../utils/pagination.js';
 import { workspacePerson } from '../services/workspaceAudience.js';
 import { ROOM } from '../realtime/events.js';
 import mongoose from 'mongoose';
@@ -429,7 +430,8 @@ export const getSalesRows = async (req, res) => {
     }
 
     // Execute query with pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const currentPage = pageNumber(page), pageSize = boundedInteger(limit, 50, 200);
+    const skip = (currentPage - 1) * pageSize;
     
     const [rows, total] = await Promise.all([
       SalesRow.find(query)
@@ -438,7 +440,7 @@ export const getSalesRows = async (req, res) => {
         .populate('lockedBy', 'name email avatar')
         .sort(sortConfig)
         .skip(skip)
-        .limit(parseInt(limit))
+        .limit(pageSize)
         .lean(),
       SalesRow.countDocuments(query)
     ]);
@@ -451,14 +453,14 @@ export const getSalesRows = async (req, res) => {
       data: flattenedRows,
       pagination: {
         total,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        pages: Math.ceil(total / parseInt(limit))
+        page: currentPage,
+        limit: pageSize,
+        pages: Math.ceil(total / pageSize)
       }
     });
   } catch (error) {
     console.error('Get sales rows error:', error);
-    res.status(500).json({
+    res.status(error.statusCode || 500).json({
       success: false,
       message: 'Failed to fetch sales rows',
       error: error.message
@@ -977,14 +979,15 @@ export const unlockRow = async (req, res) => {
 export const getActivityLog = async (req, res) => {
   try {
     const { page = 1, limit = 20 } = req.query;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const currentPage = pageNumber(page), pageSize = boundedInteger(limit, 20, 100);
+    const skip = (currentPage - 1) * pageSize;
 
     const [logs, total] = await Promise.all([
       SalesActivityLog.find({ salesRow: req.params.id })
         .populate('user', 'name email avatar')
-        .sort({ createdAt: -1 })
+        .sort({ createdAt: -1, _id: -1 })
         .skip(skip)
-        .limit(parseInt(limit))
+        .limit(pageSize)
         .lean(),
       SalesActivityLog.countDocuments({ salesRow: req.params.id })
     ]);
@@ -994,14 +997,14 @@ export const getActivityLog = async (req, res) => {
       data: logs,
       pagination: {
         total,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        pages: Math.ceil(total / parseInt(limit))
+        page: currentPage,
+        limit: pageSize,
+        pages: Math.ceil(total / pageSize)
       }
     });
   } catch (error) {
     console.error('Get activity log error:', error);
-    res.status(500).json({
+    res.status(error.statusCode || 500).json({
       success: false,
       message: 'Failed to fetch activity log',
       error: error.message

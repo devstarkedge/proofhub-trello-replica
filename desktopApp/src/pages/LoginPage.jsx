@@ -87,7 +87,7 @@ const LoginPage = () => {
           icon: <CheckCircle className="text-green-500" size={20} />,
           autoClose: 2000
         });
-        setTimeout(() => navigate('/super-admin'), 1500);
+        navigate('/super-admin');
         return;
       }
 
@@ -105,8 +105,7 @@ const LoginPage = () => {
         autoClose: 2000
       });
 
-      // Navigate after showing toast (delayed to let toast display)
-      setTimeout(() => {
+      // Membership is resolved; the global toast can display during navigation.
         if (user.role !== 'admin' && !user.isVerified) {
           navigate('/verify-pending');
         } else if (isSafeReturnTo) {
@@ -118,7 +117,6 @@ const LoginPage = () => {
         } else {
           navigate('/');
         }
-      }, 1500);
     } catch (err) {
       setLoading(false); // Stop loading immediately on error
       

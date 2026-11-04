@@ -154,56 +154,7 @@ const HomePage = () => {
     if (currentWorkspace?._id) fetchDepartments();
   }, [fetchDepartments, currentWorkspace?._id]);
 
-  // Real-time refresh when access permissions are updated by admin
-  useEffect(() => {
-    const handleAccessUpdated = () => {
-      fetchDepartments(true);
-    };
-    
-    // Real-time refresh when a board/project is updated
-    const handleBoardUpdated = (e) => {
-      if (e.detail && e.detail.boardId && e.detail.updates) {
-        projectUpdated({ _id: e.detail.boardId, ...e.detail.updates });
-      }
-      fetchDepartments(true);
-    };
-
-    // Real-time refresh when a task/subtask/nano-subtask assignee changes
-    // (employee gains or loses project access via assignment)
-    const handleProjectAccessChanged = () => {
-      fetchDepartments(true);
-    };
-
-    // Debounced refresh when task assignments or status change
-    let debounceTimer = null;
-    const debouncedTaskRefresh = () => {
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        fetchDepartments(true);
-      }, 300);
-    };
-
-    window.addEventListener('socket-user-access-updated', handleAccessUpdated);
-    window.addEventListener('socket-board-updated', handleBoardUpdated);
-    window.addEventListener('socket-user-project-access-changed', handleProjectAccessChanged);
-    window.addEventListener('socket-card-created', debouncedTaskRefresh);
-    window.addEventListener('socket-card-updated', debouncedTaskRefresh);
-    window.addEventListener('socket-card-deleted', debouncedTaskRefresh);
-    window.addEventListener('socket-card-moved', debouncedTaskRefresh);
-    window.addEventListener('socket-task-assigned', debouncedTaskRefresh);
-    
-    return () => {
-      clearTimeout(debounceTimer);
-      window.removeEventListener('socket-user-access-updated', handleAccessUpdated);
-      window.removeEventListener('socket-board-updated', handleBoardUpdated);
-      window.removeEventListener('socket-user-project-access-changed', handleProjectAccessChanged);
-      window.removeEventListener('socket-card-created', debouncedTaskRefresh);
-      window.removeEventListener('socket-card-updated', debouncedTaskRefresh);
-      window.removeEventListener('socket-card-deleted', debouncedTaskRefresh);
-      window.removeEventListener('socket-card-moved', debouncedTaskRefresh);
-      window.removeEventListener('socket-task-assigned', debouncedTaskRefresh);
-    };
-  }, [fetchDepartments, projectUpdated]);
+  // useRealtimeSync owns directory refreshes and coalesces socket event bursts.
 
   // Handle outside click to close dropdown - optimized with useCallback
   useEffect(() => {

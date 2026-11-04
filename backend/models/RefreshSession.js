@@ -5,6 +5,12 @@ const schema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   tokenHash: { type: String, required: true, unique: true },
   tokenVersion: { type: Number, required: true },
-  expiresAt: { type: Date, required: true, index: { expires: 0 } }
+  expiresAt: { type: Date, required: true, index: { expires: 0 } },
+  // One bounded retry receipt, not a token history. No plaintext credentials.
+  rotation: {
+    previousTokenHash: String,
+    requestHash: String,
+    retryUntil: Date
+  }
 }, { timestamps: true });
 export default mongoose.model('RefreshSession', schema);

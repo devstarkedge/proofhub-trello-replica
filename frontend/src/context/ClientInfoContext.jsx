@@ -1,5 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
+import AuthContext from './AuthContext';
+import WorkspaceContext from './WorkspaceContext';
+import { captureRequestScope, requestScopeKey } from '../../../shared/requestScope.mjs';
+import { registerResettable } from '../store/resetRegistry';
+const currentScope = () => requestScopeKey(captureRequestScope(localStorage));
 const ClientInfoContext = createContext(null);
 
 const normalizeClient = (source = {}, fallback = {}) => {
@@ -10,7 +15,16 @@ const normalizeClient = (source = {}, fallback = {}) => {
 };
 
 export const ClientInfoProvider = ({ children }) => {
-  const [clientInfoByProject, setClientInfoByProject] = useState({});
+  useContext(AuthContext);
+  useContext(WorkspaceContext);
+  const scope = currentScope();
+  const [cache, setCache] = useState(() => ({ scope, values: {} }));
+  const clientInfoByProject = cache.scope === scope ? cache.values : {};
+  const setClientInfoByProject = useCallback(update => {
+    if (scope !== currentScope()) return;
+    setCache(previous => ({ scope, values: update(previous.scope === scope ? previous.values : {}) }));
+  }, [scope]);
+  useEffect(() => registerResettable(() => setCache({ scope: '', values: {} })), []);
 
   const upsertClientInfo = useCallback((projectId, source, fallback = {}) => {
     if (!projectId || !source) return;
@@ -29,7 +43,7 @@ export const ClientInfoProvider = ({ children }) => {
         [projectId]: normalized
       };
     });
-  }, []);
+  }, [setClientInfoByProject]);
 
   const upsertClientInfoBatch = useCallback((items = []) => {
     if (!items.length) return;
@@ -51,7 +65,7 @@ export const ClientInfoProvider = ({ children }) => {
       });
       return didChange ? next : prev;
     });
-  }, []);
+  }, [setClientInfoByProject]);
 
   const getClientForProject = useCallback((projectId, fallback = {}) => {
     if (!projectId) return normalizeClient(fallback, fallback);
@@ -71,7 +85,8 @@ export const ClientInfoProvider = ({ children }) => {
 
   useEffect(() => {
     const handleBoardUpdate = (event) => {
-      const { boardId, updates } = event.detail || {};
+      const { boardId, updates, workspaceId } = event.detail || {};
+      if (workspaceId && String(workspaceId) !== String(localStorage.getItem('workspaceId'))) return;
       if (!boardId || !updates?.clientDetails) return;
       upsertClientInfo(boardId, updates.clientDetails);
     };

@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useContext, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import FullCalendar from '@fullcalendar/react';
@@ -98,11 +98,13 @@ const CalendarView = () => {
     if (currentDepartment) {
       loadEvents();
     } else {
+      eventsReadGeneration.current++;
       setEvents([]);
       setFilteredEvents([]);
       setLoading(false);
     }
-  }, [currentDepartment]);
+    return () => { eventsReadGeneration.current++; };
+  }, [currentDepartment?._id]);
 
   useEffect(() => {
     applyFilters();
@@ -124,10 +126,13 @@ const CalendarView = () => {
     };
   }, [tooltipData]);
 
+  const eventsReadGeneration = useRef(0);
   const loadEvents = async () => {
+    const request = ++eventsReadGeneration.current;
     try {
       setLoading(true);
-      const response = await Database.getCardsByDepartment(currentDepartment._id);
+      const response = await Database.getAllCardsByDepartment(currentDepartment._id);
+      if (request !== eventsReadGeneration.current) return;
       const allCards = response.data || [];
       const now = new Date();
       now.setHours(0, 0, 0, 0);
@@ -207,6 +212,7 @@ const CalendarView = () => {
       setEvents(calendarEvents);
       calculateStats(calendarEvents);
     } catch (error) {
+      if (request !== eventsReadGeneration.current || error.code === 'ERR_CANCELED') return;
       console.error('Error loading events:', error);
     } finally {
       setLoading(false);

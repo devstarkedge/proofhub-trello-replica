@@ -433,7 +433,7 @@ export const login = asyncHandler(async (req, res, next) => {
 // @route   GET /api/auth/me
 // @access  Private
 export const getMe = asyncHandler(async (req, res, next) => {
-  const baseUser = await User.findById(req.user.id).select('-password').lean();
+  const baseUser = req.authIdentityRecord || await User.findById(req.user.id).select('-password').lean();
 
   // req.user's role/department/team/accessType/allowedProjects are already
   // the correct values for the *active* workspace (overlaid by `protect`
@@ -554,11 +554,11 @@ export const checkEmail = asyncHandler(async (req, res, next) => {
 // @route   POST /api/auth/refresh
 // @access  Private
 export const refreshToken = asyncHandler(async (req, res) => {
-  res.status(200).json({ success: true, ...await rotateSession(req.body.refreshToken) });
+  res.status(200).json({ success: true, ...await rotateSession(req.body.refreshToken, req.body.requestId) });
 });
 
 export const logout = asyncHandler(async (req, res) => {
-  await revokeSession(req.body.refreshToken);
+  await revokeSession(req.body.refreshToken, req.body.requestId);
   res.status(200).json({ success: true });
 });
 

@@ -2,7 +2,7 @@ export const BACKEND_UNAVAILABLE_MESSAGE =
   'FlowTask could not verify your saved session. The backend may still be starting; retry or sign in.';
 
 export function isAuthenticationRejection(error) {
-  return [401, 403].includes(error?.response?.status);
+  return error?.response?.status === 401;
 }
 
 export function isTransientBackendError(error) {

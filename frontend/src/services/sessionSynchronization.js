@@ -1,17 +1,18 @@
 import {trackingStore,clearTrackingStates} from './trackingState';
 import {attendanceStore,clearAttendanceStates} from './attendanceState';
 import {retainWorkSelectionPrefetch,invalidateWorkSelections} from './workSelectionState';
+import {sessionIdentity,isCurrentSession} from '../../../shared/sessionTransport.mjs';
 const owners=new Map();
 export function retainSessionSynchronization(scope,workspaceId,authorizationKey){
   let entry=owners.get(scope);
   if(entry){clearTimeout(entry.release);entry.count++;if(entry.authorizationKey!==authorizationKey){entry.authorizationKey=authorizationKey;entry.secureRefresh();}entry.ensure();return()=>release(scope,entry);}
   const tracking=trackingStore(scope,workspaceId),attendance=attendanceStore(scope,workspaceId),userId=scope.split(':').at(-1);
-  let refreshTimer,workRefreshTimer,boundaryTimer,lastBoundary='',channel,sessionToken=localStorage.getItem('token');
-  const current=()=>localStorage.getItem('workspaceId')===String(workspaceId)&&Boolean(sessionToken)&&localStorage.getItem('token')===sessionToken;
+  let refreshTimer,workRefreshTimer,boundaryTimer,lastBoundary='',channel,session=sessionIdentity(localStorage);
+  const current=()=>localStorage.getItem('workspaceId')===String(workspaceId)&&Boolean(session.token)&&isCurrentSession(session,localStorage);
   const refresh=()=>{if(current()){tracking.reload();attendance.reload();}};
   const schedule=()=>{clearTimeout(refreshTimer);refreshTimer=setTimeout(refresh,100);};
   const invalidate=()=>{tracking.invalidate();attendance.invalidate();schedule();};
-  const secureRefresh=()=>{sessionToken=localStorage.getItem('token');invalidateWorkSelections(scope,true);tracking.clear();attendance.clear();tracking.invalidate();attendance.invalidate();schedule();};
+  const secureRefresh=()=>{session=sessionIdentity(localStorage);invalidateWorkSelections(scope,true);tracking.clear();attendance.clear();tracking.invalidate();attendance.invalidate();schedule();};
   const realtime=event=>{
     const {type='',payload={}}=event.detail||{};
     if(payload.workspaceId&&String(payload.workspaceId)!==String(workspaceId))return;
@@ -30,7 +31,7 @@ export function retainSessionSynchronization(scope,workspaceId,authorizationKey)
     if(event.detail?.kind!=='work')invalidate();
     channel?.postMessage({scope});
   };
-  const storage=event=>{if(['token','workspaceId'].includes(event.key)){if(!current()||event.key==='token'){clearTrackingStates();clearAttendanceStates();rejected();}}};
+  const storage=event=>{if(['token','workspaceId'].includes(event.key)&&!current()){clearTrackingStates();clearAttendanceStates();rejected();}};
   const boundary=()=>{
     clearTimeout(boundaryTimer);
     const a=attendance.getSnapshot().status,t=tracking.getSnapshot().state,session=a?.activeSession;

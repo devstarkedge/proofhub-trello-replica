@@ -7,6 +7,7 @@ import { ThemeProvider } from './context/ThemeProvider';
 import './index.css';
 import App from './App.jsx';
 import { screenshotCache } from './services/screenshotCache';
+import { registerResettable } from './store/resetRegistry';
 
 // Create a client with optimized settings
 const queryClient = new QueryClient({
@@ -30,6 +31,8 @@ const queryClient = new QueryClient({
 });
 
 screenshotCache(queryClient);
+// Every query is discarded synchronously before a different account/workspace renders.
+registerResettable(() => queryClient.clear());
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

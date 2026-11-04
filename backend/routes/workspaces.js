@@ -20,7 +20,7 @@ import {
   getWorkspaceSetupStatus
 } from '../controllers/workspaceController.js';
 import { getWorkspacePlan, upgradeToPro, downgradeToFree } from '../controllers/workspacePlanController.js';
-import { protect } from '../middleware/authMiddleware.js';
+import { protect, protectIdentity } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
 import { rateLimiter } from '../middleware/rateLimiter.js';
 
@@ -33,11 +33,14 @@ const iconUpload = multer({
   limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
 });
 
+// Listing permitted workspaces and switching away from a removed selection
+// must remain possible without access to the old workspace.
+router.get('/', protectIdentity, getMyWorkspaces);
+router.post('/:id/switch', protectIdentity, switchWorkspace);
 router.use(protect);
 router.get('/preferences/me', getWorkspacePreferences);
 router.patch('/preferences/me', updateWorkspacePreferences);
 
-router.get('/', getMyWorkspaces);
 
 // Must be registered before GET /:id — otherwise Express would match
 // "check-slug" as an :id param instead.
@@ -69,7 +72,6 @@ router.patch('/:id', updateWorkspace);
 router.delete('/:id', deactivateWorkspace);
 router.post('/:id/icon', iconUpload.single('icon'), uploadWorkspaceIcon);
 router.delete('/:id/icon', removeWorkspaceIcon);
-router.post('/:id/switch', switchWorkspace);
 router.post('/:id/leave', leaveWorkspace);
 router.patch('/:id/owner', [
   body('newOwnerId').notEmpty().withMessage('newOwnerId is required'),

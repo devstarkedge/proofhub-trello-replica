@@ -2,7 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import { getUsers, getUser, updateUser, deleteUser, verifyUser, getProfile, updateProfile, updateSettings, assignUser, declineUser, getVerifiedUsers, getUsersByDepartments, getManagerUsers, changeUserRole, getUserPagePermissions, patchUserPagePermissions } from '../controllers/userController.js';
 import { uploadAvatar, uploadAvatarFromGoogleDrive, removeAvatar } from '../controllers/avatarController.js';
-import { protect, authorize } from '../middleware/authMiddleware.js';
+import { protect, protectIdentity, protectSession, authorize } from '../middleware/authMiddleware.js';
 import { hrOrAdmin, ownerOrAdminManager } from '../middleware/rbacMiddleware.js';
 import { allowRolesOrAccessControlManage } from '../middleware/requireAccessControl.js';
 import { getPushStatusForDevice, getVapidKeys, removeUserPushSubscription, saveUserPushSubscription } from '../utils/pushNotification.js';
@@ -28,9 +28,11 @@ router.post('/avatar', protect, avatarUpload.single('avatar'), uploadAvatar);
 router.post('/avatar/google-drive', protect, uploadAvatarFromGoogleDrive);
 router.delete('/avatar', protect, removeAvatar);
 
-router.get('/profile', protect, getProfile);
+router.get('/profile', protectSession, getProfile);
 router.put('/profile', protect, updateProfile);
-router.put('/settings', protect, updateSettings);
+// Self-owned preferences/password recovery requires identity, not access to
+// a previously selected tenant. No workspace or admin grants are added.
+router.put('/settings', protectIdentity, updateSettings);
 
 // Push notification routes (must come before parameterized routes)
 router.get('/push-key', protect, (req, res) => {

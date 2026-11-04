@@ -18,16 +18,17 @@ export default function useRealtimeSync() {
       const payload = event.detail?.payload || {};
       if (payload.workspaceId && String(payload.workspaceId) !== String(currentWorkspace._id)) return;
       const eventType = type === 'notification' ? payload.type : type;
-      if (!/card|list|comment|subtask|attachment|task|board|project|department|assigned|access|authz|recovery|data-changed/.test(eventType || '')) return;
+      if (!/card|list|comment|subtask|attachment|task|board|project|department|assigned|access|authz|role|permission|recovery|data-changed/.test(eventType || '')) return;
       const workflow = useWorkflowStore.getState();
       const boardId = payload.boardId || payload.board?._id || payload.board;
+      if (type === 'board-updated' && boardId && payload.updates) useProjectStore.getState().projectUpdated({ _id: boardId, ...payload.updates });
       if (type === 'access-changed' && String(boardId) === String(workflow.currentProjectId)) workflow.reset();
       if (/card|list|comment|subtask|attachment|task|board|data-changed/.test(eventType || '')) {
         if (type === 'card-updated' && workflow.cardsById[payload.cardId] && payload.updates) workflow.updateCardLocal(payload.cardId, payload.updates);
         else if (type === 'card-deleted' && payload.cardId) workflow.removeCardFromSocket(payload.cardId);
         if (!boardId || String(boardId) === String(workflow.currentProjectId)) workflowDirty = true;
       }
-      if (/board|project|department|assigned|access|authz|data-changed/.test(eventType || '')) projectsDirty = true;
+      if (/card|task|subtask|board|project|department|assigned|access|authz|role|permission|data-changed/.test(eventType || '')) projectsDirty = true;
       clearTimeout(timer);
       timer = setTimeout(async () => {
         if (disposed) return;

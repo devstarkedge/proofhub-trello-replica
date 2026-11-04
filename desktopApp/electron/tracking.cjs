@@ -81,6 +81,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
   };
   async function request(endpoint,body,method=body?'POST':'GET') {
     if (!credentials) throw new Error('Sign in to desktop tracking');
+    const requestToken=credentials.token;
     const backend=new URL(getBackendURL());
     if(backend.protocol!=='https:'&&!['localhost','127.0.0.1'].includes(backend.hostname))throw new Error('Desktop tracking requires HTTPS');
     const response=await fetch(new URL(`/api/tracking${endpoint}`,backend),{method,redirect:'error',
@@ -88,6 +89,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
       ...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000)});
     const json=await response.json().catch(()=>({}));
     if(!response.ok){const error=new Error(json.message||`Tracking request failed (${response.status})`);error.status=response.status;error.code=json.code||(response.status===429?'UPLOAD_RATE_LIMITED':undefined);
+      if(response.status===401&&credentials?.token===requestToken)publish('unavailable','Refreshing your desktop session.','ACCESS_REFRESH_REQUIRED');
       if(response.status===429){const retry=response.headers?.get?.('retry-after');error.retryAfterMs=retry&&Number.isFinite(Number(retry))?Math.max(1000,Number(retry)*1000):retry&&Number.isFinite(Date.parse(retry))?Math.max(1000,Date.parse(retry)-Date.now()):60000;}
       throw error;}
     return json.data;
@@ -373,7 +375,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
       flush().catch(()=>{});
     }catch(error){
       if(scope!==generation)return;
-      if([401,403,404].includes(error.status)){haltCapture(error.message);}
+      if([401,403,404].includes(error.status)){haltCapture(error.message);if(error.status===401)publish('unavailable','Refreshing your desktop session.','ACCESS_REFRESH_REQUIRED');}
       else if(error.status===409){
         if(error.code==='DEVICE_STATE_CHANGED'){
           // Discard the unconfirmed tail; it must not cross a release fence.

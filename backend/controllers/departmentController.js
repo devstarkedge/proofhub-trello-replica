@@ -173,6 +173,12 @@ export const getPublicDepartments = asyncHandler(async (req, res, next) => {
 // @access  Private
 export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next) => {
   const user = req.user;
+  // Compact Home responses retain full projects once, and only IDs in each
+  // member's assignment map. Projecting in Mongo avoids materializing and
+  // transmitting repeated descriptions/cover histories before trimming them.
+  const projectAssignmentValue = expression => req.query.compact === 'true'
+    ? { $map: { input: expression, as: 'assignedProject', in: { _id: '$$assignedProject._id' } } }
+    : expression;
 
   // Build match query based on user role (for Dashboard/Home - shows only assigned)
   let matchQuery = { isActive: true };
@@ -408,7 +414,7 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
               as: 'member',
               in: {
                 k: { $toString: '$$member._id' },
-                v: {
+                v: projectAssignmentValue({
                   $filter: {
                     input: '$projects',
                     as: 'project',
@@ -436,7 +442,7 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
                       ]
                     }
                   }
-                }
+                })
               }
             }
           }

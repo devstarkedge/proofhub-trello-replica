@@ -1,4 +1,5 @@
-import { createContext, useState, useEffect, useCallback } from "react";
+import { createContext, useState, useEffect, useCallback, useRef } from "react";
+import { sessionIdentity, isCurrentSession, getRefreshRequestId } from '../../../shared/sessionTransport.mjs';
 import api from "../services/api";
 import socketService from "../services/socket";
 import useRoleStore from "../store/roleStore";
@@ -13,6 +14,10 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sessionError, setSessionError] = useState(null);
+  const restoreInFlightRef = useRef(null);
+  const restoreSessionRef = useRef(null);
+  const sessionGeneration = useRef(0);
+  const identityActor = useRef(sessionIdentity(localStorage).actor);
 
   const normalizeUser = useCallback((userData) => {
     if (!userData || typeof userData !== "object") {
@@ -40,19 +45,32 @@ export const AuthProvider = ({ children }) => {
     }
 
     // Only store token in localStorage, NOT user data (security improvement)
+    // Response transport already persisted the new JWT, so compare against
+    // the last accepted identity rather than decoding current storage here.
+    if (String(identityActor.current || '') !== String(normalizedUser._id)) localStorage.removeItem('workspaceId');
+    resetAllOnWorkspaceSwitch();
+    identityActor.current = normalizedUser._id;
+    sessionGeneration.current++;
+    restoreInFlightRef.current = null;
     localStorage.setItem("token", userToken);
     setToken(userToken);
     setUser(normalizedUser);
     setIsAuthenticated(true);
+    setLoading(false);
+    setSessionError(null);
 
     // WorkspaceProvider opens the authenticated connection after workspace resolution.
   };
 
   const logoutUser = useCallback(() => {
+    identityActor.current = null;
+    sessionGeneration.current++;
+    restoreInFlightRef.current = null;
     // Only remove token from localStorage
     const refreshToken = localStorage.getItem('refreshToken');
-    if (refreshToken) api.post('/api/auth/logout', { refreshToken }, { skipOfflineQueue: true }).catch(() => {});
+    if (refreshToken) api.post('/api/auth/logout', { refreshToken, requestId: getRefreshRequestId(localStorage) }, { skipOfflineQueue: true }).catch(() => {});
     localStorage.removeItem('refreshToken');
+    localStorage.removeItem('flowtask:refresh-attempt:v1');
     localStorage.removeItem("token");
     localStorage.removeItem("workspaceId");
     sessionStorage.removeItem("push_modal_dismissed");
@@ -68,6 +86,8 @@ export const AuthProvider = ({ children }) => {
     });
 
     setIsAuthenticated(false);
+    setSessionError(null);
+    setLoading(false);
 
     // Disconnect socket on logout
     socketService.disconnect();
@@ -77,9 +97,13 @@ export const AuthProvider = ({ children }) => {
     resetAllOnWorkspaceSwitch();
   }, []);
 
-  const restoreSession = useCallback(async () => {
+  const restoreSession = useCallback(() => {
+    if (restoreInFlightRef.current) return restoreInFlightRef.current;
+    const generation = sessionGeneration.current;
+    const identity = sessionIdentity(localStorage);
+    const current = () => generation === sessionGeneration.current && isCurrentSession(identity, localStorage);
+    const operation = (async () => {
     setSessionError(null);
-    setLoading(true);
     const savedToken = localStorage.getItem("token");
 
     if (!savedToken) {
@@ -90,6 +114,7 @@ export const AuthProvider = ({ children }) => {
     try {
       // Fetch fresh user data from API using the stored token
       const response = await api.get(`/api/auth/verify?_t=${Date.now()}`);
+      if (!current()) return;
       const rawUser = response?.data?.data ?? response?.data?.user;
       const normalizedUser = normalizeUser(rawUser);
 
@@ -98,6 +123,7 @@ export const AuthProvider = ({ children }) => {
       }
 
       // Re-hydrate state from verified data (user data in memory only)
+      identityActor.current = normalizedUser._id;
       setToken(localStorage.getItem("token"));
       setUser(normalizedUser);
       setIsAuthenticated(true);
@@ -115,13 +141,35 @@ export const AuthProvider = ({ children }) => {
       // ever re-fetches it even after the correct workspace resolves a
       // moment later. See WorkspaceContext.jsx's loadWorkspaces/switchWorkspace.
     } catch (error) {
+      if (!current()) return;
       console.error("Session restore failed:", error);
       if (error.response?.status === 401) logoutUser();
       else setSessionError('Your session could not be verified. Check your connection and retry.');
     }
 
-    setLoading(false);
+    if (current()) setLoading(false);
+    })();
+    const tracked = operation.finally(() => {
+      if (restoreInFlightRef.current !== tracked) return;
+      restoreInFlightRef.current = null;
+      if (generation === sessionGeneration.current && identity.workspaceId !== localStorage.getItem('workspaceId') && localStorage.getItem('token')) restoreSessionRef.current?.();
+    });
+    restoreInFlightRef.current = tracked;
+    return tracked;
   }, [logoutUser, normalizeUser]);
+
+  useEffect(() => { restoreSessionRef.current = restoreSession; }, [restoreSession]);
+
+  const retrySession = useCallback(() => {
+    setLoading(true);
+    return restoreSession();
+  }, [restoreSession]);
+
+  useEffect(() => {
+    const recover = () => { if (sessionError && localStorage.getItem('token')) retrySession(); };
+    window.addEventListener('online', recover);
+    return () => window.removeEventListener('online', recover);
+  }, [sessionError, retrySession]);
 
   useEffect(() => {
     restoreSession();
@@ -159,6 +207,23 @@ export const AuthProvider = ({ children }) => {
     window.addEventListener('session-token-updated', updated);
     return () => window.removeEventListener('session-token-updated', updated);
   }, [logoutUser]);
+
+  useEffect(() => {
+    const identity = sessionIdentity(localStorage);
+    const storageChanged = event => {
+      if (event.key !== 'token' || localStorage.getItem('token') !== event.newValue) return;
+      if (!event.newValue) { logoutUser(); return; }
+      setToken(event.newValue);
+      if (!isCurrentSession(identity, localStorage)) {
+        sessionGeneration.current++;
+        resetAllOnWorkspaceSwitch(); setUser(null); setIsAuthenticated(false); setLoading(true);
+        restoreInFlightRef.current = null;
+        restoreSession();
+      }
+    };
+    window.addEventListener('storage', storageChanged);
+    return () => window.removeEventListener('storage', storageChanged);
+  }, [token, logoutUser, restoreSession]);
 
   useEffect(() => {
     const changed = event => {
@@ -220,7 +285,7 @@ export const AuthProvider = ({ children }) => {
         isAuthenticated,
         loading,
         sessionError,
-        retrySession: restoreSession,
+        retrySession,
         login,
         loginUser,
         logoutUser,

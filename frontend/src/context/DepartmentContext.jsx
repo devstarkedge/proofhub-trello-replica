@@ -1,11 +1,22 @@
-import { createContext, useState, useEffect, useContext } from 'react';
+import { createContext, useState, useEffect, useContext, useRef } from 'react';
 import AuthContext from './AuthContext';
 import Database from '../services/database';
+import WorkspaceContext from './WorkspaceContext';
+import { registerResettable } from '../store/resetRegistry';
 
 const DepartmentContext = createContext();
 
 export const TeamProvider = ({ children }) => {
   const { isAuthenticated, user } = useContext(AuthContext);
+  const { currentWorkspace } = useContext(WorkspaceContext);
+  const generation = useRef(0);
+  const [resetRevision, setResetRevision] = useState(0);
+  useEffect(() => registerResettable(() => {
+    generation.current++;
+    setResetRevision(value => value + 1);
+    setTeams([]); setDepartments([]); setCurrentTeam(null); setCurrentDepartment(null);
+    setHasNoDepartments(false); setLoading(true);
+  }), []);
   const [teams, setTeams] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [currentTeam, setCurrentTeam] = useState(null);
@@ -24,9 +35,8 @@ export const TeamProvider = ({ children }) => {
   };
 
   useEffect(() => {
-    if (isAuthenticated && user) {
+    if (isAuthenticated && user && currentWorkspace?._id) {
       loadDepartments();
-      loadTeams();
     } else {
       setTeams([]);
       setDepartments([]);
@@ -34,7 +44,7 @@ export const TeamProvider = ({ children }) => {
       setCurrentDepartment(null);
       setLoading(false);
     }
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user?._id, user?.role, user?.roleId, currentWorkspace?._id, resetRevision]);
 
   useEffect(() => {
     if (isAuthenticated && user && currentDepartment) {
@@ -92,9 +102,12 @@ export const TeamProvider = ({ children }) => {
   }, [currentDepartment]);
 
   const loadDepartments = async () => {
+    const request = generation.current;
+    setLoading(true);
     try {
       // Use the optimized filter-options endpoint for role-aware department loading
       const response = await Database.getDepartmentFilterOptions();
+      if (request !== generation.current) return;
       const { departments: depts, showAllOption, defaultDepartmentId, hasNoDepartments } = response.data || {};
       
       // Build the department list based on role-aware visibility
@@ -140,17 +153,20 @@ export const TeamProvider = ({ children }) => {
         }
       }
     } catch (error) {
+      if (request !== generation.current || error.code === 'ERR_CANCELED') return;
       console.error('Error loading departments:', error);
       setDepartments([]);
-    }
+    } finally { if (request === generation.current) setLoading(false); }
   };
 
   const loadTeams = async () => {
+    const request = generation.current;
     try {
       setLoading(true);
       // Only load teams if a specific department is selected (not "all")
       if (currentDepartment && currentDepartment._id !== 'all') {
         const userTeams = await Database.getTeams(currentDepartment._id);
+        if (request !== generation.current) return;
         setTeams(userTeams.data || []);
         if (userTeams.data && userTeams.data.length > 0) {
           setCurrentTeam(userTeams.data[0]); // Default to first team
@@ -162,9 +178,10 @@ export const TeamProvider = ({ children }) => {
         setCurrentTeam(null);
       }
     } catch (error) {
+      if (request !== generation.current || error.code === 'ERR_CANCELED') return;
       console.error('Error loading teams:', error);
     } finally {
-      setLoading(false);
+      if (request === generation.current) setLoading(false);
     }
   };
 
@@ -330,6 +347,7 @@ export const TeamProvider = ({ children }) => {
       setCurrentTeam,
       setCurrentDepartment: handleSetCurrentDepartment,
       loading,
+      resetRevision,
       loadTeams,
       loadDepartments,
       createDepartment,

@@ -29,7 +29,7 @@ export default function reportingDirectoryInvalidation(schema, { workspaceField 
       for (const target of targets) await run({ workspaceId: target }, () => requestReportingReconciliation(target, session));
     } catch (error) {
       // A secondary delivery wakeup cannot invalidate an already saved user
-      // mutation. The worker compares the actual source records every cycle.
+      // mutation. A bounded periodic repair compares the actual source records.
       console.warn('[Reporting] directory reconciliation will retry:', error.code || error.name);
     }
   }

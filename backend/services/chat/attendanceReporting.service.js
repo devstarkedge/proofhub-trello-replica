@@ -26,6 +26,7 @@ import { run } from '../../modules/workspaces/workspaceContext.js';
 import { processLeaveReporting } from './leaveReporting.service.js';
 import { resolveLeaveAccessScope } from '../../modules/leave/leaveAuthorization.service.js';
 import { reportingRetry, isWorkspaceMappingUnavailable } from './reportingRetry.js';
+import { shouldRebuildReportingDirectory, reportingAccessClock } from './reportingDirectorySchedule.js';
 
 async function reportingWorkSessions(workspaceId, userId, workDateKey, dbSession = null) {
   const sessions = await WorkSession.find({ workspaceId, user: userId, workDateKey }).session(dbSession).lean();
@@ -92,19 +93,27 @@ export async function deliverReportingPayload(payload, settings) {
 }
 
 // Directory data travels on the same verified API as business reports. Runs
-// once per maintenance cycle, never once per report. Every cycle also repairs
-// missed hooks; the durable fingerprint survives restarts and worker changes.
+// on invalidation or a bounded repair interval, never once per report. The
+// durable fingerprint and dirty version survive restarts and worker changes.
 export async function syncReportingDirectory(workspaceId, settings, state) {
+  // Model invalidation persists dirty=true and increments dirtyVersion. Keep a
+  // five-minute repair pass for missed hooks, capped by the next access expiry.
+  // This only skips directory reconstruction, never outbox delivery or auth.
+  const now = Date.now();
+  if (!shouldRebuildReportingDirectory(state, now)) return;
+  const dirtyVersion = state.dirtyVersion || 0;
   const departments = await Department.find({ workspaceId }).select('_id name isActive managers members').sort('_id').lean();
-  const members = await WorkspaceMembership.find({ workspace: workspaceId }).select('user status role roleId department departments kind').sort('_id').lean();
+  const members = await WorkspaceMembership.find({ workspace: workspaceId }).select('user status role roleId department departments kind guest.expiresAt').sort('_id').lean();
   const users = await User.find({ _id: { $in: members.map(m => m.user) } }).select('_id name isActive').lean();
   const roles = await Role.find({ $or: [{ workspaceId }, { isSystem: true }] }).select('_id workspaceId slug isSystem grants denies permissions isActive').sort('_id').lean();
   const workspace = await Workspace.findById(workspaceId).select('isActive status authzVersion').lean();
   const overrides = await PermissionOverride.find({ workspace: workspaceId }).select('user permission effect scope scopeIds expiresAt status').sort('_id').lean();
   const legacyOverrides = await AccessOverride.find({ workspace: workspaceId, resource: { $in: ['attendance', 'tracking', 'leave'] } }).select('user resource effect actions scope scopedResourceIds expiresAt isActive').sort('_id').lean();
-  const hash = crypto.createHash('sha256').update(JSON.stringify([3, workspace, departments, members, users, roles, overrides, legacyOverrides,
-    [...overrides, ...legacyOverrides].filter(o => o.expiresAt && +new Date(o.expiresAt) <= Date.now()).map(o => String(o._id))])).digest('hex');
-  if (!state.dirty && state.fingerprint === hash && Date.now() - +new Date(state.syncedAt || 0) < 300000) return;
+  // Include nested role grants/denies and guest membership expiry as well as
+  // personal overrides. Crossing a boundary changes delivery IDs even when
+  // source records are unchanged, so the receiver cannot dedupe a revocation.
+  const accessClock = reportingAccessClock([members, roles, overrides, legacyOverrides], now);
+  const hash = crypto.createHash('sha256').update(JSON.stringify([4, workspace, departments, members, users, roles, overrides, legacyOverrides, accessClock.expired])).digest('hex');
   const reconcile = !state.syncedAt || Date.now() - +new Date(state.syncedAt) >= 300000;
   state = await ReportingDirectoryState.findOneAndUpdate({ workspaceId, leaseToken: state.leaseToken }, { $inc: { revision: 1 } }, { new: true }).lean();
   if (!state) throw new Error('Reporting directory lease expired');
@@ -154,7 +163,11 @@ export async function syncReportingDirectory(workspaceId, settings, state) {
         historyAdmin: active && ctx?.status === 'active' && ctx?.kind !== 'guest' && systemRole === 'admin' },
     });
   }
-  await ReportingDirectoryState.updateOne({ workspaceId, leaseToken: state.leaseToken }, { $set: { fingerprint: hash, syncedAt: new Date(), dirty: false } });
+  const nextDirectoryCheckAt = accessClock.nextCheckAt;
+  // Never clear a dirty flag written while this snapshot was being built.
+  await ReportingDirectoryState.updateOne({ workspaceId, leaseToken: state.leaseToken,
+    ...(dirtyVersion ? { dirtyVersion } : { $or: [{ dirtyVersion: 0 }, { dirtyVersion: { $exists: false } }] }) },
+  { $set: { fingerprint: hash, syncedAt: new Date(), dirty: false, nextDirectoryCheckAt } });
 }
 
 export async function processAttendanceReports(workspaceId, options = {}) {
@@ -288,7 +301,7 @@ export async function requestReportingReconciliation(workspaceId, dbSession = nu
   return run({ workspaceId }, async () => {
     const settings = await resolveWorkspaceChatSettings(workspaceId, { requireLinkedWorkspace: true });
     if (!settings.enabled || !settings.webhookUrl) return;
-    await ReportingDirectoryState.updateOne({}, { $set: { dirty: true }, $setOnInsert: { workspaceId } }, { upsert: true, runValidators: true, session: dbSession });
+    await ReportingDirectoryState.updateOne({}, { $set: { dirty: true }, $inc: { dirtyVersion: 1 }, $setOnInsert: { workspaceId } }, { upsert: true, runValidators: true, session: dbSession });
     if (!dbSession?.inTransaction()) requestAttendanceReportDelivery(workspaceId);
   });
 }

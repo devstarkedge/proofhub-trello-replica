@@ -1,4 +1,7 @@
 import { sessionFetch as fetch } from './sessionFetch';
+import { collectPagedRead } from '../../../shared/pagedRead.mjs';
+import { createScopedReadCache } from '../../../shared/scopedReadCache.mjs';
+import { registerResettable } from '../store/resetRegistry';
 import axios from 'axios';
 
 // API service for CRUD operations
@@ -25,6 +28,10 @@ function buildHeaders(includeContentType = true) {
   }
   return headers;
 }
+
+const departmentCardsCache = createScopedReadCache({ storage: localStorage, ttlMs: 0 });
+registerResettable(() => departmentCardsCache.clear());
+for (const name of ['flowtask:data-invalidated', 'socket-connected', 'online']) window.addEventListener(name, () => departmentCardsCache.clear());
 
 class DatabaseService {
   // Board CRUD operations
@@ -361,13 +368,18 @@ class DatabaseService {
     return await res.json();
   }
 
-  async getCardsByDepartment(departmentId) {
+  async getCardsByDepartment(departmentId, { page = 1, limit = 100, signal } = {}) {
     const headers = buildHeaders();
-    const res = await fetch(`${baseURL}/api/cards/department/${departmentId}`, { headers });
+    const res = await fetch(`${baseURL}/api/cards/department/${departmentId}?page=${page}&limit=${Math.min(100, Math.max(1, limit))}`, { headers, signal });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
     }
     return await res.json();
+  }
+
+  async getAllCardsByDepartment(departmentId, { force = false } = {}) {
+    return departmentCardsCache.read('department-cards:' + departmentId,
+      () => collectPagedRead(page => this.getCardsByDepartment(departmentId, { page })), { force });
   }
 
   async getCard(cardId) {

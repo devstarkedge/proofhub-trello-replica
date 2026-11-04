@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useContext, useMemo, lazy, Suspense, useRef, useCallback, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
 import {
   Calendar, User, Tag, ChevronsUpDown, ArrowUpDown, ClipboardList, FolderKanban,
   Users, AlertCircle, CheckCircle2, Clock, TrendingUp, Search, Download, RefreshCw, X,
@@ -34,10 +33,9 @@ const ListViewTasks = () => {
   const { currentDepartment, departments, setCurrentDepartment } = useContext(DepartmentContext);
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const projectCache = useRef(new Map());
   const taskCache = useRef(new Map());
   const [cards, setCards] = useState([]);
+  const cardReadGeneration = useRef(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filters, setFilters] = useState({
@@ -62,33 +60,14 @@ const ListViewTasks = () => {
     if (currentDepartment) {
       loadCards();
     } else {
+      cardReadGeneration.current++;
       setCards([]);
       setLoading(false);
     }
-  }, [currentDepartment]);
+    return () => { cardReadGeneration.current++; };
+  }, [currentDepartment?._id]);
 
-  useEffect(() => {
-    if (!loading && cards && currentDepartment && currentDepartment._id !== 'all') {
-      const uniqueProjects = Array.from(
-        new Set(
-          cards
-            .filter(c => {
-              const cardDeptId = c.board?.department?._id || c.board?.department;
-              return cardDeptId && cardDeptId.toString() === currentDepartment._id.toString();
-            })
-            .map(c => c.board?._id)
-            .filter(Boolean)
-        )
-      );
-      uniqueProjects.slice(0, 5).forEach(projectId => {
-        const key = ['workflow', currentDepartment._id, projectId];
-        queryClient.prefetchQuery({
-          queryKey: key,
-          queryFn: () => Database.getWorkflowData(currentDepartment._id, projectId)
-        }).catch(() => {});
-      });
-    }
-  }, [loading, cards, currentDepartment, queryClient]);
+  // Workflow data is loaded on navigation, not for five unrelated boards.
 
   useEffect(() => {
     if (!currentDepartment && departments.length > 0) {
@@ -101,57 +80,36 @@ const ListViewTasks = () => {
 
 
 
-  const loadCards = async () => {
+  const loadCards = async (force = false, background = false) => {
+    const request = ++cardReadGeneration.current;
     try {
-      setLoading(true);
-      const response = await Database.getCardsByDepartment(currentDepartment._id);
-      setCards(response.data || []);
+      if (!background) setLoading(true);
+      const response = await Database.getAllCardsByDepartment(currentDepartment._id, { force });
+      if (request === cardReadGeneration.current) setCards(response.data || []);
     } catch (error) {
+      if (request !== cardReadGeneration.current || error.code === 'ERR_CANCELED') return;
       console.error('Error loading cards:', error);
       setCards([]);
     } finally {
-      setLoading(false);
+      if (request === cardReadGeneration.current) setLoading(false);
     }
   };
 
   useEffect(() => {
-    let cancelled = false, generation = 0;
-    const refresh = async () => {
-      if (!currentDepartment?._id) return;
-      const request = ++generation;
-      try {
-        const response = await Database.getCardsByDepartment(currentDepartment._id);
-        if (!cancelled && request === generation) setCards(response.data || []);
-      } catch { /* Keep the current list; reconnect performs another authorized read. */ }
-    };
+    const refresh = () => { if (currentDepartment?._id) loadCards(true, true); };
     window.addEventListener('flowtask:data-invalidated', refresh);
-    return () => { cancelled = true; generation++; window.removeEventListener('flowtask:data-invalidated', refresh); };
+    return () => window.removeEventListener('flowtask:data-invalidated', refresh);
   }, [currentDepartment?._id]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadCards();
+    await loadCards(true);
     setTimeout(() => setRefreshing(false), 500);
   };
 
-  const handleProjectClick = useCallback(async (projectId, boardDepartmentId) => {
-    if (!projectId) return;
-    const deptId = boardDepartmentId || currentDepartment?._id;
-    const key = ['workflow-complete', projectId];
-    try {
-      if (!projectCache.current.has(projectId)) {
-        const res = await queryClient.prefetchQuery({
-          queryKey: key,
-          queryFn: () => Database.getWorkflowComplete(projectId)
-        });
-        if (res && res.data) projectCache.current.set(projectId, res.data);
-      }
-    } catch (err) {
-      console.warn('Prefetch workflow failed', err);
-    } finally {
-      navigate(`/workflow/${deptId}/${projectId}`);
-    }
-  }, [currentDepartment, queryClient, navigate]);
+  const handleProjectClick = useCallback((projectId, boardDepartmentId) => {
+    if (projectId) navigate('/workflow/' + (boardDepartmentId || currentDepartment?._id) + '/' + projectId);
+  }, [currentDepartment?._id, navigate]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalCard, setModalCard] = useState(null);

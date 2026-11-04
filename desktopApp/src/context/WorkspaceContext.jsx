@@ -5,6 +5,8 @@ import AuthContext from "./AuthContext";
 import useRoleStore from "../store/roleStore";
 import { resetAllOnWorkspaceSwitch } from "../store/resetRegistry";
 import logger from "../utils/logger";
+import { createScopeFlight } from "../../../shared/scopeFlight.mjs";
+import { captureRequestScope, requestScopeKey } from "../../../shared/requestScope.mjs";
 
 // Role/permission data is workspace-scoped, so it must only ever be fetched
 // AFTER the active workspace is resolved and persisted (x-workspace-id) —
@@ -35,6 +37,7 @@ export const WorkspaceProvider = ({ children }) => {
   const [status, setStatus] = useState("idle"); // 'idle' | 'loading' | 'resolved' | 'no-workspace' | 'error'
   const loadedForUserId = useRef(null);
   const hasResolvedOnceRef = useRef(false);
+  const workspaceReads = useRef(createScopeFlight());
 
   // One connection per active identity; token refresh also reauthenticates it.
   useEffect(() => {
@@ -64,7 +67,8 @@ export const WorkspaceProvider = ({ children }) => {
    * callers (e.g. LoginPage) can decide whether to show the picker without
    * a second round-trip.
    */
-  const loadWorkspaces = useCallback(async () => {
+  const loadWorkspaces = useCallback(() => workspaceReads.current.run(
+    requestScopeKey({ ...captureRequestScope(localStorage), workspaceId: "" }), async isCurrent => {
     // Only the very first resolution attempt is allowed to move `status`
     // into the transient 'loading'/'error' states. loadWorkspaces() is also
     // called by createWorkspace/leaveWorkspace/deactivateWorkspace and by the
@@ -91,12 +95,15 @@ export const WorkspaceProvider = ({ children }) => {
       }
 
       const list = response?.data?.data || [];
+      if (!isCurrent()) return [];
       setWorkspaces(list);
 
       const savedId = localStorage.getItem("workspaceId");
       const resolved = list.find((ws) => ws._id === savedId) || list[0] || null;
-      setCurrentWorkspace(resolved);
+      const previousWorkspace = localStorage.getItem("workspaceId");
       persistActiveWorkspace(resolved);
+      if (String(previousWorkspace || "") !== String(resolved?._id || "")) resetAllOnWorkspaceSwitch();
+      setCurrentWorkspace(resolved);
 
       // Now that the correct workspace is persisted (x-workspace-id), it's
       // safe to fetch role/permission data — it'll resolve against the
@@ -105,6 +112,7 @@ export const WorkspaceProvider = ({ children }) => {
         // Login returns identity data before a workspace is resolved. Hydrate
         // the existing scoped membership overlay before rendering role-based UI.
         const verified = await api.get('/api/auth/me', { headers: { 'x-workspace-id': resolved._id } });
+        if (!isCurrent()) return [];
         const scoped = verified?.data?.data;
         if (String(localStorage.getItem('workspaceId')) === String(resolved._id) && scoped?._id) {
           setUser((prev) => prev && String(prev._id) === String(scoped._id) ? {
@@ -122,14 +130,48 @@ export const WorkspaceProvider = ({ children }) => {
 
       return list;
     } catch (error) {
+      if (!isCurrent() || error.code === "ERR_CANCELED") return [];
       console.error("Error loading workspaces:", error);
       logger.debug("WORKSPACE_RESOLUTION_FAILED", { message: error?.message, isInitialLoad });
       if (isInitialLoad) setStatus("error");
       return [];
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, [persistActiveWorkspace, setUser]);
+  }), [persistActiveWorkspace, setUser]);
+
+  const passwordRecovery = useRef({ userId: null, required: undefined });
+  useEffect(() => {
+    const current = { userId: user?._id, required: user?.forcePasswordChange };
+    const previous = passwordRecovery.current;
+    passwordRecovery.current = current;
+    if (isAuthenticated && current.userId && previous.userId === current.userId && previous.required === true && current.required === false) {
+      // Settings completed the required password change. Retry the blocked
+      // bootstrap once through the existing coalesced, scoped loader.
+      loadWorkspaces();
+    }
+  }, [isAuthenticated, user?._id, user?.forcePasswordChange, loadWorkspaces]);
+
+  // localStorage is shared by tabs: the rendered workspace must follow the same
+  // validated selection as request headers before another protected view renders.
+  useEffect(() => {
+    const changed = event => {
+      if (event.key !== 'workspaceId' || (localStorage.getItem('workspaceId') || null) !== event.newValue) return;
+      workspaceReads.current.invalidate();
+      hasResolvedOnceRef.current = false;
+      setCurrentWorkspace(null);
+      setWorkspaces([]);
+      setUser(previous => previous ? { ...previous, role: null, roleId: null, department: [], team: null, accessType: null, allowedProjects: [], restriction: null, kind: null, workspaceId: null, activeWorkspaceId: null } : previous);
+      socketService.disconnect();
+      resetAllOnWorkspaceSwitch();
+      if (localStorage.getItem('token')) {
+        setStatus('loading'); setLoading(true);
+        loadWorkspaces();
+      } else { setStatus('idle'); setLoading(false); }
+    };
+    window.addEventListener('storage', changed);
+    return () => window.removeEventListener('storage', changed);
+  }, [loadWorkspaces, setUser]);
 
   /**
    * Switches the active workspace: persists the new selection, clears every
@@ -139,6 +181,7 @@ export const WorkspaceProvider = ({ children }) => {
    */
   const switchWorkspace = useCallback(async (workspace) => {
     if (!workspace?._id || workspace._id === currentWorkspace?._id) return;
+    workspaceReads.current.invalidate();
 
     setLoading(true);
     try {
@@ -183,6 +226,7 @@ export const WorkspaceProvider = ({ children }) => {
       loadWorkspaces();
     }
     if (!isAuthenticated) {
+      workspaceReads.current.invalidate();
       loadedForUserId.current = null;
       hasResolvedOnceRef.current = false;
       setWorkspaces([]);

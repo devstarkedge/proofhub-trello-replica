@@ -1,4 +1,5 @@
 import { resourceReadFilter } from '../services/resourceReadFilter.js';
+import { workspaceMembershipDepartmentStages, scopeWorkspaceLookups } from '../utils/workspaceAggregation.js';
 import { copyTaskHierarchy } from '../services/taskCopy.js';
 import { authorizeDestination, moveTaskHierarchy } from '../services/taskMovement.js';
 import { deleteResource } from '../services/resourceDeletion.js';
@@ -132,6 +133,7 @@ export const getCards = asyncHandler(async (req, res, next) => {
         as: 'assignees',
         pipeline: [
           { $project: { name: 1, email: 1, avatar: 1, department: 1 } },
+          ...workspaceMembershipDepartmentStages(req.workspaceId),
           {
             $lookup: {
               from: 'departments',
@@ -220,7 +222,7 @@ export const getCards = asyncHandler(async (req, res, next) => {
   ];
 
   const [cards, countResult] = await Promise.all([
-    Card.aggregate(pipeline),
+    Card.aggregate(scopeWorkspaceLookups(pipeline, req.workspaceId)),
     Card.countDocuments({ $and: [{ list: listId, isArchived: false }, readScope] })
   ]);
 
@@ -266,6 +268,7 @@ export const getCardsByBoard = asyncHandler(async (req, res, next) => {
         as: 'assignees',
         pipeline: [
           { $project: { name: 1, email: 1, avatar: 1, department: 1 } },
+          ...workspaceMembershipDepartmentStages(req.workspaceId),
           {
             $lookup: {
               from: 'departments',
@@ -354,7 +357,7 @@ export const getCardsByBoard = asyncHandler(async (req, res, next) => {
   ];
 
   const [cards, countResult] = await Promise.all([
-    Card.aggregate(pipeline),
+    Card.aggregate(scopeWorkspaceLookups(pipeline, req.workspaceId)),
     Card.countDocuments({ $and: [{ board: boardId, isArchived: false }, readScope] })
   ]);
 
@@ -402,6 +405,10 @@ export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
         isArchived: false
       }
     },
+    // Filter, order and bound root cards before user/time enrichment.
+    { $sort: { updatedAt: -1, _id: -1 } },
+    { $skip: (pageNum - 1) * limitNum },
+    { $limit: limitNum },
     {
       $lookup: {
         from: 'users',
@@ -409,6 +416,8 @@ export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
         foreignField: '_id',
         as: 'assignees',
         pipeline: [
+          { $project: { name: 1, email: 1, avatar: 1 } },
+          ...workspaceMembershipDepartmentStages(req.workspaceId),
           {
             $lookup: {
               from: 'departments',
@@ -458,7 +467,8 @@ export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
         from: 'users',
         localField: 'loggedTime.user',
         foreignField: '_id',
-        as: 'loggedTimeUsers'
+        as: 'loggedTimeUsers',
+        pipeline: [{ $project: { name: 1, email: 1, avatar: 1 } }]
       }
     },
     {
@@ -526,19 +536,10 @@ export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
         },
         updatedAt: 1
       }
-    },
-    {
-      $sort: { updatedAt: -1 }
-    },
-    {
-      $skip: (pageNum - 1) * limitNum
-    },
-    {
-      $limit: limitNum
     }
   ];
 
-  const cards = await Card.aggregate(pipeline);
+  const cards = await Card.aggregate(scopeWorkspaceLookups(pipeline, req.workspaceId));
   const totalCount = await Card.aggregate([
     { $match: { $and: [{ board: { $in: visibleBoards }, isArchived: false }, readScope] } },
     {
@@ -589,6 +590,7 @@ export const getCard = asyncHandler(async (req, res, next) => {
         as: 'assignees',
         pipeline: [
           { $project: { name: 1, email: 1, avatar: 1, department: 1 } },
+          ...workspaceMembershipDepartmentStages(req.workspaceId),
           {
             $lookup: {
               from: 'departments',
@@ -776,7 +778,7 @@ export const getCard = asyncHandler(async (req, res, next) => {
     { $project: { createdByArr: 0, listArr: 0, boardArr: 0, recurrence: 0, coverImageArr: 0, estimationTimeUsers: 0, loggedTimeUsers: 0, billedTimeUsers: 0 } }
   ];
 
-  const results = await Card.aggregate(pipeline);
+  const results = await Card.aggregate(scopeWorkspaceLookups(pipeline, req.workspaceId));
   if (!results || results.length === 0) {
     return next(new ErrorResponse("Card not found", 404));
   }
@@ -1937,6 +1939,7 @@ export const getArchivedCards = asyncHandler(async (req, res, next) => {
         as: 'assignees',
         pipeline: [
           { $project: { name: 1, email: 1, avatar: 1, department: 1 } },
+          ...workspaceMembershipDepartmentStages(req.workspaceId),
           {
             $lookup: {
               from: 'departments',
@@ -2001,7 +2004,7 @@ export const getArchivedCards = asyncHandler(async (req, res, next) => {
   };
 
   const [cards, countResult] = await Promise.all([
-    Card.aggregate(pipeline),
+    Card.aggregate(scopeWorkspaceLookups(pipeline, req.workspaceId)),
     Card.countDocuments(countFilter)
   ]);
 

@@ -22,6 +22,7 @@ import '../modules/permissions/auditLogService.js';
 import { isActiveWorkspaceMember } from '../modules/workspaces/membershipSyncService.js';
 import '../modules/workspaces/roleTypeGuard.js';
 import { publishUserProfileUpdate } from '../services/chat/userProfileSync.js';
+import { identityProfile, IDENTITY_PROFILE_FIELDS } from '../services/identityProfile.js';
 
 const ROLE_OPTIONS_FOR_FINANCE_ACCESS = ['admin', 'manager', 'employee', 'hr'];
 
@@ -239,8 +240,8 @@ export const deleteUser = asyncHandler(async (req, res, next) => {
 // @route   GET /api/users/profile
 // @access  Private
 export const getProfile = asyncHandler(async (req, res, next) => {
-  const user = req.user.isSuperAdmin && !req.workspaceId
-    ? { ...await User.findById(req.user.id).select('name email avatar title settings forcePasswordChange isSuperAdmin').lean(), role: null, department: [], team: null, allowedProjects: [] }
+  const user = !req.workspaceId
+    ? identityProfile(req.authIdentityRecord || await User.findById(req.user.id).select(IDENTITY_PROFILE_FIELDS).lean())
     : await workspaceUserProfile(req.user.id, req.workspaceId, true);
 
   res.status(200).json({
@@ -370,7 +371,7 @@ export const updateSettings = asyncHandler(async (req, res, next) => {
   res.status(200).json({
     success: true,
     ...(newPassword ? await (await import('../services/authSessionService.js')).issueSession(user) : {}),
-    data: userResponse
+    data: req.workspaceId ? userResponse : identityProfile(userResponse)
   });
 });
 

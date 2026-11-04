@@ -4,6 +4,7 @@ import {trackingRole} from './tracking.visibility.js';
 import {contextFor,fail,policyFor,emitChanged} from './tracking.service.js';
 import {can} from './tracking.authorization.js';
 import {emitToUser} from '../../realtime/emitters.js';
+import {ensureDefaultTrackingAgenda} from './tracking.agendas.js';
 export async function roleFor(workspaceId,userId){return trackingRole(await WorkspaceMembership.findOne({workspace:workspaceId,user:userId,status:'active'}).lean(),workspaceId);}
 export async function requireTrackingAdmin(workspaceId,userId){const ctx=await contextFor(workspaceId,userId);if(await roleFor(workspaceId,userId)!=='admin'||!can(ctx,'tracking.manage_policy',{workspaceId}))fail('The current workspace Admin role and Time Tracking settings permission are required',403);}
 export function validateConfiguration(body){
@@ -61,7 +62,7 @@ export async function finishDisable(workspaceId,policy){
 }
 export async function listAgendas(workspaceId,userId){
   const ctx=await contextFor(workspaceId,userId,{includeProjects:false});if(!can(ctx,'tracking.log',{workspaceId,user:userId}))fail('Tracking permission required',403);
-  try{await TrackingAgenda.findOneAndUpdate({normalizedTitle:'learning'},{$setOnInsert:{workspaceId,title:'Learning',normalizedTitle:'learning'}},{upsert:true});}catch(e){if(e.code!==11000)throw e;}
+  await ensureDefaultTrackingAgenda(workspaceId);
   return TrackingAgenda.find({workspaceId,archivedAt:null}).sort({title:1}).select('_id title').lean();
 }
 export async function createAgenda(workspaceId,userId,title){

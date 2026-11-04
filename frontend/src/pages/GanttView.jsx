@@ -3,49 +3,31 @@ import DepartmentContext from '../context/DepartmentContext';
 import Database from '../services/database';
 
 const GanttView = () => {
-  const { currentTeam } = useContext(DepartmentContext);
+  const { currentTeam, currentDepartment } = useContext(DepartmentContext);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (currentTeam) {
-      loadTasks();
-    }
-  }, [currentTeam]);
-
-  const loadTasks = async () => {
-    try {
-      setLoading(true);
-      let allCards = [];
-      // Get all boards for the team, then all lists, then all cards
-      const boards = await Database.getBoards();
-      for (const board of boards) {
-        const lists = await Database.getLists(board._id);
-        for (const list of lists) {
-          const listCards = await Database.getCards(list._id);
-          allCards = allCards.concat(listCards.map(card => ({ ...card, listName: list.title })));
-        }
-      }
-
-      // Filter cards with due dates for Gantt
-      const ganttTasks = allCards.filter(card => card.dueDate).map(card => ({
+    let active = true;
+    setTasks([]);
+    if (!currentDepartment?._id) { setLoading(false); return; }
+    setLoading(true);
+    Database.getAllCardsByDepartment(currentDepartment._id).then(response => {
+      if (!active) return;
+      setTasks((response.data || []).filter(card => card.dueDate).map(card => ({
         id: card._id,
         name: card.title,
         start: new Date(card.createdAt),
         end: new Date(card.dueDate),
         progress: card.status === 'Done' ? 100 : card.status === 'In Progress' ? 50 : 0,
-        dependencies: [], // Could be enhanced with subtasks
-        assignee: card.assignee?.name || 'Unassigned',
+        dependencies: [],
+        assignee: card.assignee?.name || card.assignees?.[0]?.name || 'Unassigned',
         priority: card.priority
-      }));
-
-      setTasks(ganttTasks);
-    } catch (error) {
-      console.error('Error loading tasks:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+      })));
+    }).catch(error => { if (active && error.code !== 'ERR_CANCELED') console.error('Error loading tasks:', error); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [currentDepartment?._id]);
 
   if (loading) {
     return (
@@ -61,7 +43,7 @@ const GanttView = () => {
     <div className="min-h-full bg-gray-100">
       <div className="max-w-7xl mx-auto py-8 px-4">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold">Gantt Chart - {currentTeam?.name}</h1>
+          <h1 className="text-3xl font-bold">Gantt Chart - {currentTeam?.name || currentDepartment?.name}</h1>
         </div>
 
         <div className="bg-white rounded-lg shadow p-6">

@@ -1,4 +1,5 @@
 import { actorFromToken } from '../../../shared/offlineQueue.mjs';
+import { captureRequestScope, assertRequestScope } from '../../../shared/requestScope.mjs';
 import { shouldQueueOfflineRequest } from './requestPolicy';
 import { installSessionTransport } from '../../../shared/sessionTransport.mjs';
 import axios from 'axios';
@@ -14,6 +15,7 @@ const api = axios.create({
 // Add a request interceptor to check network status and include token
 api.interceptors.request.use(
   (config) => {
+    config._requestScope ||= captureRequestScope(localStorage, config.headers?.['x-workspace-id']);
     config._requestActor ||= actorFromToken(localStorage.getItem('token') || '');
     config._requestWorkspace ||= config.headers?.['x-workspace-id'] || localStorage.getItem('workspaceId');
     if (config._sessionActor && actorFromToken(localStorage.getItem('token') || '') !== config._sessionActor) {
@@ -45,7 +47,10 @@ api.interceptors.request.use(
 
 // Add a response interceptor for offline handling
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (response.config?._requestScope) assertRequestScope(localStorage, response.config._requestScope, { identityOnly: /\/api\/auth\/(refresh|logout)(?:[/?]|$)/.test(response.config.url || '') });
+    return response;
+  },
   async (error) => {
 
     // Only queue state-modifying requests; let read queries reject so UI handles error states

@@ -1,4 +1,3 @@
-import { processAttendanceEvents } from '../attendance/attendanceEvents.service.js';
 import { processAttendanceReports } from '../../services/chat/attendanceReporting.service.js';
 import Workspace from '../../models/Workspace.js';
 import WorkspaceIntegrationMapping from '../../models/WorkspaceIntegrationMapping.js';
@@ -11,7 +10,7 @@ import { removeLegacyScreenshot } from './tracking.legacyStorage.js';
 import { finishDisable } from './tracking.settings.js';
 import { sendTrackingReminders } from './tracking.reminders.js';
 
-// Operational maintenance interval (sessions, attendance events, reminders): 15 seconds
+// Operational maintenance interval (sessions and reminders): 15 seconds
 const OPERATIONAL_INTERVAL_MS = 15000;
 
 // Screenshot retention cleanup interval (Cloudflare R2 deletion + interval purge):
@@ -31,7 +30,9 @@ let operationalRunning = false;
 let retentionRunning = false;
 
 /**
- * Operational maintenance: attendance events, session reconciliation, disable recovery, reminders.
+ * Operational maintenance: session reconciliation, disable recovery, reminders.
+ * Attendance outbox recovery belongs to the cleanup queue's existing 15s job;
+ * running it here as well doubles empty claims without improving deadlines.
  * Runs at a fast cadence (every 15s) to keep user session states responsive.
  */
 export async function trackingMaintenance() {
@@ -40,7 +41,6 @@ export async function trackingMaintenance() {
   try {
     for await (const workspace of Workspace.find({}).select('_id').cursor()) {
       await run({ workspaceId: workspace._id }, async () => {
-        await processAttendanceEvents(workspace._id);
         await reconcileWorkspaceSessions(workspace._id);
         const policy = await policyFor(workspace._id);
         if (policy.disableRecoveryPending) await finishDisable(workspace._id, policy);

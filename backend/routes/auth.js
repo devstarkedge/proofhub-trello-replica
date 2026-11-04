@@ -2,7 +2,7 @@ import { confirmAccountEmailChange } from '../controllers/authController.js';
 import express from 'express';
 import { body } from 'express-validator';
 import { register, login, logout, getMe, updateDetails, updatePassword, refreshToken, checkEmail, forgotPassword, verifyResetToken, resetPassword, registerAndCreateWorkspace } from '../controllers/authController.js';
-import { protect } from '../middleware/authMiddleware.js';
+import { protect, protectIdentity, protectSession } from '../middleware/authMiddleware.js';
 import { validate } from '../middleware/validation.js';
 import { rateLimiter } from '../middleware/rateLimiter.js';
 import { passwordValidator } from '../utils/passwordPolicy.js';
@@ -57,11 +57,11 @@ router.post('/reset-password/:token', rateLimiter({ windowMs: 15 * 60 * 1000, ma
 // adminCreateUser used to be defined.
 
 router.post('/confirm-email-change', protect, rateLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 10 }), confirmAccountEmailChange);
-router.get('/me', protect, getMe);
+router.get('/me', protectSession, getMe);
 router.put('/updatedetails', protect, updateDetails);
-router.put('/updatepassword', protect, updatePassword);
+router.put('/updatepassword', protectIdentity, updatePassword);
 router.post('/refresh', rateLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 60 }), refreshToken);
 router.post('/logout', rateLimiter({ windowMs: 15 * 60 * 1000, maxRequests: 60 }), logout);
-router.get('/verify', protect, getMe);
+router.get('/verify', protectSession, getMe);
 
 export default router;

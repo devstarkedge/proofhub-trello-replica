@@ -15,7 +15,7 @@ const authenticatedBudget = rateLimiter({ ...config.rateLimit.global, keyFn: req
 
 // ─── Auth Cache ─────────────────────────────────────────────────────────────
 // In-memory LRU cache for authenticated user lookups.
-// Eliminates 2+ DB queries per request for repeat calls within TTL window.
+// Reuses display identity fields; revocation and tenant access stay fresh.
 // Cache is per-process — safe for stateless horizontal scaling (each instance
 // has its own cache; worst case is a cache miss on a new instance).
 const authCache = new LRUCache({
@@ -74,7 +74,7 @@ export const clearAuthCache = () => {
   membershipCache.clear();
 };
 
-export const protect = async (req, res, next) => {
+const createProtect = ({ identityOnly = false, recoverWorkspace = false } = {}) => async (req, res, next) => {
   if (req.user && req.workspaceId) return workspaceContext.run({ workspaceId: req.workspaceId, actorId: req.user.id || req.user._id }, next);
   try {
     let token;
@@ -88,42 +88,49 @@ export const protect = async (req, res, next) => {
     if (!token) {
       return res.status(401).json({
         success: false,
+        code: 'ACCESS_MISSING',
         message: 'Not authorized to access this route'
       });
     }
 
+    let decoded;
     try {
-      // Verify token (CPU-only, no DB call)
-      const decoded = jwt.verify(token, config.jwt.secret);
+      decoded = jwt.verify(token, config.jwt.secret);
+    } catch (error) {
+      return res.status(401).json({ success: false,
+        code: error.name === 'TokenExpiredError' ? 'ACCESS_EXPIRED' : 'ACCESS_INVALID',
+        message: 'Token is invalid or expired' });
+    }
+    if (!decoded.id || decoded.type !== 'access' || !Number.isInteger(decoded.tokenVersion)) {
+      return res.status(401).json({ success: false, code: 'ACCESS_INVALID', message: 'Token is invalid or expired' });
+    }
+    try {
       req.authExpiresAt = Number.isFinite(decoded.exp) ? decoded.exp * 1000 : undefined;
       const userId = decoded.id;
       const userCacheKey = cacheKey(req.headers['x-workspace-id'], 'identity', userId);
 
       // Check LRU cache first
       let userObj = readCache(authCache, userCacheKey);
+      let freshAccount = null;
 
       if (!userObj) {
-        // Cache miss — query DB with lean() + select() for minimal overhead.
-        // `.populate('roleId')` issues its own internal query against Role
-        // (workspace-scoped), and we don't know the caller's workspace yet
-        // at this point in the function — that's resolved further down.
-        // Without runUnscoped() here, every cache miss for a user whose
-        // roleId is set throws "no active workspace context" (caught below
-        // and misreported as a 401), locking that user out until the cache
-        // happens to stay warm. Confirmed empirically, not hypothetical.
+        // Global identity role is never tenant authorization. The active
+        // membership below supplies roleId, so populating the legacy role
+        // wastes a query and can resolve another tenant's role metadata.
         const user = await workspaceContext.runUnscoped(async () => await User.findById(userId)
           .select('-password')
-          .populate('roleId')
           .lean());
 
         if (!user) {
           return res.status(401).json({
             success: false,
+            code: 'SESSION_REVOKED',
             message: 'User not found'
           });
         }
 
         userObj = user;
+        freshAccount = user;
         // Store in cache
         writeCache(authCache, userCacheKey, userObj);
       }
@@ -139,15 +146,17 @@ export const protect = async (req, res, next) => {
       }
 
       // Revocation state is fresh on every request, including other instances.
-      const sessionAccount = await User.findById(userId).select('tokenVersion forcePasswordChange isActive').lean();
+      const sessionAccount = freshAccount || await User.findById(userId).select('tokenVersion forcePasswordChange isActive').lean();
       if (!sessionAccount?.isActive || decoded.type !== 'access' || !Number.isInteger(decoded.tokenVersion) || decoded.tokenVersion !== (sessionAccount.tokenVersion || 0)) {
           invalidateAuthCache(userId);
           return res.status(401).json({
             success: false,
+            code: 'SESSION_REVOKED',
             message: 'Session invalidated. Please log in again.'
           });
       }
       userObj = { ...userObj, ...sessionAccount };
+      if (freshAccount) req.authIdentityRecord = freshAccount;
       const passwordRoute = String(req.originalUrl || req.url || '').split('?')[0];
       const passwordRecoveryRoutes = ['/api/auth/me', '/api/auth/verify', '/api/auth/updatepassword', '/api/users/profile', '/api/users/settings', '/api/admin/settings'];
       if (userObj.forcePasswordChange && !passwordRecoveryRoutes.includes(passwordRoute)) {
@@ -159,8 +168,24 @@ export const protect = async (req, res, next) => {
         if (userCacheKey) authCache.delete(userCacheKey);
         return res.status(401).json({
           success: false,
+          code: 'SESSION_REVOKED',
           message: 'User account is deactivated'
         });
+      }
+
+      const continueIdentity = () => {
+        req.user = { ...userObj, role: null, roleId: null, department: [], team: null,
+          accessType: null, allowedProjects: [], restriction: null, kind: null, workspaceId: null };
+        req.workspaceId = null;
+        req.workspaceMembership = null;
+        return workspaceContext.run({ actorId: req.user.id || req.user._id }, () => authenticatedBudget(req, res, next));
+      };
+
+      // Recovery endpoints validate identity independently of a stale or
+      // removed active workspace. They grant no workspace permissions;
+      // destination membership is checked by the switch controller.
+      if (identityOnly) {
+        return await continueIdentity();
       }
 
       // ── Resolve active workspace & overlay per-workspace role/access ──
@@ -173,7 +198,10 @@ export const protect = async (req, res, next) => {
         userObj.lastActiveWorkspace?.toString() ||
         (await ensureDefaultWorkspace())?.toString();
 
-      const membership = requestedWorkspaceId ? await getMembership(userId, requestedWorkspaceId) : null;
+      // A corrupted/obsolete client selection is an authorization failure,
+      // not a database CastError that prevents identity recovery.
+      const validWorkspaceId = typeof requestedWorkspaceId === 'string' && /^[a-fA-F0-9]{24}$/.test(requestedWorkspaceId);
+      const membership = validWorkspaceId ? await getMembership(userId, requestedWorkspaceId) : null;
 
       if (!membership) {
         // A platform-level Super Admin account can legitimately have no
@@ -191,20 +219,7 @@ export const protect = async (req, res, next) => {
         // scoped query a request like this happens to reach still throws
         // loudly (the plugin's existing fail-closed design), rather than
         // silently running against a stale/deleted workspaceId.
-        if (userObj.isSuperAdmin === true) {
-          req.user = {
-            ...userObj,
-            role: null,
-            roleId: null,
-            department: [],
-            team: null,
-            accessType: null,
-            allowedProjects: [],
-            workspaceId: null
-          };
-          req.workspaceId = null;
-          return next();
-        }
+        if (userObj.isSuperAdmin === true || recoverWorkspace) return await continueIdentity();
 
         // Diagnostic trail for "why did this specific request get rejected"
         // — getMembership() always queries fresh (a negative lookup is
@@ -224,8 +239,9 @@ export const protect = async (req, res, next) => {
           lastActiveWorkspace: userObj.lastActiveWorkspace?.toString() || null,
           path: req.originalUrl, method: req.method
         });
-        return res.status(requestedWorkspaceId ? 403 : 401).json({
+        return res.status(403).json({
           success: false,
+          code: 'WORKSPACE_FORBIDDEN',
           message: requestedWorkspaceId ? 'Not a member of this workspace' : 'No workspace context available'
         });
       }
@@ -255,9 +271,13 @@ export const protect = async (req, res, next) => {
         mediaResponse(req, res, () => authenticatedBudget(req, res, () => guardOfflineMutation(req, res, next).catch(next)).catch(next));
       });
     } catch (error) {
-      return res.status(401).json({
+      const unavailable = /Mongo|MongooseServerSelection|PoolCleared|Network|Timeout/i.test(error.name || '');
+      logger.error('[Auth] Identity or workspace resolution failed', { name: error.name, code: error.code });
+      if (unavailable) res.setHeader('Retry-After', '5');
+      return res.status(unavailable ? 503 : 500).json({
         success: false,
-        message: 'Token is invalid or expired'
+        code: unavailable ? 'BACKEND_UNAVAILABLE' : 'AUTH_RESOLUTION_FAILED',
+        message: 'Unable to verify your session right now. Please retry.'
       });
     }
   } catch (error) {
@@ -267,6 +287,12 @@ export const protect = async (req, res, next) => {
     });
   }
 };
+
+export const protect = createProtect();
+export const protectIdentity = createProtect({ identityOnly: true });
+// Bootstrap may recover identity after a saved workspace was removed. This
+// middleware must only be used by identity/profile discovery endpoints.
+export const protectSession = createProtect({ recoverWorkspace: true });
 
 // Role-based authorization middleware
 // Supports both predefined roles and custom roles

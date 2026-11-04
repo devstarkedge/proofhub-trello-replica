@@ -7,6 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import config from './config/index.js';
 import logger from './utils/logger.js';
+import { createRequestMetrics } from './middleware/requestMetrics.js';
 import { initializeHttpServer, requireBackendReady } from './utils/httpStartup.js';
 import { connectRedis, getSharedConnection } from './queues/connection.js';
 import { configureRealtimeCluster, closeRealtimeCluster } from './realtime/cluster.js';
@@ -121,6 +122,8 @@ app.use(corsHandler);
 
 
 // ─── Request Logger ──────────────────────────────────────────────────────────
+// One bounded aggregate per minute; optional disable for constrained log sinks.
+if (process.env.PERFORMANCE_METRICS !== 'false') app.use(createRequestMetrics({ logger }));
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {

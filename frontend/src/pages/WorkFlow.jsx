@@ -31,11 +31,12 @@ const WorkFlow = memo(() => {
   const { deptId, projectId, taskId, subtaskId, nenoId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { currentTeam, loading: teamLoading } = useContext(DepartmentContext);
+  const { currentTeam, loading: teamLoading, resetRevision } = useContext(DepartmentContext);
   const { user } = useContext(AuthContext);
   
   // Track previous projectId to detect changes
   const prevProjectIdRef = useRef(projectId);
+  const lastRouteRead = useRef(null);
 
   const { departments, fetchDepartments } = useProjectStore();
 
@@ -151,11 +152,13 @@ const WorkFlow = memo(() => {
   }, [projectId, closeHierarchy]);
 
   useEffect(() => {
-    if (projectId && !teamLoading) {
+    const key = JSON.stringify([user?._id || user?.id, localStorage.getItem('workspaceId'), deptId, projectId, resetRevision]);
+    if (projectId && !teamLoading && lastRouteRead.current !== key) {
+      lastRouteRead.current = key;
       logger.debug('WORKFLOW_ROUTE_REQUEST', { deptId, projectId });
-      loadData();
+      loadData(); // Fresh backend authorization is required after every scope reset.
     }
-  }, [deptId, projectId, teamLoading]);
+  }, [deptId, projectId, teamLoading, resetRevision, user?._id, user?.id]);
 
   // Fires once real board data is in — keyed on the id (not the whole board
   // object) so it doesn't refire on every optimistic field update.

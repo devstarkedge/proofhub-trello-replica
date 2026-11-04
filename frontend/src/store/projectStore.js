@@ -27,9 +27,11 @@ const useProjectStore = create(
       // Fetch all departments with assignments
       fetchDepartments: async (forceRefresh = false) => {
         const state = get();
-        if (departmentRequest && !forceRefresh) return departmentRequest.promise;
+        if (departmentRequest) {
+          if (forceRefresh) departmentRequest.refreshAfter = true;
+          return departmentRequest.promise;
+        }
         if (!forceRefresh && state.lastUpdated && Date.now() - state.lastUpdated < 30000) return;
-        departmentRequest?.controller.abort();
         const version = ++departmentRequestVersion;
         const controller = new AbortController();
         const request = { controller, promise: null };
@@ -53,7 +55,10 @@ const useProjectStore = create(
             console.error('Error fetching departments:', error);
             set({ error: 'Could not load projects. Please try again.', loading: false, isFetching: false });
           } finally {
-            if (departmentRequest === request) departmentRequest = null;
+            if (departmentRequest === request) {
+              departmentRequest = null;
+              if (request.refreshAfter && version === departmentRequestVersion) return get().fetchDepartments(true);
+            }
           }
         })();
         return request.promise;

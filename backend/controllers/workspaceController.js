@@ -30,10 +30,10 @@ const ICON_MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB — a logo, not a photo
 // @access  Private
 export const getMyWorkspaces = asyncHandler(async (req, res) => {
   const memberships = await WorkspaceMembership.find({ user: req.user.id, status: 'active' })
-    .populate('workspace', 'name slug isActive icon type owner')
+    .populate('workspace', 'name slug isActive status icon type owner')
     .lean();
 
-  const activeMemberships = memberships.filter((m) => m.workspace && m.workspace.isActive);
+  const activeMemberships = memberships.filter((m) => m.workspace?.isActive && !['suspended', 'archived'].includes(m.workspace.status));
 
   // Batch-fetch plan data for every workspace in the switcher in one query
   // — the frontend needs planSlug/chatEnabled per workspace to hide/show
@@ -55,7 +55,7 @@ export const getMyWorkspaces = asyncHandler(async (req, res) => {
       role: m.role,
       isOwner: String(m.workspace.owner) === String(req.user.id),
       icon: m.workspace.icon || null,
-      isActive: String(m.workspace._id) === String(req.workspaceId),
+      isActive: String(m.workspace._id) === String(req.workspaceId || req.headers['x-workspace-id'] || req.user.lastActiveWorkspace),
       planSlug,
       memberLimit: plan?.memberLimit ?? null,
       chatEnabled: planSlug !== 'free'
@@ -809,9 +809,9 @@ export const switchWorkspace = asyncHandler(async (req, res, next) => {
     workspace: req.params.id,
     user: req.user.id,
     status: 'active'
-  }).populate('workspace', 'name slug icon type owner').lean();
+  }).populate('workspace', 'name slug icon type owner isActive status').lean();
 
-  if (!membership || !membership.workspace) {
+  if (!membership?.workspace?.isActive || ['suspended', 'archived'].includes(membership.workspace.status)) {
     return next(new ErrorResponse('You are not a member of this workspace', 403));
   }
 

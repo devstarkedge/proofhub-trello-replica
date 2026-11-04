@@ -3,6 +3,8 @@ import AuthContext from '../../context/AuthContext';
 import WorkspaceContext from '../../context/WorkspaceContext';
 import DesktopMonitoringNotice from './DesktopMonitoringNotice';
 import {trackingStore} from '../../services/trackingState';
+import api from '../../services/api';
+import {sessionIdentity,isCurrentSession} from '../../../../shared/sessionTransport.mjs';
 
 export default function DesktopTrackingBridge() {
   const { user, token, isAuthenticated } = useContext(AuthContext);
@@ -11,6 +13,23 @@ export default function DesktopTrackingBridge() {
   const isDesktop=window.flowtaskDesktop?.isDesktop===true;
   const [status,setStatus]=useState(null);
   const lastAutomaticReceipt=useRef('');
+  const lastAuthRecovery=useRef({});
+  useEffect(()=>{
+    if(!isDesktop||!isAuthenticated||!userId||!workspaceId||status?.errorCode!=='ACCESS_REFRESH_REQUIRED')return;
+    if(String(status.userId)!==String(userId)||String(status.workspaceId)!==String(workspaceId))return;
+    if(lastAuthRecovery.current.inFlight)return;
+    if(lastAuthRecovery.current.token===token&&Date.now()-lastAuthRecovery.current.at<20000)return;
+    lastAuthRecovery.current={token,at:Date.now(),inFlight:true};
+    const identity=sessionIdentity(localStorage);
+    api.refreshAccessToken().then(async nextToken=>{
+      if(!isCurrentSession(identity,localStorage))return;
+      lastAuthRecovery.current.token=nextToken;
+      const tracking=window.flowtaskDesktop?.tracking;
+      await tracking?.configure({userId,workspaceId,token:nextToken});
+      if(isCurrentSession(identity,localStorage))await tracking?.refresh();
+    }).catch(()=>{/* Keep encrypted pending evidence; bounded native sync retries recovery. */})
+      .finally(()=>{lastAuthRecovery.current.inFlight=false;});
+  },[isDesktop,isAuthenticated,userId,workspaceId,token,status]);
   useEffect(()=>{
     const receipt=status?.workTransition;
     if(!isAuthenticated||!receipt||String(receipt.workspaceId)!==String(workspaceId)||String(receipt.userId)!==String(userId))return;
