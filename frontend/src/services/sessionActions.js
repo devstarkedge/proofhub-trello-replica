@@ -16,7 +16,7 @@ export async function recoverSessionAction(scope,read,onConfirmed){
     publish(scope,{...saved,verifying:false,phase:'RECONCILIATION_REQUIRED',error:'The action is not confirmed. Retry the same operation safely.'});return null;
   }catch{publish(scope,{...saved,verifying:false,phase:'RECONCILIATION_REQUIRED',error:'Reconnect to verify the last action before changing work.'});return null;}finally{pending.delete(scope);}})();pending.set(scope,task);return task;
 }
-export async function performSessionAction(scope,descriptor,send,{read,onConfirmed}={}){
+export async function performSessionAction(scope,descriptor,send,{read,onConfirmed,prepare}={}){
   while(pending.has(scope)){
     const waiting=actionSnapshot(scope),sameOperation=waiting.operationId===descriptor.operationId&&waiting.kind===descriptor.kind&&waiting.action===descriptor.action&&waiting.sessionId===descriptor.sessionId&&JSON.stringify(waiting.payload)===JSON.stringify(descriptor.payload);
     // Retry may be clicked while a receipt lookup is still running. Wait for
@@ -31,7 +31,7 @@ export async function performSessionAction(scope,descriptor,send,{read,onConfirm
   if(pending.has(scope)||existing.phase==='PENDING')throw new Error('Another attendance or work action is in progress.');
   if(existing.phase==='RECONCILIATION_REQUIRED'&&existing.operationId!==descriptor.operationId)throw new Error('Verify or retry the previous action first.');
   if(existing.phase==='RECONCILIATION_REQUIRED'&&JSON.stringify(existing.payload)!==JSON.stringify(descriptor.payload))throw new Error('The interrupted action must retain its original selection. Use Retry safely before making another change.');
-  const value={...descriptor,phase:'PENDING',error:''};publish(scope,value);
+  let value={...descriptor,phase:'PENDING',error:'',startedAt:Date.now()};publish(scope,value);
   const execute=async()=>{try{
     if(existing.phase==='RECONCILIATION_REQUIRED'){
       let receipt;
@@ -39,6 +39,7 @@ export async function performSessionAction(scope,descriptor,send,{read,onConfirm
       if(receipt?.committed){onConfirmed?.(receipt,existing);publish(scope,{...value,phase:'CONFIRMED',error:''});return receipt;}
       if(receipt?.committed!==false)throw new Error('Reconnect to verify the interrupted action before retrying.');
     }
+    if(prepare){value={...value,payload:await prepare(value)};publish(scope,value);}
     const result=await send(value);onConfirmed?.(result,value);publish(scope,{...value,phase:'CONFIRMED',error:''});return result;
   }catch(error){const status=error.response?.status;
     if(!status||status>=500){try{const result=await read(value);if(result?.committed){onConfirmed?.(result,value);publish(scope,{...value,phase:'CONFIRMED',error:''});return result;}}catch{/* preserve uncertainty */}

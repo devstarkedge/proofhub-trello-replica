@@ -1,3 +1,4 @@
+import {sessionIdentity,isCurrentSession} from '../../../shared/sessionTransport.mjs';
 import {useCallback,useContext,useEffect,useSyncExternalStore} from 'react';
 import WorkspaceContext from '../context/WorkspaceContext';
 import AuthContext from '../context/AuthContext';
@@ -16,11 +17,12 @@ export default function useSessionAction(){
     if(entry.kind==='work'&&result.session)trackingStore(scope,workspaceId).apply(result);
     if(entry.kind!=='work'){
       attendanceStore(scope,workspaceId).applyReceipt(result);
+      if(result.trackingReceipt)trackingStore(scope,workspaceId).apply(result.trackingReceipt);
       const session=result.data?.checkInAt?result.data:result.session;
       if(session&&['CLOSED','COMPLETED','MISSED_CHECKOUT'].includes(session.status))trackingStore(scope,workspaceId).closeAttendance(session);
       else if(session?.status==='ACTIVE')trackingStore(scope,workspaceId).openAttendance(session);
     }
-    window.dispatchEvent(new CustomEvent('flowtask:session-committed',{detail:{scope,kind:entry.kind}}));
+    window.dispatchEvent(new CustomEvent('flowtask:session-committed',{detail:{scope,kind:entry.kind,trackingReceipt:Boolean(result.trackingReceipt)}}));
   },[scope,workspaceId]);
   const recover=useCallback(()=>recoverSessionAction(scope,read,confirmed),[scope,read,confirmed]);
   useEffect(()=>{
@@ -31,8 +33,16 @@ export default function useSessionAction(){
     document.addEventListener('visibilitychange',resumed);
     return()=>{events.forEach(event=>window.removeEventListener(event,recover));document.removeEventListener('visibilitychange',resumed);};
   },[recover]);
-  const run=useCallback((descriptor,send)=>performSessionAction(scope,descriptor,send,{read,onConfirmed:confirmed}),[scope,read,confirmed]);
+  const run=useCallback((descriptor,send,{prepare}={})=>{
+    const identity=sessionIdentity(localStorage);
+    const guard=()=>{if(scope!==`${identity.workspaceId}:${identity.actor}`||!isCurrentSession(identity,localStorage))throw Object.assign(new Error('Account or workspace changed; reopen this action.'),{response:{status:409}});};
+    return performSessionAction(scope,descriptor,entry=>{guard();return send(entry);},{
+      read:entry=>{guard();return read(entry);},
+      onConfirmed:(result,entry)=>{guard();confirmed(result,entry);},
+      prepare:prepare?async entry=>{guard();const payload=await prepare(entry);guard();return payload;}:undefined
+    });
+  },[scope,read,confirmed]);
   const retry=useCallback(async()=>{const entry=actionSnapshot(scope);if(entry.phase!=='RECONCILIATION_REQUIRED')return;
     return run(entry,()=>entry.kind==='work'?changeWork(entry.action,{...entry.payload,operationId:entry.operationId}):entry.action==='checkin'?checkIn(entry.payload):checkOut(entry.payload));},[scope,run]);
-  return {...snapshot,busy:actionBusy(snapshot),run,recover,retry};
+  return {...snapshot,scope,busy:actionBusy(snapshot),run,recover,retry};
 }

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Popover } from 'radix-ui';
 import {
   Clock3,
+  Loader2,
   FolderKanban,
   ArrowLeftRight,
   Coffee,
@@ -293,6 +294,8 @@ export default function TrackingPanel({
 }) {
   const { state, error, reload, expired, loading: trackingLoading } = useWorkTracking();
   const sessionAction = useSessionAction();
+  const viewScope=useRef(sessionAction.scope);viewScope.current=sessionAction.scope;
+  const selectionScope=useRef(sessionAction.scope);
   const [detailsOpen, setDetailsOpen] = useState(false),
     [detailsView, setDetailsView] = useState('actions'),
     [entrySource, setEntrySource] = useState(null),
@@ -325,6 +328,9 @@ export default function TrackingPanel({
   const [selecting, setSelecting] = useState(() =>
     new URLSearchParams(window.location.search).get('start') === '1' ? 'work' : false
   );
+  useEffect(()=>{
+    if(selectionScope.current!==sessionAction.scope){setSelecting(false);selectionScope.current=sessionAction.scope;}
+  },[sessionAction.scope]);
   const isDesktop = window.flowtaskDesktop?.isDesktop === true;
   const nativeRevision = useRef(0);
   const [native, setNative] = useState(null),
@@ -420,14 +426,15 @@ export default function TrackingPanel({
     ? `Connected desktop · ${device.state}`
     : 'Capture unavailable · desktop app required';
 
-  const action = async (name, selection = null, operationId = crypto.randomUUID()) => {
+  const action = async (name, selection = null, operationId = crypto.randomUUID(), options = {}) => {
     if (busy) return false;
     const payload = { selection, operationId, expectedRevision: session?.revision ?? null };
     try {
       const result = await sessionAction.run(
-        { kind: 'work', action: name, operationId, sessionId: session?._id, payload },
+        { kind: 'work', action: name, operationId, sessionId: session?._id, payload, presentation: options.presentation },
         () => changeWork(name, payload)
       );
+      if(viewScope.current!==sessionAction.scope)return false;
       const tracking = window.flowtaskDesktop?.tracking;
       if (tracking?.transitionSession)
         tracking
@@ -446,9 +453,11 @@ export default function TrackingPanel({
       }
       return true;
     } catch (e) {
-      toast.error(errorMessage(e));
+      if(viewScope.current!==sessionAction.scope)return false;
+      if(!options.propagateError)toast.error(errorMessage(e));
       if(!e.response?.status||e.response.status>=500)setSelecting(false);
       reload();
+      if(options.propagateError)throw e;
       return false;
     }
   };
@@ -463,6 +472,11 @@ export default function TrackingPanel({
           start: 'Starting...'
         }[sessionAction.action]
       : null;
+  const selectionPending = Boolean(transitionLabel && ['switch', 'start'].includes(sessionAction.action));
+  const linkPending = Boolean(transitionLabel && sessionAction.action === 'link');
+  const pausePending = Boolean(transitionLabel && ['pause', 'resume'].includes(sessionAction.action)) || Boolean(scopedNative?.automaticWorkPending);
+  const pauseLabel = (['pause', 'resume'].includes(sessionAction.action) && transitionLabel) ||
+    (scopedNative?.automaticWorkPending === 'pause' ? 'Pausing...' : scopedNative?.automaticWorkPending === 'resume' ? 'Resuming...' : null);
   const attention = monitoringAttention({
     native: scopedNative,
     device,
@@ -525,8 +539,8 @@ export default function TrackingPanel({
       currentSession={session}
       linking={selecting === 'link'}
       onClose={() => setSelecting(false)}
-      onConfirm={(selection, operationId) =>
-        action(selecting === 'link' ? 'link' : session ? 'switch' : 'start', selection, operationId)
+      onConfirm={(selection, operationId, presentation) =>
+        action(selecting === 'link' ? 'link' : session ? 'switch' : 'start', selection, operationId, {presentation,propagateError:true})
       }
     />
   );
@@ -607,9 +621,10 @@ export default function TrackingPanel({
                   type="button"
                   className="welcome-action welcome-action-primary"
                   disabled={busy}
+                  aria-busy={selectionPending || linkPending}
                   onClick={() => setSelecting('work')}
                 >
-                  <ArrowLeftRight size={15} />
+                  {selectionPending || linkPending ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : <ArrowLeftRight size={15} />}
                   {(['switch', 'start', 'link'].includes(sessionAction.action) && transitionLabel) ||
                     (session ? 'Switch Work' : 'Start Work')}
                 </button>
@@ -618,27 +633,17 @@ export default function TrackingPanel({
                     type="button"
                     className="welcome-action welcome-action-break"
                     disabled={busy}
-                    aria-busy={busy}
+                    aria-busy={pausePending}
                     onClick={() => action(running ? 'pause' : 'resume')}
                   >
-                    {running ? <Coffee size={15} /> : <Play size={15} />}
-                    <span>
-                      {(['pause', 'resume'].includes(sessionAction.action) && transitionLabel) ||
-                        (scopedNative?.automaticWorkPending==='resume' ? 'Resuming...' : running ? 'Take Break' : 'Resume Work')}
-                    </span>
+                    {pausePending ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : running ? <Coffee size={15} /> : <Play size={15} />}
+                    <span>{pauseLabel || (running ? 'Take Break' : 'Resume Work')}</span>
                   </button>
                 )}
               </>
             )}
             {attendanceActions}
           </div>
-          {transitionLabel && (
-            <p role="status" className="text-xs">
-              {sessionAction.action === 'pause'
-                ? 'Resume Work will be available once the pause is confirmed.'
-                : 'Waiting for the server to confirm this change.'}
-            </p>
-          )}
           {recovery}
           {activeError && (
             <div className="welcome-session-notice" role="status">
@@ -904,11 +909,12 @@ export default function TrackingPanel({
               size="sm"
               variant="outline"
               disabled={busy}
+              aria-busy={selectionPending}
               onClick={() => setSelecting('work')}
               className="gap-1.5 text-xs font-medium cursor-pointer"
             >
-              <ArrowLeftRight size={13} />
-              <span>{session ? 'Switch work' : 'Start work'}</span>
+              {selectionPending ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <ArrowLeftRight size={13} />}
+              <span>{selectionPending ? transitionLabel : session ? 'Switch work' : 'Start work'}</span>
             </Button>
 
             {latest?.kind === 'INDIVIDUAL' && session?.status !== 'CLOSED' && (
@@ -916,11 +922,12 @@ export default function TrackingPanel({
                 size="sm"
                 variant="outline"
                 disabled={busy}
+                aria-busy={linkPending}
                 onClick={() => setSelecting('link')}
                 className="gap-1.5 text-xs font-medium cursor-pointer"
               >
-                <Link2 size={13} />
-                <span>Link assigned task</span>
+                {linkPending ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <Link2 size={13} />}
+                <span>{linkPending ? transitionLabel : 'Link assigned task'}</span>
               </Button>
             )}
 
@@ -929,15 +936,12 @@ export default function TrackingPanel({
                 size="sm"
                 variant={isRunning ? 'secondary' : 'default'}
                 disabled={busy}
-                aria-busy={busy}
+                aria-busy={pausePending}
                 onClick={() => action(isRunning ? 'pause' : 'resume')}
                 className="gap-1.5 text-xs font-medium min-w-[110px] cursor-pointer"
               >
-                {isRunning ? <Coffee size={13} /> : <Play size={13} />}
-                <span>
-                  {(['pause', 'resume'].includes(sessionAction.action) && transitionLabel) ||
-                    (isRunning ? 'Take Break' : 'Resume Work')}
-                </span>
+                {pausePending ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : isRunning ? <Coffee size={13} /> : <Play size={13} />}
+                <span>{pauseLabel || (isRunning ? 'Take Break' : 'Resume Work')}</span>
               </Button>
             )}
           </div>

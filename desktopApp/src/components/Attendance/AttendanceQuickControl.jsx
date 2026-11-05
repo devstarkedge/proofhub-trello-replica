@@ -1,3 +1,4 @@
+import {readCheckoutPreview} from '../../services/checkoutPreviewState';
 import useSessionAction from '../../hooks/useSessionAction';
 import {finalizeDesktopCapture} from '../../services/desktopTracking';
 import { formatHours } from '../../utils/duration';
@@ -114,6 +115,7 @@ const AttendanceQuickControl = () => {
   const [phase, setPhase] = useState('idle'); // loading | idle | preparing | locating | submitting
   const [selectedWorkMode, setSelectedWorkMode] = useState(null);
   const checkoutSessionRef=useRef(null);
+  const viewScope=useRef(scope);viewScope.current=scope;
 
   useEffect(()=>{if(!operationRef.current)setSelectedWorkMode(status?.defaultWorkMode||null);},[status?.defaultWorkMode,scope]);
   useEffect(()=>{operationRef.current=null;setShowWorkSelection(false);setShowCheckOut(false);setPhase('idle');},[scope]);
@@ -143,29 +145,33 @@ const AttendanceQuickControl = () => {
   // sole authority and rejects with LOCATION_PERMISSION_REQUIRED (a
   // friendly toast via the API interceptor) if capture still fails.
   const runAction = async (apiCall, successMessage, extraPayload = {}, options = {}) => {
+    const actionScope=scope;
     const needsLocation = Boolean(status.requiresGeofence || status.requiresGps);
     setPhase(needsLocation ? 'locating' : 'submitting');
-    let gps = null;
-    if (needsLocation) {
-      try { gps = await captureGps(); } catch { /* the backend will reject if this mode actually required it */ }
-    }
-
-    setPhase('submitting');
     try {
-      const payload={...(gps||{}),...extraPayload},checkingIn=apiCall===attendanceApi.checkIn;
-      const operationId=checkingIn?payload.idempotencyKey:payload.operationId;
-      const response=await sessionAction.run({kind:checkingIn?'attendance-checkin':'attendance-checkout',action:checkingIn?'checkin':'checkout',operationId,sessionId:status.activeSession?._id,payload},()=>apiCall(payload));
+      const checkingIn=apiCall===attendanceApi.checkIn;
+      const operationId=checkingIn?extraPayload.idempotencyKey:extraPayload.operationId;
+      const response=await sessionAction.run({kind:checkingIn?'attendance-checkin':'attendance-checkout',action:checkingIn?'checkin':'checkout',operationId,sessionId:status.activeSession?._id,payload:extraPayload,presentation:options.presentation},entry=>apiCall(entry.payload),{
+        prepare:async()=>{
+          let gps=null;
+          if(needsLocation)try{gps=await captureGps();}catch{/* The server remains the authority for required location. */}
+          if(viewScope.current===actionScope)setPhase('submitting');
+          return {...(gps||{}),...extraPayload};
+        }
+      });
+      if(viewScope.current!==actionScope)return false;
       if(response.trackingStartup?.state==='FAILED')toast.warning(`Attendance is checked in. Work did not start: ${response.trackingStartup.message}. Use Start work to retry.`);
       // The shared action receipt updates the session caches before native IO.
       if(options.onResponse)Promise.resolve(options.onResponse(response)).catch(()=>{});
       toast.success(successMessage);
       return response;
     } catch (error) {
+      if(viewScope.current!==actionScope)return false;
       if(options.propagateError)throw error;
       if([403,423].includes(error.response?.status))toast.error(error.response?.data?.message||error.message);
       return false;
     } finally {
-      setPhase('idle');
+      if(viewScope.current===actionScope)setPhase('idle');
     }
   };
 
@@ -181,11 +187,11 @@ const AttendanceQuickControl = () => {
     setShowWorkSelection(false);
     setPhase('idle');
   };
-  const confirmCheckIn = async (workSelection, idempotencyKey) => {
+  const confirmCheckIn = async (workSelection, idempotencyKey, presentation) => {
     if (operationRef.current !== 'selecting') return false;
     operationRef.current = 'submitting';
-    const success = await runAction(attendanceApi.checkIn, 'Checked in', { requestedWorkMode: selectedWorkMode, workSelection, idempotencyKey });
-    operationRef.current = success ? null : 'selecting';
+    const success = await runAction(attendanceApi.checkIn, 'Checked in', { requestedWorkMode: selectedWorkMode, workSelection, idempotencyKey }, {presentation});
+    if(viewScope.current===scope)operationRef.current = success ? null : 'selecting';
     return success;
   };
   const handleCheckOut = () => {if(!operationRef.current){checkoutSessionRef.current=status.activeSession?._id;setShowCheckOut(true);}};
@@ -198,14 +204,14 @@ const AttendanceQuickControl = () => {
         if(!stopped)toast.warning('Attendance is checked out. Desktop monitoring stop is awaiting acknowledgment; saved screenshots can still sync. Restart an outdated desktop app.');
       }});
     } finally {
-      operationRef.current=null;setPhase('idle');
+      if(viewScope.current===scope){operationRef.current=null;setPhase('idle');}
       window.flowtaskDesktop?.tracking?.refresh?.()?.catch(()=>{});
     }
   };
 
   const isBusy = sessionAction.busy || Boolean(sessionError) || expired || ['preparing', 'locating', 'submitting'].includes(phase);
   const attendancePending = ['preparing', 'locating', 'submitting'].includes(phase) || sessionAction.phase==='PENDING'&&sessionAction.kind?.startsWith('attendance-');
-  const busyLabel = phase === 'locating' ? 'Locating…' : showCheckOut || sessionAction.action==='checkout' ? 'Checking Out…' : 'Checking In…';
+  const busyLabel = showCheckOut || sessionAction.action==='checkout' ? 'Checking Out...' : phase === 'locating' ? 'Locating…' : 'Checking In…';
 
   const mode = status.activeSession?.workMode || status.activeSession?.checkIn?.workMode || selectedWorkMode || status.defaultWorkMode;
   const modeControl = mode ? <label className="welcome-work-mode" title="Today's Work Mode">
@@ -227,9 +233,9 @@ const AttendanceQuickControl = () => {
     {status.unresolvedMissedCheckout && <p>Missed checkout on {status.unresolvedMissedCheckout.workDateKey} · Regularize in Attendance</p>}
   </div> : null;
   let content;
-  if (attendancePending && isDesktop) content = <button type="button" disabled aria-busy="true" className="welcome-action"><Loader2 size={15} className="animate-spin" />{busyLabel}</button>;
+  if (attendancePending && isDesktop) content = <button type="button" disabled aria-busy="true" className="welcome-action"><Loader2 size={15} className="animate-spin" aria-hidden="true" />{busyLabel}</button>;
   else if (status.completed) content = <span className="welcome-attendance-label"><CheckCircle2 size={15} />Attendance Completed</span>;
-  else if (status.activeSession) content = isDesktop ? <button type="button" disabled={isBusy} onClick={handleCheckOut} className="welcome-action"><LogOut size={15} />Check Out</button> : null;
+  else if (status.activeSession) content = isDesktop ? <button type="button" disabled={isBusy} onPointerEnter={()=>{if(!isBusy)readCheckoutPreview(scope,status.activeSession._id).catch(()=>{});}} onFocus={()=>{if(!isBusy)readCheckoutPreview(scope,status.activeSession._id).catch(()=>{});}} onClick={handleCheckOut} className="welcome-action"><LogOut size={15} />Check Out</button> : null;
   else if (status.canCheckIn) content = isDesktop ? <button type="button" disabled={isBusy} onClick={handleCheckIn} className="welcome-action"><LogIn size={15} />Check In</button> : null;
   else content = <span className="welcome-attendance-label"><MapPin size={15} />{friendlyBlockingLabel(status.blockingReason)}</span>;
 
@@ -289,6 +295,7 @@ const AttendanceQuickControl = () => {
       ) : null}
       {isDesktop && showCheckOut && (
         <CheckOutConfirmationModal
+          actionScope={scope}
           attendanceSessionId={status.activeSession?._id || checkoutSessionRef.current}
           onClose={() => setShowCheckOut(false)}
           onInactive={checkoutInactive}

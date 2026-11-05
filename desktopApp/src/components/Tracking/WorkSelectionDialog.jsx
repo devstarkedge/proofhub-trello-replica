@@ -1,3 +1,4 @@
+import {actionSnapshot} from '../../services/sessionActions';
 import { createElement, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'react-toastify';
@@ -57,11 +58,14 @@ export default function WorkSelectionDialog({
   const [creatingAgenda, setCreatingAgenda] = useState(false);
   const [includePrevious, setIncludePrevious] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
   const operation = useRef(crypto.randomUUID());
   const creation = useRef(crypto.randomUUID());
   const heading = useRef(null);
   const saving = useRef(false);
+  const mounted = useRef(true);
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
 
   useEffect(()=>{
     const value=index.value;
@@ -71,10 +75,11 @@ export default function WorkSelectionDialog({
   },[index.value,projectId]);
   useEffect(()=>{const items=agendaData.value?.agendas||[];if(!agendaId&&items.length)setAgendaId(items.find(a=>a.title==='Learning')?._id||items[0]._id);},[agendaData.value,agendaId]);
   useEffect(() => {
+    if (submitted) return;
     const before = document.activeElement;
     heading.current?.focus();
     return () => before?.focus?.();
-  }, []);
+  }, [submitted]);
 
   useEffect(()=>{setTaskId('');setListId('');},[projectId,index.scope]);
   useEffect(()=>{
@@ -110,6 +115,20 @@ export default function WorkSelectionDialog({
       ? agendaId && description.trim()
       : project && (mode === 'CREATE' ? project.canCreate && options.lists.some(l=>l._id===listId) && title.trim() : options.tasks.some(t=>t.assigned&&t._id===taskId));
 
+  const submit = async selection => {
+    const task = options.tasks.find(item => item._id === selection?.taskId);
+    const agenda = agendas.find(item => item._id === selection?.agendaId);
+    const presentation = { label: selection ? (mode === 'INDIVIDUAL' ? `${agenda?.title || 'Individual work'} · ${description}` : `${project?.name || 'Project'} · ${task?.title || title || 'Task'}`) : '' };
+    const pending = onConfirm(selection, operation.current, presentation);
+    // The shared action owner has accepted the operation and guards duplicate
+    // clicks even after this dialog leaves the screen. No timer is fabricated.
+    if (actionSnapshot(index.scope).phase === 'PENDING') setSubmitted(true);
+    const result = await pending;
+    if (!mounted.current) return;
+    if (result !== false || actionSnapshot(index.scope).phase === 'RECONCILIATION_REQUIRED') onClose();
+    else { setSubmitted(false); setError(actionSnapshot(index.scope).error || 'Could not save this change. Please retry.'); }
+  };
+
   const confirm = async (onlyAttendance = false) => {
     if (saving.current) return;
     saving.current = true;
@@ -117,7 +136,7 @@ export default function WorkSelectionDialog({
     setError('');
     try {
       if (onlyAttendance) {
-        if ((await onConfirm(null, operation.current)) !== false) onClose();
+        await submit(null);
         return;
       }
       let selection =
@@ -134,27 +153,36 @@ export default function WorkSelectionDialog({
             description,
             operationId: creation.current
           });
+          if (!mounted.current) return;
           selection.taskId = created._id;
         } catch (error) {
+          if (!mounted.current) return;
           if (!checkingIn) throw error;
-          if ((await onConfirm(null, operation.current)) !== false) {
+          const fallback=onConfirm(null,operation.current);
+          if(actionSnapshot(index.scope).phase==='PENDING')setSubmitted(true);
+          const result=await fallback;if(!mounted.current)return;
+          if (result !== false) {
             toast.warning(
               `Attendance is checked in. Task creation failed: ${errorMessage(error)}. Use Start work to retry.`
             );
             onClose();
-          }
+          } else if(actionSnapshot(index.scope).phase==='RECONCILIATION_REQUIRED')onClose();
+          else {setSubmitted(false);setError(actionSnapshot(index.scope).error||'Could not check in. Please retry.');}
           return;
         }
       }
 
       if (needsDecision) selection.includePrevious = includePrevious;
-      if ((await onConfirm(selection, operation.current)) !== false) onClose();
+      await submit(selection);
     } catch (e) {
+      if (!mounted.current) return;
+      setSubmitted(false);
+      if (actionSnapshot(index.scope).phase === 'RECONCILIATION_REQUIRED') { onClose(); return; }
       setError(errorMessage(e));
       if([403,404,409].includes(e.response?.status)){invalidateWorkSelections(index.scope,true);index.store.ensure();if(projectId)projectData.store.ensure();agendaData.store.ensure();}
     } finally {
       saving.current = false;
-      setBusy(false);
+      if (mounted.current) setBusy(false);
     }
   };
 
@@ -195,6 +223,8 @@ export default function WorkSelectionDialog({
     : 'Select an assigned task or individual agenda to start tracking time';
 
   const assignedTasksCount = options.tasks.filter((t) => t.assigned).length;
+
+  if (submitted) return null;
 
   return createPortal(
     <div

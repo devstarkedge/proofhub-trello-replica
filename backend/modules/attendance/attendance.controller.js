@@ -4,7 +4,7 @@ import Workspace from '../../models/Workspace.js';
 import { recordAuditLog } from '../permissions/auditLogService.js';
 import { getTodayStatus, checkIn, checkOut } from './attendance.service.js';
 import { updateModuleSettings } from '../hubspot/workspaceModules.js';
-import {policyFor,changeWork} from '../tracking/tracking.service.js';
+import {policyFor,changeWork,publicWorkSession} from '../tracking/tracking.service.js';
 import {WorkSession} from '../tracking/tracking.models.js';
 
 /**
@@ -61,12 +61,16 @@ export const postCheckIn = asyncHandler(async (req, res) => {
       category: 'attendance_management', meta: { workspaceId: req.workspaceId }
     });
   }
-  let trackingStartup=null;
+  let trackingStartup=null,trackingReceipt=null;
   if(req.body?.workSelection&&req.body.workSelection.mode!=='ATTENDANCE_ONLY'&&(await policyFor(req.workspaceId)).enabled){
-    try{const work=await WorkSession.findOne({workspaceId:req.workspaceId,attendanceSession:result.session._id}).select('_id status').lean();if(!work)await changeWork({workspaceId:req.workspaceId,userId:req.user.id,action:'start',selection:req.body.workSelection,operationId:`checkin-${result.session._id}`,expectedRevision:null});trackingStartup={state:work?.status||'RUNNING'};}
-    catch(error){trackingStartup={state:'FAILED',message:error.message,retryable:true};}
+    try{
+      let work=await WorkSession.findOne({workspaceId:req.workspaceId,attendanceSession:result.session._id}).select('-operations -audit').lean();
+      if(!work)work=await changeWork({workspaceId:req.workspaceId,userId:req.user.id,action:'start',selection:req.body.workSelection,operationId:`checkin-${result.session._id}`,expectedRevision:null});
+      trackingStartup={state:work.status};
+      trackingReceipt={workspaceId:req.workspaceId,userId:String(req.user.id),session:publicWorkSession(work),serverNow:new Date()};
+    }catch(error){trackingStartup={state:'FAILED',message:error.message,retryable:true};}
   }
-  res.status(result.replay ? 200 : 201).json({ success: true, data: result.session, replay: result.replay,trackingStartup,serverNow:new Date() });
+  res.status(result.replay ? 200 : 201).json({ success: true, data: result.session, replay: result.replay,trackingStartup,trackingReceipt,serverNow:new Date() });
 });
 
 export const previewCheckOut = asyncHandler(async (req,res) => {

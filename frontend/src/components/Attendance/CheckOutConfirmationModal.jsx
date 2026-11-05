@@ -1,45 +1,57 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Dialog } from 'radix-ui';
 import { Clock3, BriefcaseBusiness, Loader2, X, ShieldCheck, TriangleAlert } from 'lucide-react';
-import { getCheckoutPreview } from '../../services/attendanceApi';
+import { readCheckoutPreview } from '../../services/checkoutPreviewState';
+import { actionSnapshot } from '../../services/sessionActions';
 import { formatTrackingClock } from '../../utils/duration';
 import { Button } from '../ui/button';
 
 const surface={backgroundColor:'var(--color-card-bg)',color:'var(--color-text-primary)',borderColor:'var(--color-border-default)'};
 const muted={color:'var(--color-text-secondary)'};
-export default function CheckOutConfirmationModal({attendanceSessionId,onClose,onConfirm,onInactive}) {
+export default function CheckOutConfirmationModal({attendanceSessionId,onClose,onConfirm,onInactive,actionScope}) {
   const [preview,setPreview]=useState(null),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
+  const [submitted,setSubmitted]=useState(false);
+  const mounted=useRef(true);
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   const generation=useRef(0),inFlight=useRef(false),operation=useRef(crypto.randomUUID());
-  const refresh=useCallback(async()=>{
+  const refresh=useCallback(async(options={})=>{
     if(inFlight.current)return;
     const request=++generation.current;setLoading(true);
     try{
-      const {data}=await getCheckoutPreview();
+      const {data}=await readCheckoutPreview(actionScope,attendanceSessionId,{force:options.force===true});
       if(request!==generation.current)return;
       if(String(data.attendanceSessionId)!==String(attendanceSessionId)){onInactive?.();return;}
       setPreview(data);setError('');
     }catch(e){if(request!==generation.current)return;setError(e.response?.data?.message||'Could not load your checkout preview. Check your connection and retry.');if(e.response?.data?.code==='NO_ACTIVE_SESSION')onInactive?.();}
     finally{if(request===generation.current)setLoading(false);}
-  },[attendanceSessionId,onInactive]);
+  },[attendanceSessionId,onInactive,actionScope]);
   const invalidate=useCallback(()=>{++generation.current;},[]);
   useEffect(()=>{
-    refresh();const timer=setInterval(refresh,30000);
-    const realtime=e=>{if(/^(leave:|attendance:|tracking:)|user-role-changed|department-bulk-|access.*updated|permissions.*updated/.test(e.detail?.type||''))refresh();};
-    window.addEventListener('flowtask:realtime',realtime);window.addEventListener('online',refresh);window.addEventListener('socket-connected',refresh);
-    return()=>{invalidate();clearInterval(timer);window.removeEventListener('flowtask:realtime',realtime);window.removeEventListener('online',refresh);window.removeEventListener('socket-connected',refresh);};
+    refresh();const fresh=()=>refresh({force:true});const timer=setInterval(fresh,30000);
+    const realtime=e=>{if(/^(leave:|attendance:|tracking:)|user-role-changed|department-bulk-|access.*updated|permissions.*updated/.test(e.detail?.type||''))fresh();};
+    window.addEventListener('flowtask:realtime',realtime);window.addEventListener('online',fresh);window.addEventListener('socket-connected',fresh);
+    return()=>{invalidate();clearInterval(timer);window.removeEventListener('flowtask:realtime',realtime);window.removeEventListener('online',fresh);window.removeEventListener('socket-connected',fresh);};
   },[refresh,invalidate]);
   const close=()=>{if(!inFlight.current)onClose();};
   const confirm=async()=>{
     if(inFlight.current||loading||error||!preview?.canConfirm)return;
     inFlight.current=true;++generation.current;setSaving(true);setNotice('');
-    try{if(await onConfirm(preview,operation.current)!==false)onClose();}
+    try{const pending=onConfirm(preview,operation.current);
+      if(actionSnapshot(actionScope).phase==='PENDING')setSubmitted(true);
+      const result=await pending;if(!mounted.current)return;
+      if(result!==false)onClose();else setSubmitted(false);}
+
     catch(e){
+      if(!mounted.current)return;
+      if(actionSnapshot(actionScope).phase==='RECONCILIATION_REQUIRED'){onClose();return;}
+      setSubmitted(false);
       const updated=e.response?.data?.data?.checkoutPreview;
       if(e.response?.data?.code==='CHECKOUT_RECONFIRM_REQUIRED'&&updated){setPreview(updated);setError('');setNotice('Your attendance or approved leave changed. Review the updated outcome and confirm again.');}
       else setError(e.response?.data?.message||'Checkout could not be confirmed. Your saved session will be checked again when you retry.');
-    }finally{inFlight.current=false;setSaving(false);}
+    }finally{inFlight.current=false;if(mounted.current)setSaving(false);}
   };
   const time=value=>value?new Intl.DateTimeFormat(undefined,{timeZone:preview.timezone,dateStyle:'medium',timeStyle:'short'}).format(new Date(value)):'—';
+  if(submitted)return null;
   return <Dialog.Root open onOpenChange={open=>{if(!open)close();}}><Dialog.Portal>
     <Dialog.Overlay className="fixed inset-0 z-[999] bg-black/60"/>
     <Dialog.Content className="fixed left-1/2 top-1/2 z-[1000] max-h-[90vh] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border p-5 shadow-2xl sm:p-6" style={surface} onEscapeKeyDown={e=>{if(inFlight.current)e.preventDefault();}} onPointerDownOutside={e=>{if(inFlight.current)e.preventDefault();}}>
@@ -57,7 +69,7 @@ export default function CheckOutConfirmationModal({attendanceSessionId,onClose,o
         <p className="text-xs" style={muted}>Times in {preview.timezone}. Leave and Personal Pause do not add tracked work time.{loading?' Refreshing preview…':''}</p>
       </div>}
       {notice&&<p role="status" className="mt-3 rounded-lg bg-amber-500/10 p-3 text-sm">{notice}</p>}
-      {error&&<div role="alert" className="mt-3 rounded-lg bg-red-500/10 p-3 text-sm"><p>{error}</p><button type="button" disabled={saving||loading} onClick={refresh} className="mt-2 underline">Refresh preview</button></div>}
+      {error&&<div role="alert" className="mt-3 rounded-lg bg-red-500/10 p-3 text-sm"><p>{error}</p><button type="button" disabled={saving||loading} onClick={()=>refresh({force:true})} className="mt-2 underline">Refresh preview</button></div>}
       <div className="mt-5 flex flex-wrap justify-end gap-2"><Button variant="outline" disabled={saving} onClick={close}>Continue Working</Button><Button disabled={saving||loading||Boolean(error)||!preview?.canConfirm} onClick={confirm} aria-busy={saving}>{saving&&<Loader2 size={15} className="animate-spin"/>}{saving?'Checking Out…':'Confirm Check-Out'}</Button></div>
     </Dialog.Content>
   </Dialog.Portal></Dialog.Root>;

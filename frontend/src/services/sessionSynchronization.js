@@ -1,3 +1,4 @@
+import {invalidateCheckoutPreviews} from './checkoutPreviewState';
 import {trackingStore,clearTrackingStates} from './trackingState';
 import {attendanceStore,clearAttendanceStates} from './attendanceState';
 import {retainWorkSelectionPrefetch,invalidateWorkSelections} from './workSelectionState';
@@ -7,12 +8,12 @@ export function retainSessionSynchronization(scope,workspaceId,authorizationKey)
   let entry=owners.get(scope);
   if(entry){clearTimeout(entry.release);entry.count++;if(entry.authorizationKey!==authorizationKey){entry.authorizationKey=authorizationKey;entry.secureRefresh();}entry.ensure();return()=>release(scope,entry);}
   const tracking=trackingStore(scope,workspaceId),attendance=attendanceStore(scope,workspaceId),userId=scope.split(':').at(-1);
-  let refreshTimer,workRefreshTimer,boundaryTimer,lastBoundary='',channel,session=sessionIdentity(localStorage);
+  let refreshTimer,workRefreshTimer,attendanceRefreshTimer,boundaryTimer,lastBoundary='',channel,session=sessionIdentity(localStorage);
   const current=()=>localStorage.getItem('workspaceId')===String(workspaceId)&&Boolean(session.token)&&isCurrentSession(session,localStorage);
   const refresh=()=>{if(current()){tracking.reload();attendance.reload();}};
   const schedule=()=>{clearTimeout(refreshTimer);refreshTimer=setTimeout(refresh,100);};
-  const invalidate=()=>{tracking.invalidate();attendance.invalidate();schedule();};
-  const secureRefresh=()=>{session=sessionIdentity(localStorage);invalidateWorkSelections(scope,true);tracking.clear();attendance.clear();tracking.invalidate();attendance.invalidate();schedule();};
+  const invalidate=()=>{invalidateCheckoutPreviews(scope);tracking.invalidate();attendance.invalidate();schedule();};
+  const secureRefresh=()=>{invalidateCheckoutPreviews(scope);session=sessionIdentity(localStorage);invalidateWorkSelections(scope,true);tracking.clear();attendance.clear();tracking.invalidate();attendance.invalidate();schedule();};
   const realtime=event=>{
     const {type='',payload={}}=event.detail||{};
     if(payload.workspaceId&&String(payload.workspaceId)!==String(workspaceId))return;
@@ -28,7 +29,12 @@ export function retainSessionSynchronization(scope,workspaceId,authorizationKey)
   const rejected=()=>{tracking.clear();attendance.clear();tracking.disconnected('Session access changed. Reconnect or sign in again.');attendance.disconnected('Session access changed. Reconnect or sign in again.');};
   const committed=event=>{
     if(event.detail?.scope&&event.detail.scope!==scope)return;
-    if(event.detail?.kind!=='work')invalidate();
+    if(event.detail?.kind!=='work'){
+      if(event.detail?.trackingReceipt){
+        invalidateCheckoutPreviews(scope);attendance.invalidate();
+        clearTimeout(attendanceRefreshTimer);attendanceRefreshTimer=setTimeout(()=>{if(current())attendance.reload();},100);
+      }else invalidate();
+    }
     channel?.postMessage({scope});
   };
   const storage=event=>{if(['token','workspaceId'].includes(event.key)&&!current()){clearTrackingStates();clearAttendanceStates();rejected();}};
@@ -45,7 +51,7 @@ export function retainSessionSynchronization(scope,workspaceId,authorizationKey)
   for(const [name,handler]of events)window.addEventListener(name,handler);
   const visibility=()=>{if(document.visibilityState==='visible'&&current()){tracking.ensure();attendance.ensure();}};document.addEventListener('visibilitychange',visibility);
   const poll=setInterval(()=>{if(current())refresh();},60000),unsubscribers=[tracking.subscribe(boundary),attendance.subscribe(boundary),retainWorkSelectionPrefetch(scope,workspaceId,tracking)];
-  entry={count:1,authorizationKey,secureRefresh,ensure(){if(current()){tracking.ensure();attendance.ensure();}},close(){clearTimeout(refreshTimer);clearTimeout(workRefreshTimer);clearTimeout(boundaryTimer);clearInterval(poll);channel?.close();for(const unsubscribe of unsubscribers)unsubscribe();for(const [name,handler]of events)window.removeEventListener(name,handler);document.removeEventListener('visibilitychange',visibility);}};
+  entry={count:1,authorizationKey,secureRefresh,ensure(){if(current()){tracking.ensure();attendance.ensure();}},close(){clearTimeout(attendanceRefreshTimer);clearTimeout(refreshTimer);clearTimeout(workRefreshTimer);clearTimeout(boundaryTimer);clearInterval(poll);channel?.close();for(const unsubscribe of unsubscribers)unsubscribe();for(const [name,handler]of events)window.removeEventListener(name,handler);document.removeEventListener('visibilitychange',visibility);}};
   owners.set(scope,entry);tracking.ensure();attendance.ensure();boundary();return()=>release(scope,entry);
 }
 function release(scope,entry){if(--entry.count===0)entry.release=setTimeout(()=>{if(entry.count)return;entry.close();owners.delete(scope);},0);}
