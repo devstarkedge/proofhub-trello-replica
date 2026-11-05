@@ -52,11 +52,15 @@ export function validateProjectClient(projectType, value) {
   if (!details.clientName || !/[\p{L}\p{N}]/u.test(details.clientName)) {
     errors.clientName = 'Client name is required for Hired Client projects.';
   }
-  if (!EMAIL_REGEX.test(details.clientEmail)) errors.clientEmail = 'Please enter a valid client email address.';
+  if (details.clientEmail && !EMAIL_REGEX.test(details.clientEmail)) errors.clientEmail = 'Please enter a valid client email address.';
   const { clientCountryCode, clientMobileNumber } = splitClientPhone(details.clientWhatsappNumber);
   const country = COUNTRY_CODES.find(item => item.code === clientCountryCode);
-  if (!country || !/^\d+$/.test(clientMobileNumber) || clientMobileNumber.length !== country.digits || /^0+$/.test(clientMobileNumber)) {
+  if (details.clientWhatsappNumber && (!country || !/^\d+$/.test(clientMobileNumber) || clientMobileNumber.length !== country.digits || /^0+$/.test(clientMobileNumber))) {
     errors.clientMobileNumber = 'Please enter a valid client phone number.';
+  }
+  if (!details.clientEmail && !details.clientWhatsappNumber) {
+    errors.clientEmail = 'Provide an email address or phone number.';
+    errors.clientMobileNumber = 'Provide a phone number or email address.';
   }
   return errors;
 }

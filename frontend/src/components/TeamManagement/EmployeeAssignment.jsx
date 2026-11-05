@@ -25,6 +25,7 @@ const EmployeeAssignment = memo(({
   currentDepartment,
   assignedEmployees,
   availableEmployees,
+  departmentManagers = [],
   selectedUsers,
   searchQuery,
   activeTab,
@@ -179,8 +180,16 @@ const EmployeeAssignment = memo(({
             <span className="hidden sm:inline">Available Employees</span>
             <span className="sm:hidden">Available</span> ({availableEmployees.length})
           </button>
+          <button type="button" onClick={() => onTabChange('managers')} className={`px-3 sm:px-6 py-2 sm:py-3 whitespace-nowrap font-semibold ${activeTab === 'managers' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500'}`}>Managers ({departmentManagers.length})</button>
         </div>
 
+        {activeTab === 'managers' ? <section aria-label="Department managers">
+          <h3 className="mb-4 font-semibold">Managers ({departmentManagers.length})</h3>
+          {!departmentManagers.length && <p className="text-sm text-gray-500">No managers assigned to this department.</p>}
+          <div className="grid gap-3">{departmentManagers.map(manager => <article key={manager._id} className="flex items-center gap-3 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+            <Avatar src={manager.avatar?.url || manager.avatar} name={manager.name} role={manager.role} isVerified={manager.isVerified} size="md"/><div className="min-w-0"><p className="font-semibold">{manager.name}</p><p className="text-sm text-gray-500">{manager.email}</p>{manager.title && <p className="text-xs text-gray-500">{manager.title}</p>}</div>
+          </article>)}</div>
+        </section> : <>
         {/* Search and Controls */}
         <div className="flex flex-col gap-2 sm:gap-3 mb-4 sm:mb-6">
           <div className="flex-1 relative">
@@ -372,6 +381,7 @@ const EmployeeAssignment = memo(({
             </motion.div>
           )}
         </AnimatePresence>
+        </>}
       </div>
     </motion.div>
   );

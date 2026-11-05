@@ -1,3 +1,4 @@
+import GeneratedTrackingReports from '../components/Tracking/GeneratedTrackingReports';
 import { filterTrackingRows } from '../../../shared/trackingFilterState.mjs';
 import {prefetchTrackingReport} from '../services/trackingReadPrefetch';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -442,6 +443,8 @@ export default function TimeTrackingPage() {
           Live work, attendance, agendas, and monitoring coverage. Input activity measures interaction, not work quality.
         </p>
       </div>
+
+      <GeneratedTrackingReports />
 
       {/* Role-authorized Compact Read-only Tracking Overview */}
       <TrackingOverview totals={totals} role={data?.viewerRole||authUser?.role} loading={overview.isPending} error={overview.error?readError(overview.error):''} onRetry={()=>overview.refetch()} />

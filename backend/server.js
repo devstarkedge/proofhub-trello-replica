@@ -1,3 +1,4 @@
+import { startPendingPointWorkers, stopPendingPointWorkers } from './services/pendingPointWorkers.js';
 import express from 'express';
 import mongoose from 'mongoose';
 import cors from 'cors';
@@ -342,6 +343,7 @@ initializeHttpServer(server, config.port, async () => {
 
     startAnalyticsReportScheduler();
     startTrackingMaintenance();
+    await startPendingPointWorkers();
 
     // Idempotent catch-up complements both local and production schedules.
     runLeaveAccrualCatchUp();
@@ -387,7 +389,7 @@ const gracefulShutdown = async (signal) => {
     await Promise.allSettled([
       shutdownSlackServices(), stopBoardPublication(),
       Promise.resolve(stopNotificationPublication()), Promise.resolve(stopAnalyticsReportScheduler()),
-      Promise.resolve(stopTrackingMaintenance()),
+      Promise.resolve(stopTrackingMaintenance()), Promise.resolve(stopPendingPointWorkers()),
     ]);
     await closeRealtimeCluster();
     await shutdownQueues();

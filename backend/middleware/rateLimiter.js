@@ -31,9 +31,9 @@ export const rateLimiter = (options = {}) => {
   return async (req, res, next) => {
     const identity = keyFn(req) ?? req.ip ?? 'unknown';
     const workspace = workspaceFn(req);
+    const route = [req.baseUrl || '', req.route ? `${req.method}:${req.route.path}` : 'router'].join(':');
     let count, remaining;
     if (config.redis.enabled) {
-      const route = [req.baseUrl || '', req.route ? `${req.method}:${req.route.path}` : 'router'].join(':');
       const key = workspaceKey(workspace, 'rate-limit', hash([policy, route, identity].join('|')));
       try {
         const operation = getReadyConnection().eval(INCREMENT_WINDOW, 1, key, windowMs);
@@ -48,7 +48,7 @@ export const rateLimiter = (options = {}) => {
       }
     }
     if (count === undefined) {
-      const key = JSON.stringify([workspace, identity]);
+      const key = JSON.stringify([workspace, route, identity]);
       let entry = store.get(key);
       if (!entry || Date.now() >= entry.resetTime) {
         if (allowReadFallback && store.size >= 10000 && !store.has(key)) {

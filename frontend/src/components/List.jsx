@@ -339,7 +339,7 @@ const KanbanList = memo(({ list, cards, onAddCard, onDeleteCard, onCardClick, on
                 }
                 return false;
               }).map((card, index) => (
-                <Draggable key={card._id} draggableId={card._id} index={index}>
+                <Draggable key={card._id} draggableId={card._id} index={index} isDragDisabled={!!card.isOptimistic || String(card._id).startsWith('temp-')}>
                   {(provided, snapshot) => (
                     <div
                       ref={provided.innerRef}

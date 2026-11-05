@@ -4,6 +4,8 @@ import { Badge } from '../../ui/badge';
 
 const TeamTab = memo(({
   managers,
+  managersLoading = false,
+  managersError = '',
   assignees,
   selectedEmployees,
   errors,
@@ -22,7 +24,7 @@ const TeamTab = memo(({
           )}
         </h3>
 
-        {managers.length === 0 ? (
+        {managersLoading ? <p className="text-sm text-gray-500" role="status">Loading project managers...</p> : managersError ? <p className="text-sm text-red-600" role="alert">{managersError}</p> : managers.length === 0 ? (
           <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
             <AlertCircle className="h-5 w-5 text-amber-600" />
             <div>

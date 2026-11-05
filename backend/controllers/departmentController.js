@@ -1,3 +1,4 @@
+import ProjectDropdownOption from '../models/ProjectDropdownOption.js';
 import { updateMemberAccess } from '../authz/accessAdminService.js';
 import mongoose from 'mongoose';
 import Department from "../models/Department.js";
@@ -268,7 +269,8 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
         pipeline: [
           { $match: projectMatchFilter },
           { $sort: { createdAt: -1, _id: -1 } },
-          { $project: { name: 1, description: 1, background: 1, members: 1, managers: 1, status: 1, coverImage: 1, coverImageHistory: 1, startDate: 1, dueDate: 1, projectCategory: 1, projectType: 1, createdAt: 1 } }
+          { $lookup: { from: ProjectDropdownOption.collection.name, localField: 'technologies', foreignField: '_id', pipeline: [{ $match: { workspaceId: new mongoose.Types.ObjectId(req.workspaceId), type: 'technology' } }, { $project: { label: 1, value: 1 } }], as: 'technologies' } },
+          { $project: { name: 1, description: 1, background: 1, members: 1, managers: 1, status: 1, coverImage: 1, coverImageHistory: 1, startDate: 1, dueDate: 1, technologies: 1, projectType: 1, createdAt: 1 } }
         ],
         as: 'projects'
       }

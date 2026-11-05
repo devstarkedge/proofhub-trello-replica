@@ -1,3 +1,4 @@
+import { readResponseError } from '../../../shared/readFailure.mjs';
 import { sessionFetch as fetch } from './sessionFetch';
 import { collectPagedRead } from '../../../shared/pagedRead.mjs';
 import { createScopedReadCache } from '../../../shared/scopedReadCache.mjs';
@@ -307,8 +308,7 @@ class DatabaseService {
     const headers = buildHeaders();
     const res = await fetch(`${baseURL}/api/boards/${projectId}/workflow-complete`, { headers });
     if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.message || `HTTP error! status: ${res.status}`);
+      throw await readResponseError(res, 'Failed to load project');
     }
     return await res.json();
   }
@@ -396,7 +396,9 @@ class DatabaseService {
       headers,
       body: JSON.stringify({ list: listId, title, position, board: boardId })
     });
-    return await res.json();
+    const result = await res.json();
+    if (!res.ok || result.success === false || !result.data?._id) throw new Error(result.message || 'Could not create card');
+    return result;
   }
 
   async updateCard(cardId, updates) {
@@ -2448,6 +2450,12 @@ class DatabaseService {
 
 // Create singleton instance
 const Database = new DatabaseService();
+const detailReads = createScopedReadCache({ storage: localStorage, ttlMs: 0, maxEntries: 64 });
+registerResettable(() => detailReads.clear());
+for (const method of ['getWorkflowComplete','getCard','getComments','getCardActivity','getCopyMoveDepartments','getCopyMoveProjects','getCopyMoveLists','getRecentDestinations','getLists','getRecurrenceByCard']) {
+  const load = Database[method].bind(Database);
+  Database[method] = (...args) => detailReads.read(`${method}:${JSON.stringify(args)}`, () => load(...args));
+}
 
 export default Database;
 

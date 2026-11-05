@@ -1,3 +1,5 @@
+import asyncHandler from '../middleware/asyncHandler.js';
+import { enqueueCardMovements, movementReceipts } from '../services/cardMovementQueue.js';
 import express from 'express';
 import { body } from 'express-validator';
 import { getCards, getCardsByBoard, getCardsByDepartment, getCard, createCard, updateCard, moveCard, deleteCard, getCardActivity, archiveCard, restoreCard, getArchivedCards, addTimeEntry, updateTimeEntry, deleteTimeEntry, copyCard, crossMoveCard, undoMove, getCopyMoveDepartments, getCopyMoveProjects, getCopyMoveLists, getRecentDestinations } from '../controllers/cardController.js';
@@ -8,6 +10,8 @@ import '../middleware/upload.js';
 
 const router = express.Router();
 
+router.post('/movements', protect, asyncHandler(async(req,res)=>{res.status(202).json({success:true,data:await enqueueCardMovements(req,req.body.operations)});}));
+router.get('/movements', protect, asyncHandler(async(req,res)=>{res.set('Cache-Control','no-store');res.json({success:true,data:await movementReceipts(req,String(req.query.ids||'').split(',').filter(Boolean))});}));
 router.get('/list/:listId', protect, getCards);
 router.get('/list/:listId/archived', protect, getArchivedCards);
 router.get('/board/:boardId', protect, getCardsByBoard);

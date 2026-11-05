@@ -107,6 +107,7 @@ const cardSchema = new mongoose.Schema({
     type: String,
     enum: ['low', 'medium', 'high', 'critical', null]
   },
+  movementRevision: { type: Number, default: 0 },
   status: {
     type: String
   },
@@ -285,6 +286,14 @@ cardSchema.virtual('totalLoggedTime').get(function() {
   const minutes = totalMinutes % 60;
 
   return { hours, minutes };
+});
+
+// A direct edit/archive/restore also invalidates older pending movement intent.
+// Neighbour reindexing uses updateMany and deliberately does not bump this token.
+cardSchema.pre('save', function() {
+  if (!this.isNew && !this.isModified('movementRevision') && ['list','position','status','isArchived'].some(field => this.isModified(field))) {
+    this.movementRevision = (this.movementRevision || 0) + 1;
+  }
 });
 
 // Add pagination plugin

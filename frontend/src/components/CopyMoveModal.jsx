@@ -116,6 +116,7 @@ const CopyMoveModal = memo(({
 }) => {
   // Destination cascading hook
   const dest = useCopyMoveDestinations({
+    enabled: isOpen,
     currentDepartmentId,
     currentProjectId,
     currentListId,

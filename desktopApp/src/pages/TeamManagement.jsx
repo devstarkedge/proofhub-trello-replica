@@ -658,6 +658,7 @@ const TeamManagement = () => {
                     currentDepartment={state.currentDepartment}
                     assignedEmployees={filteredAssignedEmployees}
                     availableEmployees={filteredAvailableEmployees}
+                    departmentManagers={state.managers.filter(person => person.role === 'manager' && state.currentDepartment?.managers?.some(value => String(value?._id || value) === String(person._id)))}
                     selectedUsers={state.selectedUsers}
                     searchQuery={state.searchQuery}
                     activeTab={state.activeTab}

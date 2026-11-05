@@ -37,10 +37,7 @@ const ViewDetailsTab = memo(({ project }) => {
             <label className="text-xs text-gray-500">Visibility</label>
             <p className="text-sm text-gray-900 capitalize">{project.visibility || 'public'}</p>
           </div>
-          {!isEmployee && <div>
-            <label className="text-xs text-gray-500">Project Category</label>
-            <p className="text-sm text-gray-900">{project.projectCategory || 'Not specified'}</p>
-          </div>}
+
           {!isEmployee && <div>
             <label className="text-xs text-gray-500">Estimated Time</label>
             <p className="text-sm text-gray-900">{project.estimatedTime || 'Not specified'}</p>

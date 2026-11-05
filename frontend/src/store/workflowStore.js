@@ -1,3 +1,5 @@
+import { responseStatus, retryDelay, temporaryReadFailure } from '../../../shared/readFailure.mjs';
+import movementPersistence from '../services/movementPersistence';
 import { placeWorkflowCard, referenceId } from '../../../shared/workflowMoves.mjs';
 import { rememberWorkflow } from '../../../shared/projectOrder.mjs';
 import { captureRequestScope, requestScopeKey } from '../../../shared/requestScope.mjs';
@@ -28,6 +30,19 @@ let currentRequestId = 0;
 let cacheGeneration = 0;
 let mutationVersion = 0;
 const moveQueues = new Map();
+const workflowReads = new Map();
+const readRetries = new Map();
+function retryWorkflow(projectId, scope, generation, delay) {
+  const key = `${generation}:${scope}:${projectId}`;
+  clearTimeout(readRetries.get(key));
+  const timer = setTimeout(() => {
+    readRetries.delete(key);
+    if (generation !== cacheGeneration || scope !== cacheScope() || useWorkflowStore.getState().currentProjectId !== projectId) return;
+    void useWorkflowStore.getState().initializeWorkflow(projectId);
+  }, delay + 25);
+  timer?.unref?.(); readRetries.set(key, timer);
+}
+
 const moveKey = (scope, projectId) => `${cacheGeneration}:${scope}:${projectId}`;
 const cacheScope = () => requestScopeKey(captureRequestScope(localStorage));
 
@@ -40,7 +55,7 @@ const useWorkflowStore = create(
       cardsByList: {},
       cardsById: {},  // Normalized card lookup for O(1) access
       loading: true,
-      error: null,
+      error: null, errorStatus: null, refreshError: null, workflowRetryAt: 0,
       lastUpdated: null,
       currentProjectId: null, // Track which project data belongs to
 
@@ -72,7 +87,7 @@ const useWorkflowStore = create(
         }
 
         try {
-          const response = await Database.getWorkflowComplete(projectId);
+          const response = await Database.getWorkflowComplete(projectId, { readVersion: `${generation}:${version}` });
           if (response.success && response.data && cacheGeneration === generation && cacheScope() === scope && mutationVersion === version) {
              set(state => ({
                prefetchedData: rememberWorkflow(state.prefetchedData, projectId, {
@@ -85,14 +100,32 @@ const useWorkflowStore = create(
           console.error('Prefetch failed', err);
         }
       },
-      initializeWorkflow: async (projectId) => {
+      initializeWorkflow: (projectId) => {
+        const key = moveKey(cacheScope(), projectId), state = get();
+        if (state.currentProjectId === projectId && state.currentScope === cacheScope() && state.workflowRetryAt > Date.now()) {
+          retryWorkflow(projectId, cacheScope(), cacheGeneration, state.workflowRetryAt - Date.now());
+          return Promise.resolve();
+        }
+        const existing = workflowReads.get(key);
+        if (existing?.version === mutationVersion) return existing.promise;
+        const entry = { version: mutationVersion };
+        entry.promise = get().loadWorkflow(projectId).finally(() => { if (workflowReads.get(key) === entry) workflowReads.delete(key); });
+        workflowReads.set(key, entry);
+        return entry.promise;
+      },
+      loadWorkflow: async (projectId) => {
+        const outgoing = get();
+        const activeMoves = moveQueues.get(moveKey(cacheScope(), outgoing.currentProjectId));
+        if (activeMoves?.pending && outgoing.board) activeMoves.snapshot = {
+          board: outgoing.board, lists: outgoing.lists, cardsByList: outgoing.cardsByList, cardsById: outgoing.cardsById
+        };
         const moves = moveQueues.get(moveKey(cacheScope(), projectId));
         if (moves?.pending) {
           // Coalesce realtime refreshes until the last queued write commits.
           moves.refresh = true;
           if (get().currentProjectId !== projectId || get().currentScope !== cacheScope()) {
             currentRequestId += 1;
-            set({ board: null, lists: [], cardsByList: {}, cardsById: {}, loading: true,
+            set({ ...(moves.snapshot || { board: null, lists: [], cardsByList: {}, cardsById: {} }), loading: !moves.snapshot,
               error: null, currentProjectId: projectId, currentScope: cacheScope() });
           }
           return moves.tail;
@@ -100,6 +133,7 @@ const useWorkflowStore = create(
         const requestId = ++currentRequestId;
         const scope = cacheScope();
         const generation = cacheGeneration;
+        const version = mutationVersion;
         logger.debug('PROJECT_RESOLUTION_START', { projectId, requestId });
         const state = get();
         
@@ -136,8 +170,8 @@ const useWorkflowStore = create(
 
           // New project or no data - show loader and clear old data
           set({ 
-            loading: true, 
-            error: null, 
+            loading: true,
+            error: null, errorStatus: null, refreshError: null, workflowRetryAt: 0,
             board: null,
             lists: [], 
             cardsByList: {},
@@ -149,8 +183,13 @@ const useWorkflowStore = create(
 
         try {
           // Use the new optimized endpoint that returns everything in one call
-          const response = await Database.getWorkflowComplete(projectId);
-          
+          const response = await Database.getWorkflowComplete(projectId, { readVersion: `${generation}:${version}` });
+          const pendingMoves = await movementPersistence.pending(projectId);
+          if (response.data?.cardsByList) for (const intent of pendingMoves) {
+            const target = response.data.lists.find(list => String(list._id) === intent.destinationListId);
+            if (target) response.data.cardsByList = placeWorkflowCard(response.data.cardsByList, intent.cardId, intent.destinationListId, intent.position,
+              { status: target.title.toLowerCase().replace(/\s+/g, '-') });
+          }
           // Check if this request is still the current one
           if (requestId !== currentRequestId || generation !== cacheGeneration || scope !== cacheScope()) {
             console.log('Stale request ignored for project:', projectId);
@@ -184,17 +223,25 @@ const useWorkflowStore = create(
             cardsByList: cardsByList || {},
             cardsById,
             lastUpdated: Date.now(),
-            loading: false
+            loading: false, error: null, errorStatus: null, refreshError: null, workflowRetryAt: 0
           });
           logger.debug('PROJECT_RESOLUTION_COMPLETE', { projectId, boardId: board?._id, source: 'network' });
         } catch (error) {
           if (requestId !== currentRequestId || generation !== cacheGeneration || scope !== cacheScope()) return;
 
+          if (temporaryReadFailure(error)) {
+            const delay = retryDelay(error), current = get();
+            const keep = current.board && current.currentProjectId === projectId && current.currentScope === scope;
+            set({ loading: false, error: keep ? null : error.message, errorStatus: keep ? null : responseStatus(error),
+              refreshError: keep ? error.message : null, workflowRetryAt: Date.now() + delay });
+            if (globalThis.navigator?.onLine !== false) retryWorkflow(projectId, scope, generation, delay);
+            return;
+          }
           get().invalidateProjectCache(projectId);
-          console.error('Error initializing workflow:', error);
+          console.error('Error initializing workflow:' , error);
           logger.debug('PROJECT_CONTEXT_INVALID', { projectId, requestId, message: error.message });
           set({
-            error: error.message || 'Failed to load workflow',
+            error: error.message || 'Failed to load workflow', errorStatus: responseStatus(error), refreshError: null, workflowRetryAt: 0,
             board: null, lists: [], cardsByList: {}, cardsById: {},
             loading: false
           });
@@ -259,7 +306,11 @@ const useWorkflowStore = create(
 
       // Add card with optimistic update
       addCard: async (listId, title, boardId) => {
-        const tempId = `temp-${Date.now()}`;
+        const scope = cacheScope(), generation = cacheGeneration;
+        const projectId = get().currentProjectId;
+        const current = () => scope === cacheScope() && generation === cacheGeneration && projectId === get().currentProjectId;
+        const tempId = `temp-${crypto.randomUUID()}`;
+        mutationVersion++; currentRequestId++; get().invalidateProjectCache(boardId);
         const tempCard = {
           _id: tempId,
           title,
@@ -283,25 +334,31 @@ const useWorkflowStore = create(
         try {
           const newCard = await Database.createCard(listId, title, boardId);
           const realCard = newCard.data || newCard;
+          if (!realCard?._id || newCard.success === false) throw new Error(newCard.message || 'Invalid card response');
+          if (!current()) return realCard;
 
           // Replace temp card with real card
           set((state) => {
             const newCardsById = { ...state.cardsById };
             delete newCardsById[tempId];
-            newCardsById[realCard._id] = realCard;
+            // A realtime create/update can arrive before the HTTP reply.
+            // Preserve its newer placement and edits; remove only our placeholder.
+            const existing = state.cardsById[realCard._id];
+            const confirmed = existing ? { ...realCard, ...existing } : realCard;
+            newCardsById[realCard._id] = confirmed;
+            const list = state.cardsByList[listId] || [];
+            const hasTemp = list.some(card => card._id === tempId);
+            const next = existing ? list.filter(card => card._id !== tempId)
+              : hasTemp ? list.map(card => card._id === tempId ? confirmed : card) : [...list, confirmed];
             return {
-              cardsByList: {
-                ...state.cardsByList,
-                [listId]: state.cardsByList[listId].map(card =>
-                  card._id === tempId ? realCard : card
-                )
-              },
+              cardsByList: { ...state.cardsByList, [listId]: next },
               cardsById: newCardsById
             };
           });
 
           return realCard;
         } catch (error) {
+          if (!current()) throw error;
           console.error('Error adding card:', error);
           // Rollback optimistic update
           set((state) => {
@@ -310,7 +367,7 @@ const useWorkflowStore = create(
             return {
               cardsByList: {
                 ...state.cardsByList,
-                [listId]: state.cardsByList[listId].filter(card => card._id !== tempId)
+                [listId]: (state.cardsByList[listId] || []).filter(card => card._id !== tempId)
               },
               cardsById: newCardsById
             };
@@ -542,7 +599,7 @@ const useWorkflowStore = create(
         let entry = queue.cards.get(cardId);
         if (!entry) {
           const source = Object.keys(state.cardsByList).find(id => state.cardsByList[id].some(card => card._id === cardId));
-          entry = { pending: 0, confirmed: { list: source, position: original.position, status: original.status, __v: original.__v } };
+          entry = { pending: 0, confirmed: { list: source, position: original.position, status: original.status, __v: original.__v, movementRevision: original.movementRevision || 0 } };
           queue.cards.set(cardId, entry);
         }
         const operationId = ++mutationVersion;
@@ -558,11 +615,15 @@ const useWorkflowStore = create(
           const next = placeWorkflowCard(get().cardsByList, cardId, placement.list, placement.position, placement);
           set({ cardsByList: next, cardsById: buildCardsById(next), lastUpdated: Date.now() });
         };
+        queue.snapshot = { board: state.board, lists: state.lists, cardsByList, cardsById: buildCardsById(cardsByList) };
+        const persisted = movementPersistence.enqueue({ boardId: projectId, cardId, destinationListId: newListId,
+          position: newPosition, expectedMovementRevision: entry.confirmed.movementRevision });
         const operation = queue.tail.then(async () => {
           try {
             // Queued writes must never inherit another account/workspace.
-            if (!sameSession()) throw new Error('Session changed; reopen this project before retrying');
-            const response = await Database.moveCard(cardId, newListId, newPosition);
+            if (!sameSession()) throw new DOMException('Session changed; reopen this project before retrying', 'AbortError');
+            const response = await persisted;
+            if (response.superseded) return response;
             if (response?.success === false) throw new Error(response.message || 'Failed to move card');
             const saved = response?.data || {};
             entry.confirmed = {
@@ -570,6 +631,7 @@ const useWorkflowStore = create(
               position: saved.position ?? newPosition,
               status: saved.status ?? newStatus ?? original.status,
               __v: saved.__v ?? entry.confirmed.__v,
+              movementRevision: saved.movementRevision ?? entry.confirmed.movementRevision,
             };
             if (entry.latest === operationId) {
               // Later drops of other cards may have shifted this card's index.
@@ -581,6 +643,7 @@ const useWorkflowStore = create(
             }
             return response;
           } catch (error) {
+            if ([404,409].includes(error.status || error.response?.status)) queue.refresh = true;
             // Undo only this card's placement, preserving other cards and edits.
             // A later queued drop owns the UI and will reconcile its own result.
             if (entry.latest === operationId) place(entry.confirmed);
@@ -903,7 +966,7 @@ const useWorkflowStore = create(
         cardsByList: {},
         cardsById: {},
         loading: true,
-        error: null,
+        error: null, errorStatus: null, refreshError: null, workflowRetryAt: 0,
         lastUpdated: null,
         currentProjectId: null
       }),
@@ -917,14 +980,15 @@ const useWorkflowStore = create(
         currentRequestId += 1;
         cacheGeneration += 1;
         mutationVersion += 1;
-        moveQueues.clear();
+        moveQueues.clear(); workflowReads.clear();
+        for (const timer of readRetries.values()) clearTimeout(timer); readRetries.clear();
         set({
         board: null,
         lists: [],
         cardsByList: {},
         cardsById: {},
         loading: true,
-        error: null,
+        error: null, errorStatus: null, refreshError: null, workflowRetryAt: 0,
         lastUpdated: null,
         currentProjectId: null,
         prefetchedData: {}
@@ -998,3 +1062,13 @@ export const useWorkflowError = () => {
 };
 
 export default useWorkflowStore;
+
+globalThis.window?.addEventListener('flowtask:movement-status', event => {
+  const detail = event.detail;
+  if (detail?.type !== 'reconciled') return;
+  const state = useWorkflowStore.getState();
+  if (String(state.currentProjectId) !== String(detail.boardId)) return;
+  const queue = moveQueues.get(moveKey(cacheScope(), state.currentProjectId));
+  if (queue?.pending) { queue.refresh = true; return; }
+  void state.initializeWorkflow(state.currentProjectId);
+});

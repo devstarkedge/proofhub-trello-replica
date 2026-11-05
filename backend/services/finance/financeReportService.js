@@ -279,7 +279,8 @@ const buildDataContext = async (rawFilters = {}) => {
       .populate('department', 'name')
       .populate('members', 'name email avatar')
       .populate('owner', 'name email avatar')
-      .select('name department members owner startDate dueDate createdAt estimatedTime projectSource upworkId projectCategory billingCycle hourlyPrice fixedPrice totalProjectBudgetCents status clientDetails')
+      .select('name department members owner startDate dueDate createdAt estimatedTime projectSource upworkId technologies billingCycle hourlyPrice fixedPrice totalProjectBudgetCents status clientDetails')
+      .populate({path:'technologies',select:'label value',match:{workspaceId:getActiveWorkspaceId(),type:'technology'}})
       .sort({ createdAt: -1 })
       .limit(10001)
       .lean()
@@ -624,7 +625,7 @@ export const buildProjectFinanceReport = async (rawFilters = {}) => {
     estimatedTime: metric.project.estimatedTime,
     projectSource: metric.project.projectSource,
     upworkId: metric.project.upworkId,
-    projectCategory: metric.project.projectCategory,
+    technologies: metric.project.technologies || [],
     billingCycle: metric.project.billingCycle,
     billingType: metric.project.billingCycle,
     hourlyPrice: metric.project.hourlyPrice,

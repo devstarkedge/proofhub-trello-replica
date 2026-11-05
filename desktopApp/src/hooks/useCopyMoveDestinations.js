@@ -11,7 +11,7 @@ import Database from '../services/database';
  * @param {string} options.currentListId - Current card's list
  * @returns {Object} Destination state and handlers
  */
-const useCopyMoveDestinations = ({ currentDepartmentId, currentProjectId, currentListId } = {}) => {
+const useCopyMoveDestinations = ({ currentDepartmentId, currentProjectId, currentListId, enabled = true } = {}) => {
   // Selection state
   const [selectedDepartmentId, setSelectedDepartmentId] = useState(currentDepartmentId || '');
   const [selectedProjectId, setSelectedProjectId] = useState(currentProjectId || '');
@@ -35,6 +35,7 @@ const useCopyMoveDestinations = ({ currentDepartmentId, currentProjectId, curren
 
   // Load departments on mount
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     const load = async () => {
       setLoadingDepartments(true);
@@ -49,10 +50,11 @@ const useCopyMoveDestinations = ({ currentDepartmentId, currentProjectId, curren
     };
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [enabled]);
 
   // Load recent destinations on mount
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     const load = async () => {
       setLoadingRecent(true);
@@ -67,10 +69,11 @@ const useCopyMoveDestinations = ({ currentDepartmentId, currentProjectId, curren
     };
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [enabled]);
 
   // Load projects when department changes
   const loadProjects = useCallback(async (departmentId) => {
+    if (!enabled) return;
     if (!departmentId) {
       setProjects([]);
       return;
@@ -92,10 +95,11 @@ const useCopyMoveDestinations = ({ currentDepartmentId, currentProjectId, curren
     } finally {
       setLoadingProjects(false);
     }
-  }, []);
+  }, [enabled]);
 
   // Load lists when project changes
   const loadLists = useCallback(async (boardId) => {
+    if (!enabled) return;
     if (!boardId) {
       setLists([]);
       return;
@@ -117,7 +121,7 @@ const useCopyMoveDestinations = ({ currentDepartmentId, currentProjectId, curren
     } finally {
       setLoadingLists(false);
     }
-  }, []);
+  }, [enabled]);
 
   // Department selection handler — cascades reset for project and list
   const selectDepartment = useCallback((departmentId) => {
@@ -138,7 +142,7 @@ const useCopyMoveDestinations = ({ currentDepartmentId, currentProjectId, curren
   // List selection handler
   const selectList = useCallback((listId) => {
     setSelectedListId(listId);
-  }, []);
+  }, [enabled]);
 
   // Apply a recent destination — sets all three selectors at once
   const applyRecentDestination = useCallback((dest) => {
@@ -152,13 +156,14 @@ const useCopyMoveDestinations = ({ currentDepartmentId, currentProjectId, curren
 
   // Pre-load current location on mount
   useEffect(() => {
+    if (!enabled) return;
     if (currentDepartmentId) {
       loadProjects(currentDepartmentId);
     }
     if (currentProjectId) {
       loadLists(currentProjectId);
     }
-  }, [currentDepartmentId, currentProjectId, loadProjects, loadLists]);
+  }, [enabled, currentDepartmentId, currentProjectId, loadProjects, loadLists]);
 
   // Determine if the destination is the same as current location
   const isSameLocation = selectedDepartmentId === currentDepartmentId
@@ -175,7 +180,7 @@ const useCopyMoveDestinations = ({ currentDepartmentId, currentProjectId, curren
   const clearCaches = useCallback(() => {
     projectsCache.current = {};
     listsCache.current = {};
-  }, []);
+  }, [enabled]);
 
   return {
     // Selection state

@@ -66,6 +66,7 @@ const ClientSection = memo(({
         </label>
       </div>
 
+      {required && <p className="mb-3 text-xs text-gray-600">Client name and either an email address or phone number are required.</p>}
       <div className="space-y-4">
         <FormField label="Client Name" icon={User} required={required} error={errors?.clientName}>
           <input
@@ -84,12 +85,12 @@ const ClientSection = memo(({
         </FormField>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <FormField label="Email Address" icon={Mail} required={required} error={errors?.clientEmail}>
+          <FormField label="Email Address" icon={Mail} error={errors?.clientEmail}>
             <input
               type="email"
               name="clientEmail"
               aria-label="Client Email Address"
-              aria-required={required}
+              aria-required={false}
               aria-invalid={!!errors?.clientEmail}
               autoComplete="off"
               value={clientEmail}
@@ -102,7 +103,7 @@ const ClientSection = memo(({
             />
           </FormField>
 
-          <FormField label="Phone Number" icon={Phone} required={required} error={errors?.clientMobileNumber}>
+          <FormField label="Phone Number" icon={Phone} error={errors?.clientMobileNumber}>
             <div className="flex gap-2">
               {/* Country Code */}
               <div className="relative" ref={countryDropdownRef}>
@@ -157,7 +158,7 @@ const ClientSection = memo(({
                 inputMode="numeric"
                 name="clientMobileNumber"
                 aria-label="Client Phone Number"
-                aria-required={required}
+                aria-required={false}
                 aria-invalid={!!errors?.clientMobileNumber}
                 value={clientMobileNumber}
                 onChange={handleMobileNumberChange}

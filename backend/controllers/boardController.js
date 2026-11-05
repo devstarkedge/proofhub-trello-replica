@@ -58,6 +58,7 @@ export const getBoards = asyncHandler(async (req, res) => {
   const boards = await Board.find({ $and: [scope, department] })
     .populate('owner', 'name email avatar').populate('team', 'name')
     .populate('department', 'name').populate('members', 'name email avatar')
+    .populate({ path: 'technologies', select: 'label value', match: { workspaceId: req.workspaceId, type: 'technology' } })
     .sort('-createdAt').lean();
   res.status(200).json({ success: true, count: boards.length, data: boards });
 });
@@ -75,6 +76,7 @@ export const getBoardsByDepartment = asyncHandler(async (req, res, next) => {
     isDeleted: { $ne: true }
   })
     .and([scope])
+    .populate({ path: 'technologies', select: 'label value', match: { workspaceId: req.workspaceId, type: 'technology' } })
     .populate("owner", "name email avatar")
     .populate("team", "name")
     .populate("members", "name email avatar")
@@ -120,7 +122,7 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
   const listIds = lists.map(l => l._id);
   const cardFilter = { $and: [{ list: { $in: listIds }, isArchived: false }, await resourceReadFilter(req, 'task', projectId)] };
   const cards = await Card.find(cardFilter)
-    .select('title list description position status priority labels assignees board coverImage startDate dueDate estimation start_date end_date subtaskStats loggedTime __v')
+    .select('title list description position status priority labels assignees board coverImage startDate dueDate estimation start_date end_date subtaskStats loggedTime __v movementRevision')
     .populate('assignees', 'name email avatar role')
     .populate('members', 'name email avatar')
     .populate('coverImage', 'url secureUrl thumbnailUrl fileName fileType isCover')
@@ -479,7 +481,6 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     milestoneWorkflow,
     milestones,
     clientDetails,
-    projectCategory,
     projectType
   } = req.body;
 
@@ -584,7 +585,6 @@ export const createBoard = asyncHandler(async (req, res, next) => {
     totalProjectBudgetCents: milestoneSchedule?.budgetCents,
     milestoneWorkflow: milestoneSchedule?.workflow || 'sequential',
     clientDetails: projectType === 'Inhouse' ? undefined : clientDetails,
-    projectCategory,
     technologies,
     projectType: projectType || 'Hired Client'
   };
@@ -723,6 +723,7 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
 
   // When switching to Inhouse, clear client/billing fields
   const updateBody = { ...req.body };
+  delete updateBody.projectCategory;
   // Only ordinary field patches are supported. Mongo operators/dotted paths
   // must not bypass validation of the effective project or change tenant scope.
   if (Object.keys(updateBody).some(key => key.startsWith('$') || key.includes('.') || ['workspaceId', '_id', 'hubspotSync'].includes(key))) {

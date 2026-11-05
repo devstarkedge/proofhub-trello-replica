@@ -16,6 +16,15 @@ export function dashboardSegmentExpression(query){
   return tests.length?{$and:tests}:true;
 }
 
+// Shared by interactive history and generated exports: attendance/policy closes
+// stale open segments at the same authoritative boundary in both projections.
+export function trackingSessionCutoffStages({workspaceId,now,policy,attendanceDetails=false}) {
+  const tenant=oid(workspaceId);
+  return [{$lookup:{from:AttendanceSession.collection.name,let:{attendance:'$attendanceSession',owner:'$user'},pipeline:[{$match:{workspaceId:tenant,$expr:{$and:[{$eq:['$_id','$$attendance']},{$eq:['$user','$$owner']}]}}},{$project:{status:1,checkOutAt:1,missedCheckoutCutoffAt:1,reconciledAt:1,...(attendanceDetails?{attendanceDay:1,checkInAt:1,regularizationResolution:1}:{})}}],as:'_attendance'}},
+    {$set:{_attendance:{$first:'$_attendance'}}},
+    {$set:{_cutoff:{$min:[{$ifNull:['$endedAt',now]},{$ifNull:['$_attendance.checkOutAt',{$ifNull:['$_attendance.missedCheckoutCutoffAt',{$ifNull:['$_attendance.reconciledAt',now]}]}]},...(policy.enabled?[]:[{$literal:policy.disabledAt||now}])]}}} ];
+}
+
 export function dashboardReadPipeline({workspaceId,ctx,scope,owners,bounds,query,dates,now,policy,attendanceDetails=false}){
   const tenant=oid(workspaceId),viewer=oid(ctx.userId),otherOwners=owners.filter(owner=>id(owner)!==id(viewer));
   const projects=[...scope.projectMap.values()].filter(project=>can(ctx,'project.view',project)).map(project=>project._id);
@@ -36,9 +45,7 @@ export function dashboardReadPipeline({workspaceId,ctx,scope,owners,bounds,query
     ],as:'_foreignHistory'}},{$match:{$or:[{user:viewer},{'_foreignHistory.0':{$exists:false}}]}});
   }
   const end=new Date(Math.min(+now,+dates.end));
-  pipeline.push({$lookup:{from:AttendanceSession.collection.name,let:{attendance:'$attendanceSession',owner:'$user'},pipeline:[{$match:{workspaceId:tenant,$expr:{$and:[{$eq:['$_id','$$attendance']},{$eq:['$user','$$owner']}]}}},{$project:{status:1,checkOutAt:1,missedCheckoutCutoffAt:1,reconciledAt:1,...(attendanceDetails?{attendanceDay:1,checkInAt:1,regularizationResolution:1}:{})}}],as:'_attendance'}},
-    {$set:{_attendance:{$first:'$_attendance'}}},
-    {$set:{_cutoff:{$min:[{$ifNull:['$endedAt',now]},{$ifNull:['$_attendance.checkOutAt',{$ifNull:['$_attendance.missedCheckoutCutoffAt',{$ifNull:['$_attendance.reconciledAt',now]}]}]},...(policy.enabled?[]:[{$literal:policy.disabledAt||now}])]}}},
+  pipeline.push(...trackingSessionCutoffStages({workspaceId,now,policy,attendanceDetails}),
     {$set:{_rangeEnd:{$min:['$_cutoff',end]},_viewStatus:{$cond:[{$and:[{$eq:[{$ifNull:['$endedAt',null]},null]},{$eq:['$_attendance.status','ACTIVE']},{$eq:[{$ifNull:['$_attendance.checkOutAt',null]},null]},{$gte:['$_cutoff',now]}]},'$status','CLOSED']}}},
     {$set:{_selected:{$filter:{input:{$ifNull:['$segments',[]]},as:'s',cond:{$and:[dashboardSegmentExpression(query),{$lt:['$$s.startedAt','$_rangeEnd']},{$gt:[{$ifNull:['$$s.endedAt','$_rangeEnd']},dates.start]}]}}}}},
     {$set:{_workSeconds:{$sum:{$map:{input:'$_selected',as:'s',in:{$max:[0,{$divide:[{$subtract:[{$min:[{$ifNull:['$$s.endedAt','$_rangeEnd']},'$_rangeEnd']},{$max:['$$s.startedAt',dates.start]}]},1000]}]}}}},_latest:{$arrayElemAt:['$_selected',-1]}}});

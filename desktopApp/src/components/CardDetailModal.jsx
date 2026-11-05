@@ -1,3 +1,4 @@
+import { cardRefreshPlan } from '../../../shared/realtimeInvalidation.mjs';
 import { useLocation } from 'react-router-dom';
 import React, { useState, useEffect, useContext, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -531,7 +532,15 @@ const CardDetailModal = React.memo(({
     };
 
     // Subscribe to events
-    const recoverDetails = () => { loadFreshCardData(false); commentService.invalidateCache('card', card._id); loadComments(); loadActivities(); };
+    const recoverDetails = event => {
+      const plan = cardRefreshPlan(event.detail, { workspaceId: localStorage.getItem('workspaceId'), boardId: card.board?._id || card.board, cardId: card._id });
+      if (!plan || disposed) return;
+      if (plan.card) void loadFreshCardData(false);
+      if (plan.comments) { if (event.detail?.recovery || !event.detail?.types) commentService.invalidateCache('card', card._id); void loadComments(); }
+      if (plan.activities) void loadActivities();
+      if (plan.lists) void loadAvailableStatuses();
+      if (plan.project) void loadProjectName();
+    };
     window.addEventListener('flowtask:data-invalidated', recoverDetails);
     window.addEventListener('socket-card-updated', handleCardUpdate);
     window.addEventListener('socket-card-cover-updated', handleCardCoverUpdate);

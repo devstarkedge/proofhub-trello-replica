@@ -837,12 +837,12 @@ const ProjectsTab = () => {
                                    openInNewTab={true}>
                                     {project.projectName}
                                   </ProjectWorkflowLink>
-                                  {project.projectCategory && (
+                                  {(project.technologies || []).map(t => t.label || '').filter(Boolean).join(', ') && (
                                     <span
                                       className="text-xs"
                                       style={{ color: 'var(--color-text-muted)' }}
                                     >
-                                      {project.projectCategory}
+                                      {(project.technologies || []).map(t => t.label || '').filter(Boolean).join(', ')}
                                     </span>
                                   )}
                                   {/* Client Info Toggle */}

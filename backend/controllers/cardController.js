@@ -57,7 +57,7 @@ const getTaskStatusBoardContext = async (boardRef) => {
   return board || { _id: boardId, name: '', department: null };
 };
 
-const dispatchTaskStatusChange = async ({ card, oldStatus, newStatus, actor, board }) => {
+export const dispatchTaskStatusChange = async ({ card, oldStatus, newStatus, actor, board }) => {
   if (newStatus === undefined || newStatus === oldStatus) {
     return null;
   }
@@ -1025,7 +1025,9 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse(validationError.message, 400));
   }
 
-  card = await Card.findByIdAndUpdate(req.params.id, req.body, {
+  const placementChanged = ['status','list','position'].some(field => Object.hasOwn(req.body,field) && String(req.body[field]) !== String(card[field]));
+  const cardPatch = placementChanged ? { $set: req.body, $inc: { movementRevision: 1 } } : req.body;
+  card = await Card.findByIdAndUpdate(req.params.id, cardPatch, {
     new: true,
     runValidators: true,
     expectedRevision: req.expectedRevision,
@@ -1285,7 +1287,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
   // Emit real-time update
   emitToBoard(card.board.toString(), 'card-updated', {
     cardId: card._id,
-    updates: req.body,
+    updates: { ...req.body, movementRevision: card.movementRevision },
     updatedBy: {
       id: req.user.id,
       name: req.user.name

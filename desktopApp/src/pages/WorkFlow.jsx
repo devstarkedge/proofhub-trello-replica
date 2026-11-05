@@ -1,3 +1,4 @@
+import MovementSyncStatus from '../components/workflow/MovementSyncStatus';
 import React, { useState, useEffect, useContext, Suspense, memo, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -58,7 +59,7 @@ const WorkFlow = memo(() => {
     lists,
     cardsByList,
     loading,
-    error,
+    error, errorStatus, refreshError, workflowRetryAt,
     currentProjectId,
     initializeWorkflow,
     clearWorkflow,
@@ -192,7 +193,7 @@ const WorkFlow = memo(() => {
         socketService.leaveBoard(board._id);
       };
     }
-  }, [user, board]);
+  }, [user?.id, board?._id]);
 
   // Listen for real-time recurrence updates to show/hide recurring label on cards
   useEffect(() => {
@@ -571,7 +572,7 @@ useEffect(() => {
         }
       }
 
-      await moveCard(cardId, newListId, newPosition, status);
+      return await moveCard(cardId, newListId, newPosition, status);
 
     } catch (error) {
       console.error('Error moving card:', error);
@@ -645,7 +646,7 @@ useEffect(() => {
   }, [updateBoard]);
 
   const handleOpenCardModal = useCallback((card) => {
-    if (!card) return;
+    if (!card || !/^[a-f\d]{24}$/i.test(String(card._id || card.id || ''))) return;
     
     // Prevent opening modal for cards with temporary IDs (not yet saved to database)
     if (card.isOptimistic || (card._id && card._id.toString().startsWith('temp-'))) {
@@ -913,15 +914,16 @@ useEffect(() => {
           className="text-white text-center max-w-md mx-4"
         >
           <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 border border-white/20">
-            <h2 className="text-2xl font-bold mb-4">Access Denied</h2>
+            <h2 className="text-2xl font-bold mb-4">{[401,403].includes(errorStatus) ? 'Access Denied' : errorStatus === 404 ? 'Project Not Found' : 'Unable to refresh project'}</h2>
             <p className="text-xl mb-6 text-white/80">{error}</p>
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => navigate('/')}
+              disabled={workflowRetryAt > Date.now()}
+              onClick={() => [401,403,404].includes(errorStatus) ? navigate('/') : initializeWorkflow(projectId)}
               className="px-6 py-3 bg-white text-purple-900 rounded-lg font-semibold hover:bg-gray-100 transition-colors shadow-lg"
             >
-              Return to Home
+              {[401,403,404].includes(errorStatus) ? 'Return to Home' : workflowRetryAt > Date.now() ? 'Retrying shortly...' : 'Retry'}
             </motion.button>
           </div>
         </motion.div>
@@ -1054,6 +1056,9 @@ useEffect(() => {
             </motion.div>
           </div>
         ) : (
+          <>
+          <MovementSyncStatus boardId={board._id} />
+          {refreshError && <div role="status" className="fixed right-4 top-28 z-30 max-w-sm rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm">Updates are temporarily delayed. Your board remains available; retrying shortly.</div>}
           <Board
             lists={lists}
             cardsByList={filteredCardsByList}
@@ -1069,6 +1074,7 @@ useEffect(() => {
             onRestoreCard={handleRestoreCard}
             isArchivedView={showArchived}
           />
+          </>
         )}
       </main>
 

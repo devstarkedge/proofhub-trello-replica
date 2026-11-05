@@ -33,7 +33,8 @@ const Board = memo(({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, 
       const movePromise = onMoveList(draggableId, destination.index);
 
       // Handle side effects (toast/error) asynchronously
-      movePromise.then(() => {
+      movePromise.then(result => {
+        if (result?.superseded) return;
         const movedList = lists.find(l => l._id === draggableId);
         if (movedList) {
           toast.success(`List "${movedList.title}" moved`, {
@@ -73,7 +74,8 @@ const Board = memo(({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, 
       );
 
       // Handle side effects (toast/error) asynchronously
-      movePromise.then(() => {
+      movePromise.then(result => {
+        if (result?.superseded) return;
         // Show toast
         const sourceListCards = cardsByList[startListId] || [];
         const movedCard = sourceListCards.find(c => c._id === draggableId);
@@ -97,8 +99,9 @@ const Board = memo(({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, 
           }
         );
       }).catch((error) => {
+        if (error.name === 'AbortError') return;
         console.error("Failed to move card:", error);
-        toast.error("Failed to move card");
+        toast.error(error.message || "Failed to move card");
       });
     }
   }, [lists, cardsByList, onMoveList, onMoveCard]);

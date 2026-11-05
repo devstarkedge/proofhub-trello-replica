@@ -273,7 +273,7 @@ const CardActionMenu = ({
         isLoading={isDeleting}
       />
 
-      <CopyMoveModal
+      {showCopyMoveModal && <CopyMoveModal
         isOpen={showCopyMoveModal}
         onClose={() => setShowCopyMoveModal(false)}
         mode={copyMoveMode}
@@ -282,7 +282,7 @@ const CardActionMenu = ({
         currentDepartmentId={currentDepartmentId}
         currentProjectId={currentProjectId || ids.projectId}
         currentListId={currentListId}
-      />
+      />}
     </>
   );
 };

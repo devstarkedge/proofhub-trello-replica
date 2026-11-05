@@ -1,3 +1,4 @@
+import generatedReportRoutes from './tracking.generatedReport.routes.js';
 import { trackingFilterOptions } from './tracking.filterOptions.js';
 import express from 'express';
 import { protect } from '../../middleware/authMiddleware.js';
@@ -25,6 +26,7 @@ import {observeTrackingRead} from './tracking.readCache.js';
 const router = express.Router();
 router.use(protect);
 router.use(rateLimiter({ windowMs: 60000, maxRequests: 180, allowReadFallback: true, allowWriteFallback:canUseTrackingTelemetryFallback, keyFn: req => `${req.workspaceId}:${req.user.id}`, message: 'Too many tracking requests; retry shortly.' }));
+router.use('/generated-reports', generatedReportRoutes);
 const actor = req => ({ workspaceId: req.workspaceId, userId: req.user.id });
 const send = (res, data) => res.json({ success: true, data });
 const sendCached = async (res, load) => {

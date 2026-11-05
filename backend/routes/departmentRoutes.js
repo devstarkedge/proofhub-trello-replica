@@ -1,3 +1,5 @@
+import { projectManagers } from '../services/projectManagers.js';
+import asyncHandler from '../middleware/asyncHandler.js';
 import express from 'express';
 import { body } from 'express-validator';
 import { getDepartments, getDepartment, createDepartment, updateDepartment, deleteDepartment, addMemberToDepartment, removeMemberFromDepartment, getMembersWithAssignments, getProjectsWithMemberAssignments, unassignUserFromDepartment, bulkAssignUsersToDepartment, bulkUnassignUsersFromDepartment, getDepartmentsWithAssignments, getUserDepartmentFilterOptions, getDepartmentStats } from '../controllers/departmentController.js';
@@ -11,6 +13,7 @@ router.get('/', protect, getDepartments);
 router.get('/with-assignments', protect, getDepartmentsWithAssignments);
 router.get('/filter-options', protect, getUserDepartmentFilterOptions);
 router.get('/stats/summary', protect, getDepartmentStats);
+router.get('/:id/project-managers', protect, asyncHandler(async (req,res)=>res.json({success:true,data:await projectManagers(req,req.params.id)})));
 router.get('/:id', protect, getDepartment);
 
 router.post('/', protect, authorize('admin'), [

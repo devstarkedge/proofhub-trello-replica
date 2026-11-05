@@ -168,6 +168,7 @@ const boardSchema = new mongoose.Schema({
     }
   },
   projectCategory: {
+    select: false,
     type: String,
     trim: true
   },

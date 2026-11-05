@@ -1,3 +1,4 @@
+import useProjectManagers from '../hooks/useProjectManagers';
 "use client";
 
 import React, { useState, useEffect, useCallback, useContext, useMemo, useRef } from 'react';
@@ -90,7 +91,6 @@ const EnterpriseEditProjectModal = React.memo(({
     clientEmail: '',
     clientCountryCode: '',
     clientMobileNumber: '',
-    projectCategory: '',
     technologies: [],
     marketingContact: false,
     assignees: [],
@@ -101,12 +101,12 @@ const EnterpriseEditProjectModal = React.memo(({
     projectType: 'Hired Client'
   });
 
-  const managers = useMemo(() => departmentManagers || [], [departmentManagers]);
+  const managerChoices = useProjectManagers((loadedProject || project)?.department?._id || (loadedProject || project)?.department, isOpen, (loadedProject || project)?._id);
+  const managers = managerChoices.users;
   const selectedEmployees = useMemo(() =>
     formData.assignees.map(id => managers.find(m => m._id === id)).filter(Boolean),
     [formData.assignees, managers]
   );
-  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   
@@ -284,7 +284,6 @@ const EnterpriseEditProjectModal = React.memo(({
             clientName: fullProject.clientDetails?.clientName || '',
             clientEmail: fullProject.clientDetails?.clientEmail || '',
             ...splitClientPhone(fullProject.clientDetails?.clientWhatsappNumber),
-            projectCategory: fullProject.projectCategory || '',
             technologies: (fullProject.technologies || []).map(technology => technology._id || technology),
             marketingContact: fullProject.clientDetails?.marketingContact === true,
             assignees: fullProject.members?.map(m => typeof m === 'string' ? m : m._id) || [],
@@ -306,7 +305,6 @@ const EnterpriseEditProjectModal = React.memo(({
           
           setCoverImage(fullProject.coverImage || null);
           setCoverImageHistory(fullProject.coverImageHistory || []);
-          await fetchCategories(fullProject);
           
           // Attachments and activity are now fetched lazily when their tabs are selected
         } catch (error) {
@@ -351,15 +349,6 @@ const EnterpriseEditProjectModal = React.memo(({
         .finally(() => setActivityLoading(false));
     }
   }, [activeTab, isOpen, project]);
-
-  const fetchCategories = async (project) => {
-    try {
-      const response = await Database.getCategoriesByDepartment(project.department._id);
-      setCategories(response.data);
-    } catch (error) {
-      console.error('Error fetching categories:', error);
-    }
-  };
 
   const handleInputChange = useCallback((e) => {
     const { name, value } = e.target;
@@ -506,7 +495,6 @@ const EnterpriseEditProjectModal = React.memo(({
         description: formData.description,
         startDate: formData.startDate,
         dueDate: formData.dueDate,
-        projectCategory: formData.projectCategory,
         technologies: formData.technologies,
         members: formData.assignees,
         status: formData.status,
@@ -964,8 +952,6 @@ const EnterpriseEditProjectModal = React.memo(({
                             milestones={formData.milestones}
                             estimatedTime={formData.estimatedTime}
                             projectUrl={formData.projectUrl}
-                            projectCategory={formData.projectCategory}
-                            categories={categories}
                             errors={errors}
                             projectUrlValid={true} // Validated inside handleInputChange in Edit usually
                             handleInputChange={handleInputChange}
@@ -988,9 +974,6 @@ const EnterpriseEditProjectModal = React.memo(({
                             handleMilestonesChange={(milestones) => setFormData(prev => ({ ...prev, milestones }))}
                             handleBudgetChange={(totalProjectBudget) => setFormData(prev => ({ ...prev, totalProjectBudget }))}
                             handleWorkflowChange={(milestoneWorkflow) => setFormData(prev => ({ ...prev, milestoneWorkflow }))}
-                            handleCategoryChange={(category) => setFormData(prev => ({ ...prev, projectCategory: category }))}
-                            handleDeleteCategory={() => {}} // Category deletion in edit usually less critical or handled via API
-                            handleCreateCategory={(name, description) => {}} // Add Category form not typically inside Edit Modal
                           />
 
                         {/* Client Information */}
@@ -1035,7 +1018,7 @@ const EnterpriseEditProjectModal = React.memo(({
 
                   {/* Team Tab */}
                   {activeTab === 'team' && (
-                    <TeamTab
+                    <TeamTab managersLoading={managerChoices.loading} managersError={managerChoices.error}
                       managers={managers}
                       assignees={formData.assignees}
                       selectedEmployees={selectedEmployees}

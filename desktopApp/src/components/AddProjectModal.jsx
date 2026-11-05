@@ -1,3 +1,4 @@
+import useProjectManagers from '../hooks/useProjectManagers';
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, memo, useRef, useContext } from "react";
@@ -30,7 +31,7 @@ import { drawerVariants } from './ProjectModals/shared/animations';
 import FormField from './ProjectModals/sections/FormField';
 import { useFileUploadSimulation } from './ProjectModals/shared/useFileUploadSimulation';
 
-const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded, departmentManagers = [], draftScope }) => {
+const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProjectAdded, draftScope }) => {
   const { user } = useContext(AuthContext);
   const { departments } = useProjectStore();
   const [activeTab, setActiveTab] = useState('details');
@@ -57,7 +58,6 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
     clientEmail: "",
     clientCountryCode: "+91",
     clientMobileNumber: "",
-    projectCategory: "",
     technologies: [],
     marketingContact: false,
     assignees: [],
@@ -67,21 +67,15 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
   }), []);
 
   const [formData, setFormData] = useState(initialFormData);
-  const managers = useMemo(() => {
-    const dept = departments.find(d => d._id === selectedDepartmentId);
-    return dept ? (dept.managers || dept.members || []) : (departmentManagers || []);
-  }, [selectedDepartmentId, departments, departmentManagers]);
-  const [categories, setCategories] = useState([]);
+  const managerChoices = useProjectManagers(selectedDepartmentId, isOpen);
+  const managers = managerChoices.users;
   const [loading, setLoading] = useState(false);
-  const [categoryLoading, setCategoryLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
   const [isSaving, setIsSaving] = useState(false);
-  const [showAddCategory, setShowAddCategory] = useState(false);
   const [countryDropdownOpen, setCountryDropdownOpen] = useState(false);
   const [projectUrlValid, setProjectUrlValid] = useState(true);
   const [countrySearchQuery, setCountrySearchQuery] = useState("");
-  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
   const [visibilityDropdownOpen, setVisibilityDropdownOpen] = useState(false);
   const [projectTypeDropdownOpen, setProjectTypeDropdownOpen] = useState(false);
   const [coverImageFile, setCoverImageFile] = useState(null);
@@ -102,7 +96,6 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
   const draftTimerRef = useRef(null);
   const urlValidationTimer = useRef(null);
   const countryDropdownRef = useRef(null);
-  const categoryDropdownRef = useRef(null);
   const visibilityDropdownRef = useRef(null);
   const projectTypeDropdownRef = useRef(null);
 
@@ -142,9 +135,6 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
       if (departmentDropdownOpen && departmentDropdownRef.current && !departmentDropdownRef.current.contains(event.target)) {
         setDepartmentDropdownOpen(false);
       }
-      if (categoryDropdownOpen && categoryDropdownRef.current && !categoryDropdownRef.current.contains(event.target)) {
-        setCategoryDropdownOpen(false);
-      }
       if (visibilityDropdownOpen && visibilityDropdownRef.current && !visibilityDropdownRef.current.contains(event.target)) {
         setVisibilityDropdownOpen(false);
       }
@@ -154,12 +144,8 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [countryDropdownOpen, departmentDropdownOpen, categoryDropdownOpen, projectTypeDropdownOpen]);
+  }, [countryDropdownOpen, departmentDropdownOpen, projectTypeDropdownOpen]);
 
-  // Fetch categories
-  useEffect(() => {
-    if (isOpen && selectedDepartmentId) fetchCategories();
-  }, [isOpen, selectedDepartmentId]);
 
   // Sync selectedDepartmentId when modal opens or departmentId prop changes
   useEffect(() => {
@@ -180,7 +166,6 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
       setFormData(initialFormData);
       setErrors({});
       setTouched({});
-      setShowAddCategory(false);
       setPendingFiles([]);
       setUploadErrors([]);
       setDraftStatus("");
@@ -230,37 +215,14 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
     return () => clearInterval(timer);
   }, [isOpen, draftKey]);
 
-  const fetchCategories = useCallback(async () => {
-    if (!selectedDepartmentId) return;
-    setCategoryLoading(true);
-    try {
-      const response = await Database.getCategoriesByDepartment(selectedDepartmentId);
-      if (response.success) {
-        setCategories(response.data);
-      }
-    } catch (error) {
-      console.error("Error fetching categories:", error);
-    } finally {
-      setCategoryLoading(false);
-    }
-  }, [selectedDepartmentId]);
-
   const handleDepartmentChange = useCallback((newDeptId) => {
     setSelectedDepartmentId(newDeptId);
     setDepartmentDropdownOpen(false);
-    setFormData((prev) => ({ ...prev, projectCategory: "", assignees: [] }));
+    setFormData(prev => ({...prev,assignees:[]}));
     if (errors.department) {
       setErrors((prev) => ({ ...prev, department: "" }));
     }
   }, [errors]);
-
-  const handleCategoryChange = useCallback((value) => {
-    if (value === "add-new") {
-      setShowAddCategory(true);
-    } else {
-      setFormData((prev) => ({ ...prev, projectCategory: value }));
-    }
-  }, []);
 
   const handleProjectTypeChange = useCallback((type) => {
     setFormData((prev) => {
@@ -286,61 +248,6 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
     });
     setProjectTypeDropdownOpen(false);
   }, []);
-
-  // Takes name/description as direct arguments — not from state — since the
-  // actual input fields live in ProjectDetailsSection.jsx's own local state.
-  // Reading from parent-level state here (set via setState just before this
-  // was called) previously validated against stale, previous-render values,
-  // since React state updates aren't applied synchronously.
-  const handleCreateCategory = useCallback(async (name, description) => {
-    const trimmedName = (name || "").trim();
-    if (!trimmedName) {
-      toast.error("Category name is required");
-      return false;
-    }
-    try {
-      const response = await Database.createCategory(trimmedName, (description || "").trim(), selectedDepartmentId);
-      if (response.success) {
-        const newCategory = response.data;
-        setCategories((prev) => [...prev, newCategory]);
-        setFormData((prev) => ({ ...prev, projectCategory: newCategory.name }));
-        setShowAddCategory(false);
-        toast.success("Category created!");
-        return true;
-      }
-      return false;
-    } catch (error) {
-      toast.error(error.message || "Failed to create category");
-      return false;
-    }
-  }, [departmentId]);
-
-  const handleDeleteCategory = useCallback(async (categoryId, categoryName, e) => {
-    e.stopPropagation(); // Prevent dropdown from closing
-    
-    if (!window.confirm(`Are you sure you want to delete "${categoryName}"?`)) {
-      return;
-    }
-
-    try {
-      // Optimistically remove from UI
-      setCategories((prev) => prev.filter((cat) => cat._id !== categoryId));
-      
-      // If the deleted category was selected, clear the selection
-      if (formData.projectCategory === categoryName) {
-        setFormData((prev) => ({ ...prev, projectCategory: "" }));
-      }
-
-      const response = await Database.deleteCategory(categoryId);
-      if (response.success) {
-        toast.success("Category deleted successfully!");
-      }
-    } catch (error) {
-      // Revert on error by refetching
-      fetchCategories();
-      toast.error(error.message || "Failed to delete category");
-    }
-  }, [formData.projectCategory, fetchCategories]);
 
   const fetchDepartmentTeams = useCallback(async () => {
     try {
@@ -495,7 +402,6 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
         startDate: formData.startDate,
         dueDate: formData.dueDate,
         visibility: formData.visibility,
-        projectCategory: formData.projectCategory,
         technologies: formData.technologies,
         projectType: formData.projectType,
         runBackgroundTasks: true
@@ -897,8 +803,6 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                         milestones={formData.milestones}
                         estimatedTime={formData.estimatedTime}
                         projectUrl={formData.projectUrl}
-                        projectCategory={formData.projectCategory}
-                        categories={categories}
                         errors={errors}
                         projectUrlValid={projectUrlValid}
                         handleInputChange={handleInputChange}
@@ -921,9 +825,6 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                         handleMilestonesChange={(milestones) => setFormData(prev => ({ ...prev, milestones }))}
                         handleBudgetChange={(totalProjectBudget) => setFormData(prev => ({ ...prev, totalProjectBudget }))}
                         handleWorkflowChange={(milestoneWorkflow) => setFormData(prev => ({ ...prev, milestoneWorkflow }))}
-                        handleCategoryChange={(category) => setFormData(prev => ({ ...prev, projectCategory: category }))}
-                        handleDeleteCategory={handleDeleteCategory}
-                        handleCreateCategory={handleCreateCategory}
                       />
 
                     {/* Client Information */}
@@ -958,7 +859,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
 
                 {/* Team Tab */}
                 {activeTab === 'team' && (
-                  <TeamTab
+                  <TeamTab managersLoading={managerChoices.loading} managersError={managerChoices.error}
                     managers={managers}
                     assignees={formData.assignees}
                     selectedEmployees={selectedEmployees}
