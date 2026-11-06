@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 
 import AuthContext from '../../context/AuthContext';
+import WorkspaceContext from '../../context/WorkspaceContext';
+import { registerResettable } from '../../store/resetRegistry';
 import api from '../../services/api';
 import socketService from '../../services/socket';
 import { toast } from 'react-toastify';
@@ -25,6 +27,13 @@ import { toast } from 'react-toastify';
  * Includes real-time socket updates for finance data
  */
 const FinanceLayout = () => {
+  const { currentWorkspace } = useContext(WorkspaceContext);
+  const [revision, setRevision] = useState(0);
+  useEffect(() => registerResettable(() => setRevision(value => value + 1)), []);
+  return <FinanceWorkspaceLayout key={`${currentWorkspace?._id || ''}:${revision}`} />;
+};
+
+const FinanceWorkspaceLayout = () => {
   const location = useLocation();
   const { can, loading: permissionsLoading } = useAccessControl();
   const canRevenue = can('finance', 'revenue_analytics');

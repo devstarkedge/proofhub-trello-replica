@@ -90,22 +90,28 @@ export async function cachedAnnouncementRead({ workspaceId, viewerId, kind, quer
         if (versions[0] && versions[1]) {
           key = workspaceKey(workspaceId, `${namespace}:${kind}`, digest({ viewerId: String(viewerId), access,
             query: Object.fromEntries(Object.entries(query || {}).sort(([a], [b]) => a.localeCompare(b))), versions }));
-          const cached = await command(ready.client.get(key));
-          if (cached) {
-            const value = JSON.parse(cached);
-            if (value.validUntil > Date.now()) { count('hit'); return value.data; }
-          }
         }
       }
     }
   } catch (error) { reportRedisError('announcement-cache', error); key = null; }
-  if (!key) count('bypass');
-  else count('miss');
   // Bypass still coalesces simultaneous reads locally; it retains no results
   // and cannot carry protected data across requests after the work completes.
-  const flight = key || `${workspaceId}:${viewerId}:${kind}:${access}:${localRevision}:${digest(query)}`;
+  const flight = digest({ key, workspaceId: String(workspaceId), viewerId: String(viewerId), kind, access, query, localRevision });
   if (pending.has(flight)) { count('coalesced'); return pending.get(flight); }
   const work = (async () => {
+    // Revision reads above remain per-request so another process's committed
+    // invalidation is visible. Share only work for the same observed revision.
+    if (key) {
+      try {
+        const cached = await command(ready.client.get(key));
+        if (cached) {
+          const value = JSON.parse(cached);
+          if (value.validUntil > Date.now()) { count('hit'); return value.data; }
+        }
+      } catch (error) { reportRedisError('announcement-cache', error); key = null; }
+    }
+    if (!key) count('bypass');
+    else count('miss');
     const data = await load();
     if (key && ready.state.ready) {
       try {

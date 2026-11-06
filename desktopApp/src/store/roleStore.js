@@ -1,6 +1,12 @@
 import { create } from 'zustand';
 import api from '../services/api';
 import { registerResettable } from './resetRegistry';
+import { createScopeFlight } from '../../../shared/scopeFlight.mjs';
+import { captureRequestScope, requestScopeKey } from '../../../shared/requestScope.mjs';
+
+const roleReads = createScopeFlight();
+const permissionReads = createScopeFlight();
+const readScope = () => requestScopeKey(captureRequestScope(localStorage));
 
 /**
  * Access-scope capability constants — mirrors backend permissionService.js
@@ -160,50 +166,56 @@ const useRoleStore = create((set, get) => ({
   myPermissions: null,
   myRole: null,
   loading: false,
+  rolesLoading: false,
+  permissionsLoading: false,
+  permissionsError: null,
   error: null,
   initialized: false,
 
   /**
    * Load all roles from the server
    */
-  loadRoles: async () => {
+  loadRoles: () => roleReads.run(readScope(), async isCurrent => {
+    if (!isCurrent()) return;
     try {
-      set({ loading: true, error: null });
+      set({ rolesLoading: true, loading: true, error: null });
       const response = await api.get('/api/roles');
       const roles = response.data.data || [];
-      set({ roles, loading: false, initialized: true });
+      if (isCurrent()) set(state => ({ roles, rolesLoading: false, loading: state.permissionsLoading, initialized: true }));
       return roles;
     } catch (error) {
       console.error('Error loading roles:', error);
-      set({ error: error.message, loading: false });
+      if (isCurrent()) set(state => ({ error: error.message, rolesLoading: false, loading: state.permissionsLoading }));
       throw error;
     }
-  },
+  }),
 
   /**
    * Load current user's permissions
    */
-  loadMyPermissions: async () => {
+  loadMyPermissions: () => permissionReads.run(readScope(), async isCurrent => {
+    if (!isCurrent()) return;
     try {
-      set({ loading: true, error: null });
+      set({ permissionsLoading: true, loading: true, permissionsError: null, error: null });
       const response = await api.get('/api/roles/my-permissions');
       const data = response.data.data;
       
       // Ensure all permission keys exist (fill missing with false)
       const normalizedPermissions = { ...DEFAULT_PERMISSIONS, ...data.permissions };
       
-      set({
+      if (isCurrent()) set(state => ({
         myPermissions: normalizedPermissions,
         myRole: data.role,
-        loading: false
-      });
+        permissionsLoading: false,
+        loading: state.rolesLoading
+      }));
       return data;
     } catch (error) {
       console.error('Error loading permissions:', error);
-      set({ error: error.message, loading: false });
+      if (isCurrent()) set(state => ({ permissionsError: error.message, error: error.message, permissionsLoading: false, loading: state.rolesLoading }));
       throw error;
     }
-  },
+  }),
 
   /**
    * Create a new custom role
@@ -388,14 +400,21 @@ const useRoleStore = create((set, get) => ({
   /**
    * Reset store state
    */
-  reset: () => set({
+  reset: () => {
+    roleReads.invalidate();
+    permissionReads.invalidate();
+    set({
     roles: [],
     myPermissions: null,
     myRole: null,
     loading: false,
+    rolesLoading: false,
+    permissionsLoading: false,
+    permissionsError: null,
     error: null,
     initialized: false
-  })
+    });
+  }
 }));
 
 registerResettable(() => useRoleStore.getState().reset());

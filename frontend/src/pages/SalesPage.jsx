@@ -255,6 +255,7 @@ const SalesPage = () => {
         fetchDropdownOptions('status'),
         fetchDropdownOptions('clientLocation'),
         fetchDropdownOptions('clientBudget'),
+        fetchDropdownOptions('profile'),
         fetchDropdownOptions('replyFromClient'),
         fetchDropdownOptions('followUps')
       ]);

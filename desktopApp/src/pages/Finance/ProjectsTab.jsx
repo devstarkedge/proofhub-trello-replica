@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import useAccessControl from '../../hooks/useAccessControl';
 import { FolderKanban, Building2, Clock, DollarSign, Calendar, Users, ChevronDown, ChevronRight, AlertCircle, RefreshCw, ArrowUpDown, Phone, Mail, Activity, Info, Briefcase } from 'lucide-react';
 import api from '../../services/api';
 import SummaryCards from '../../components/Finance/SummaryCards';
@@ -28,9 +29,13 @@ import { getBillingContractValue, getBillingTypeLabel, getBillingTypeStyle, norm
  * - Week-wise reporting mode toggle
  */
 const ProjectsTab = () => {
+  const { can } = useAccessControl();
+  const canRevenue = can('finance', 'revenue_analytics');
   const navigate = useNavigate();
   const location = useLocation();
   const [data, setData] = useState([]);
+  const [reportSummary, setReportSummary] = useState(null);
+  const readController = useRef(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -71,6 +76,9 @@ const ProjectsTab = () => {
 
   // Fetch project finance data
   const fetchData = async () => {
+    readController.current?.abort();
+    const controller = new AbortController();
+    readController.current = controller;
     try {
       setLoading(true);
       setError(null);
@@ -82,10 +90,12 @@ const ProjectsTab = () => {
       if (filters.projectId) params.append('projectId', filters.projectId);
       if (filters.billingType) params.append('billingType', filters.billingType);
 
-      const response = await api.get(`/api/finance/projects?${params.toString()}`);
+      const response = await api.get(`/api/finance/projects?${params.toString()}`, { signal: controller.signal });
+      if (controller.signal.aborted) return;
 
       if (response.data.success) {
         setData(response.data.data || []);
+        setReportSummary(response.data.summary);
 
         // Auto-expand all departments initially
         const expanded = {};
@@ -95,15 +105,17 @@ const ProjectsTab = () => {
         setExpandedDepartments(expanded);
       }
     } catch (err) {
+      if (controller.signal.aborted) return;
       console.error('Error fetching project finance data:', err);
       setError(err.message);
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchData();
+    return () => readController.current?.abort();
   }, [filters]);
 
   // Fetch week-wise data when mode is enabled
@@ -436,7 +448,8 @@ const ProjectsTab = () => {
   return (
     <div>
       {/* Summary Cards */}
-      <SummaryCards filters={filters} onCardClick={handleCardClick} summaryOverride={(searchQuery || weekWiseMode) ? visibleSummary : null} />
+      <SummaryCards filters={filters} onCardClick={handleCardClick} summaryOverride={(searchQuery || weekWiseMode) ? visibleSummary : null}
+        summaryState={canRevenue && !filters.projectId ? { data: reportSummary, loading, error, retry: fetchData } : undefined} />
 
       {/* Data Integrity Warnings */}
       <DataIntegrityWarnings data={data} type="projects" />

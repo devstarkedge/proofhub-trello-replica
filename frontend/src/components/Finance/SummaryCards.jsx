@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   DollarSign,
   FileCheck,
@@ -16,13 +16,18 @@ import ProjectWorkflowLink from './ProjectWorkflowLink';
  * Cards update instantly when filters change
  * Clicking a card applies related filters
  */
-const SummaryCards = ({ filters = {}, onCardClick, summaryOverride = null }) => {
+const SummaryCards = ({ filters = {}, onCardClick, summaryOverride = null, summaryState }) => {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const readController = useRef(null);
+  const managed = Boolean(summaryState);
 
   // Fetch summary data
   const fetchSummary = async () => {
+    readController.current?.abort();
+    const controller = new AbortController();
+    readController.current = controller;
     try {
       setLoading(true);
       setError(null);
@@ -33,22 +38,25 @@ const SummaryCards = ({ filters = {}, onCardClick, summaryOverride = null }) => 
       if (filters.departmentId) params.append('departmentId', filters.departmentId);
       if (filters.billingType) params.append('billingType', filters.billingType);
 
-      const response = await api.get(`/api/finance/summary?${params.toString()}`);
+      const response = await api.get(`/api/finance/summary?${params.toString()}`, { signal: controller.signal });
+      if (controller.signal.aborted) return;
 
       if (response.data.success) {
         setSummary(response.data.data);
       }
     } catch (err) {
+      if (controller.signal.aborted) return;
       console.error('Error fetching finance summary:', err);
       setError(err.message);
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchSummary();
-  }, [filters.startDate, filters.endDate, filters.departmentId, filters.billingType]);
+    if (!managed) fetchSummary();
+    return () => readController.current?.abort();
+  }, [filters.startDate, filters.endDate, filters.departmentId, filters.billingType, managed]);
 
   // Format currency
   const formatCurrency = (amount) => {
@@ -67,7 +75,9 @@ const SummaryCards = ({ filters = {}, onCardClick, summaryOverride = null }) => 
   };
 
   // Card configurations
-  const visibleSummary = summaryOverride || summary;
+  const visibleSummary = summaryOverride || (summaryState ? summaryState.data : summary);
+  const summaryLoading = summaryState ? summaryState.loading : loading;
+  const summaryError = summaryState ? summaryState.error : error;
   const cards = [
     {
       id: 'revenue',
@@ -174,7 +184,7 @@ const SummaryCards = ({ filters = {}, onCardClick, summaryOverride = null }) => 
     </div>
   );
 
-  if (loading) {
+  if (summaryLoading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-7 gap-4 mb-6">
         {[...Array(7)].map((_, i) => (
@@ -184,7 +194,7 @@ const SummaryCards = ({ filters = {}, onCardClick, summaryOverride = null }) => 
     );
   }
 
-  if (error) {
+  if (summaryError) {
     return (
       <div
         className="p-4 rounded-xl border text-center mb-6"
@@ -195,9 +205,9 @@ const SummaryCards = ({ filters = {}, onCardClick, summaryOverride = null }) => 
         }}
       >
         <AlertCircle className="w-5 h-5 mx-auto mb-2" />
-        <p className="text-sm">Failed to load summary: {error}</p>
+        <p className="text-sm">Failed to load summary: {summaryError}</p>
         <button
-          onClick={fetchSummary}
+          onClick={summaryState ? summaryState.retry : fetchSummary}
           className="mt-2 text-xs flex items-center gap-1 mx-auto hover:underline"
         >
           <RefreshCw className="w-3 h-3" /> Retry

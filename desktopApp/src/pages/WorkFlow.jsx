@@ -118,18 +118,22 @@ const WorkFlow = memo(() => {
     }
   }, [projectId, user?.id, initializeFieldVisibility, initializeFilters]);
 
-  // Fetch board labels for filter panel
+  // Board cards already contain their labels. Load the full catalog when
+  // filtering needs it, including persisted label filters on the first visit.
+  const needsBoardLabels = showFilterPanel || filters.labels.length > 0;
   useEffect(() => {
-    if (board?._id) {
+    let active = true;
+    if (board?._id && needsBoardLabels) {
       Database.getLabelsByBoard(board._id)
         .then(res => {
-          if (res.success || res.data) {
+          if (active && (res.success || res.data)) {
             setBoardLabels(res.data || res || []);
           }
         })
-        .catch(() => setBoardLabels([]));
+        .catch(() => { if (active) setBoardLabels([]); });
     }
-  }, [board?._id]);
+    return () => { active = false; };
+  }, [board?._id, needsBoardLabels]);
 
   // Reset local state when projectId changes
   useEffect(() => {

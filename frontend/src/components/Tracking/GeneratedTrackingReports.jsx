@@ -23,7 +23,7 @@ function ReportSection({scope}) {
   const [search,setSearch]=useState({userSearch:'',projectSearch:'',taskSearch:''}),delayedSearch=useDebounce(search,400);
   const live=useRef(true),scopeRef=useRef(scope),attempt=useRef(null);
   useEffect(()=>{live.current=true;return()=>{live.current=false;};},[]);
-  const options=useQuery({queryKey:['generated-report-options',scope,form.departmentId,form.projectId,delayedSearch],queryFn:async({signal})=>(await api.get('/api/tracking/generated-reports/options',{params:{departmentId:form.departmentId,projectId:form.projectId,...delayedSearch},signal})).data.data,retry:false,staleTime:15000,placeholderData:previous=>previous});
+  const options=useQuery({queryKey:['generated-report-options',scope,form.departmentId,form.projectId,delayedSearch],enabled:open,queryFn:async({signal})=>(await api.get('/api/tracking/generated-reports/options',{params:{departmentId:form.departmentId,projectId:form.projectId,...delayedSearch},signal})).data.data,retry:false,staleTime:15000,placeholderData:previous=>previous});
   const list=useQuery({queryKey:['generated-reports',scope],enabled:open&&!!options.data,queryFn:async({signal})=>(await api.get('/api/tracking/generated-reports',{signal})).data.data,refetchInterval:query=>query.state.data?.some(row=>['QUEUED','PROCESSING'].includes(row.status)||['PENDING','SENDING'].includes(row.emailStatus))?3000:false});
   const detail=useQuery({queryKey:['generated-report-detail',scope,view,page],enabled:!!view,queryFn:async({signal})=>(await api.get(`/api/tracking/generated-reports/${view}`,{params:{page},signal})).data.data});
   const invalidate=()=>queryClient.invalidateQueries({queryKey:['generated-reports',scope]});
@@ -56,7 +56,8 @@ function ReportSection({scope}) {
   if(options.error?.response?.status===403)return null;
   const end=form.period==='weekly'?form.startDate ? format(addDays(parseISO(form.startDate),6),'yyyy-MM-dd') : '—' : form.month ? format(endOfMonth(parseISO(`${form.month}-01`)),'yyyy-MM-dd') : '—';
   return <section className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm p-5 space-y-4">
-    <div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-bold">Reports</h2><p className="text-sm text-gray-500">Weekly and monthly time tracking reports</p></div><button className={`${action} bg-indigo-600 text-white`} disabled={!options.data} onClick={()=>setOpen(value=>!value)}><FileSpreadsheet size={16}/>{open?'Close reports':'Reports / Export'}</button></div>
+    <div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-bold">Reports</h2><p className="text-sm text-gray-500">Weekly and monthly time tracking reports</p></div><button className={`${action} bg-indigo-600 text-white`} onClick={()=>setOpen(value=>!value)}><FileSpreadsheet size={16}/>{open?'Close reports':'Reports / Export'}</button></div>
+    {open&&options.isPending&&<p role="status" className="text-sm text-gray-500">Loading report options...</p>}
     {options.error&&<p role="alert" className="text-sm text-red-600">{readableError(options.error)} <button onClick={()=>options.refetch()} className="underline">Retry</button></p>}
     {open&&options.data&&<>
       <form className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" onSubmit={event=>{event.preventDefault();const signature=JSON.stringify(form);if(attempt.current?.signature!==signature)attempt.current={signature,id:crypto.randomUUID()};generation.mutate({...form,operationId:attempt.current.id,recipients:form.emails.split(',').map(value=>value.trim()).filter(Boolean)});}}>

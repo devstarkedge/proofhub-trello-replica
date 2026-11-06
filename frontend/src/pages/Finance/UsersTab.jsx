@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import useAccessControl from '../../hooks/useAccessControl';
 import { Users, Building2, Clock, DollarSign, ChevronDown, ChevronRight, AlertCircle, RefreshCw, ArrowUpDown, FolderKanban, Calendar } from 'lucide-react';
 import api from '../../services/api';
 import SummaryCards from '../../components/Finance/SummaryCards';
@@ -26,9 +27,13 @@ import { getBillingTypeLabel, getBillingTypeStyle, normalizeBillingType } from '
  * - Week-wise reporting mode toggle
  */
 const UsersTab = () => {
+  const { can } = useAccessControl();
+  const canRevenue = can('finance', 'revenue_analytics');
   const navigate = useNavigate();
   const location = useLocation();
   const [data, setData] = useState([]);
+  const [reportSummary, setReportSummary] = useState(null);
+  const readController = useRef(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -69,6 +74,9 @@ const UsersTab = () => {
 
   // Fetch user finance data
   const fetchData = async () => {
+    readController.current?.abort();
+    const controller = new AbortController();
+    readController.current = controller;
     try {
       setLoading(true);
       setError(null);
@@ -80,10 +88,12 @@ const UsersTab = () => {
       if (filters.userId) params.append('userId', filters.userId);
       if (filters.billingType) params.append('billingType', filters.billingType);
       
-      const response = await api.get(`/api/finance/users?${params.toString()}`);
+      const response = await api.get(`/api/finance/users?${params.toString()}`, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       
       if (response.data.success) {
         setData(response.data.data || []);
+        setReportSummary(response.data.summary);
         
         // Auto-expand departments initially
         const uniqueDepts = new Set();
@@ -95,15 +105,17 @@ const UsersTab = () => {
         setExpandedDepartments(expanded);
       }
     } catch (err) {
+      if (controller.signal.aborted) return;
       console.error('Error fetching user finance data:', err);
       setError(err.message);
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchData();
+    return () => readController.current?.abort();
   }, [filters]);
 
   // Fetch week-wise data when mode is enabled
@@ -430,7 +442,8 @@ const UsersTab = () => {
   return (
     <div>
       {/* Summary Cards */}
-      <SummaryCards filters={filters} onCardClick={handleCardClick} summaryOverride={(searchQuery || weekWiseMode) ? visibleSummary : null} />
+      <SummaryCards filters={filters} onCardClick={handleCardClick} summaryOverride={(searchQuery || weekWiseMode) ? visibleSummary : null}
+        summaryState={canRevenue && !filters.userId ? { data: reportSummary, loading, error, retry: fetchData } : undefined} />
 
       {/* Data Integrity Warnings */}
       <DataIntegrityWarnings data={data} type="users" />

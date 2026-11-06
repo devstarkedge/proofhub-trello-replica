@@ -417,10 +417,6 @@ const SalesTable = ({ onEditRow, onViewActivity, permissions, loading }) => {
   /* Scroll shadow indicators */
   const [shadows, setShadows] = useState({ left: false, right: false });
 
-  useEffect(() => {
-    useSalesStore.getState().fetchCustomColumns?.();
-  }, []);
-
   /* ──── Build columns ──── */
   const COLUMNS = useMemo(
     () => [...BASE_COLUMNS, ...mapCustomColumns(customColumns), ACTIONS_COLUMN],

@@ -97,22 +97,28 @@ export async function cachedTrackingRead({ workspaceId, viewerId, kind, query, a
         if (versions[0]) {
           key = workspaceKey(workspaceId, `${namespace}:${kind}`, digest({ viewerId: String(viewerId), access,
             query: Object.fromEntries(Object.entries(query || {}).sort(([a], [b]) => a.localeCompare(b))), versions }));
-          const cached = await command(ready.client.get(key));
-          if (cached) {
-            const value = JSON.parse(cached);
-            if (value.validUntil > Date.now()) { count('hit'); return value.data; }
-          }
         }
       }
     }
   } catch (error) { reportRedisError('tracking-cache', error); key = null; }
-  if (!key) count('bypass');
-  else count('miss');
   // Bypass still coalesces simultaneous reads locally; it retains no results
   // and cannot carry protected data across requests after the work completes.
-  const flight = key || `${workspaceId}:${viewerId}:${kind}:${access}:${localRevision}:${digest(query)}`;
+  const flight = digest({ key, workspaceId: String(workspaceId), viewerId: String(viewerId), kind, access, query, localRevision });
   if (pending.has(flight)) { count('coalesced'); return pending.get(flight); }
   const work = (async () => {
+    // Keep revision checks fresh across processes; coalesce only the subsequent
+    // payload lookup/load for an identical authorized revision.
+    if (key) {
+      try {
+        const cached = await command(ready.client.get(key));
+        if (cached) {
+          const value = JSON.parse(cached);
+          if (value.validUntil > Date.now()) { count('hit'); return value.data; }
+        }
+      } catch (error) { reportRedisError('tracking-cache', error); key = null; }
+    }
+    if (!key) count('bypass');
+    else count('miss');
     const data = await load();
     if (key && ready.state.ready) {
       try {
@@ -132,7 +138,7 @@ export async function cachedTrackingRead({ workspaceId, viewerId, kind, query, a
     }
     return data;
   })();
-  pending.set(flight, work);
+  if (pending.size < 64) pending.set(flight, work);
   try { return await work; } finally { if (pending.get(flight) === work) pending.delete(flight); }
 }
 

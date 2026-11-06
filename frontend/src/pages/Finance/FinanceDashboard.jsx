@@ -1,5 +1,5 @@
 import useAccessControl from '../../hooks/useAccessControl';
-import { useState, useEffect, useContext, useMemo } from 'react';
+import { useState, useEffect, useContext, useMemo, useRef } from 'react';
 import {
   DollarSign,
   TrendingUp,
@@ -36,9 +36,13 @@ const FinanceDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedPeriod, setSelectedPeriod] = useState('month');
+  const readController = useRef(null);
 
   // Fetch all dashboard data
   const fetchDashboardData = async () => {
+    readController.current?.abort();
+    const controller = new AbortController();
+    readController.current = controller;
     try {
       setLoading(true);
       setError(null);
@@ -90,25 +94,31 @@ const FinanceDashboard = () => {
 
       // Fetch all data in parallel
       const [summaryRes, usersRes, projectsRes] = await Promise.all([
-        api.get(`/api/finance/summary?${params.toString()}`),
-        canBilling ? api.get(`/api/finance/users?${params.toString()}`) : Promise.resolve({ data: { success: true, data: [] } }),
-        canBilling ? api.get(`/api/finance/projects?${params.toString()}`) : Promise.resolve({ data: { success: true, data: [] } })
+        canBilling ? Promise.resolve(null) : api.get(`/api/finance/summary?${params.toString()}`, { signal: controller.signal }),
+        canBilling ? api.get(`/api/finance/users?${params.toString()}`, { signal: controller.signal }) : Promise.resolve({ data: { success: true, data: [] } }),
+        canBilling ? api.get(`/api/finance/projects?${params.toString()}`, { signal: controller.signal }) : Promise.resolve({ data: { success: true, data: [] } })
       ]);
+      if (controller.signal.aborted) return;
 
-      if (summaryRes.data.success) setSummary(summaryRes.data.data);
+      // Both detailed reports already return the same server-calculated
+      // summary for this date range. Revenue-only access keeps its own read.
+      if (canBilling && projectsRes.data.success) setSummary(projectsRes.data.summary);
+      else if (summaryRes?.data.success) setSummary(summaryRes.data.data);
       if (usersRes.data.success) setUsersData(usersRes.data.data || []);
       if (projectsRes.data.success) setProjectsData(projectsRes.data.data || []);
 
     } catch (err) {
+      if (controller.signal.aborted) return;
       console.error('Dashboard data fetch error:', err);
       setError(err.message);
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchDashboardData();
+    return () => readController.current?.abort();
   }, [selectedPeriod, canBilling]);
 
   // Real-time updates via Socket.IO

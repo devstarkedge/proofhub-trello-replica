@@ -10,7 +10,7 @@ import { formatSalesDate } from '../../utils/dateUtils';
 import SearchableSelect from '../ui/SearchableSelect';
 
 const SalesFilters = () => {
-  const { rows, filters, setFilters, clearFilters, dropdownOptions, fetchDropdownOptions, uniqueNames, nameTab, setNameTab } = useSalesStore();
+  const { rows, filters, setFilters, clearFilters, dropdownOptions, uniqueNames, nameTab, setNameTab } = useSalesStore();
   const [isExpanded, setIsExpanded] = useState(false);
   const filterBtnRef = useRef(null);
 
@@ -39,12 +39,6 @@ const SalesFilters = () => {
     title: '',
     minDate: null
   });
-
-  // Fetch dropdown options on mount
-  useEffect(() => {
-    const dropdownColumns = ['platform', 'technology', 'status', 'clientLocation', 'clientBudget', 'profile', 'replyFromClient', 'followUps'];
-    dropdownColumns.forEach(col => fetchDropdownOptions(col));
-  }, [fetchDropdownOptions]);
 
   // Debounced search
   useEffect(() => {
