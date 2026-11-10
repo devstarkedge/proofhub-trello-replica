@@ -4,6 +4,7 @@ import {
   handleWorkspaceCreated,
   handleWorkspaceLinked,
   handleWorkspaceUpdated,
+  handleUserUpdated,
 } from '../controllers/chatInboundController.js';
 
 const router = express.Router();
@@ -14,5 +15,6 @@ const router = express.Router();
 router.post('/workspace-created', chatInboundVerifier, handleWorkspaceCreated);
 router.post('/workspace-linked', chatInboundVerifier, handleWorkspaceLinked);
 router.post('/workspace-updated', chatInboundVerifier, handleWorkspaceUpdated);
+router.post('/user-updated', chatInboundVerifier, handleUserUpdated);
 
 export default router;

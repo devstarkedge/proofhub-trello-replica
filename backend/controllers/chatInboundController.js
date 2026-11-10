@@ -5,8 +5,9 @@ import * as workspaceProvisioningService from '../services/chat/workspaceProvisi
 import * as workspaceMappingService from '../services/chat/workspaceMappingService.js';
 import Workspace from '../models/Workspace.js';
 import WorkspaceMembership from '../models/WorkspaceMembership.js';
-import { deleteFromCloudinary, uploadWorkspaceIconToCloudinary } from '../utils/cloudinary.js';
-import { emitToUser } from '../realtime/index.js';
+import User from '../models/User.js';
+import { deleteFromCloudinary, uploadWorkspaceIconToCloudinary, uploadAvatarToCloudinary } from '../utils/cloudinary.js';
+import { emitToUser, emitToWorkspace } from '../realtime/index.js';
 import config from '../config/index.js';
 import axios from 'axios';
 import ReportingDirectoryState from '../services/chat/ReportingDirectoryState.js';
@@ -275,4 +276,118 @@ export const handleWorkspaceUpdated = asyncHandler(async (req, res, next) => {
   res.status(200).json({ success: true, data: payload.workspace });
 });
 
-export default { handleWorkspaceCreated, handleWorkspaceLinked, handleWorkspaceUpdated };
+/**
+ * Applies ChatApp-originated user profile updates directly to FlowTask.
+ * This does not invoke chatHooks.onUserUpdated, preventing synchronization loops.
+ */
+export const handleUserUpdated = asyncHandler(async (req, res, next) => {
+  const { chatUserId, flowTaskUserId, email, user: incoming } = req.body || {};
+
+  if (!incoming || typeof incoming !== 'object') {
+    return next(new ErrorResponse('User profile data is required', 400));
+  }
+
+  // 1. Resolve user: first by flowTaskUserId, then by email
+  let user = null;
+  if (flowTaskUserId && /^[0-9a-fA-F]{24}$/.test(flowTaskUserId)) {
+    user = await User.findById(flowTaskUserId);
+  }
+  if (!user && email) {
+    user = await User.findOne({ email: email.trim().toLowerCase() });
+  }
+
+  if (!user) {
+    return next(new ErrorResponse('User not found in FlowTask', 404));
+  }
+
+  const oldAvatarPublicId = user.avatarPublicId || null;
+  let avatarChanged = false;
+
+  // 2. Handle avatar update
+  if (incoming.avatar !== undefined) {
+    const avatar = typeof incoming.avatar === 'string' ? incoming.avatar.trim() : '';
+    if (avatar) {
+      avatarChanged = true;
+      try {
+        const response = await axios.get(avatar, { responseType: 'arraybuffer', timeout: 8000 });
+        const buffer = Buffer.from(response.data);
+        const uploadResult = await uploadAvatarToCloudinary(buffer, {
+          userId: user._id.toString(),
+          originalName: 'chat-avatar',
+          mimetype: response.headers['content-type'] || 'image/png',
+        });
+
+        user.avatar = uploadResult.url;
+        user.avatarPublicId = uploadResult.public_id;
+        user.avatarMetadata = {
+          originalName: 'chat-avatar',
+          uploadedAt: new Date(),
+          source: 'device',
+          format: uploadResult.format,
+          width: uploadResult.width,
+          height: uploadResult.height,
+        };
+      } catch (error) {
+        console.error('Failed to transfer avatar to FlowTask Cloudinary, falling back to original URL:', error.message);
+        user.avatar = avatar;
+        user.avatarPublicId = '';
+        user.avatarMetadata = {
+          originalName: 'chat-avatar',
+          uploadedAt: new Date(),
+          source: 'device',
+        };
+      }
+    } else {
+      // Avatar removed
+      avatarChanged = true;
+      user.avatar = '';
+      user.avatarPublicId = undefined;
+      user.avatarMetadata = undefined;
+    }
+  }
+
+  // 3. Optional name update
+  if (typeof incoming.name === 'string' && incoming.name.trim() && !user.name) {
+    user.name = incoming.name.trim();
+  }
+
+  await user.save();
+
+  // Clean up old Cloudinary asset if replaced
+  if (oldAvatarPublicId && oldAvatarPublicId !== user.avatarPublicId) {
+    deleteFromCloudinary(oldAvatarPublicId, 'image').catch((err) => {
+      console.error('Failed to delete replaced FlowTask avatar:', err);
+    });
+  }
+
+  // 4. Emit realtime socket events in FlowTask
+  if (avatarChanged) {
+    try {
+      const memberships = await WorkspaceMembership.find({ user: user._id, status: 'active' }).distinct('workspace');
+      const payload = {
+        userId: user._id,
+        avatar: user.avatar,
+        name: user.name,
+      };
+
+      emitToUser(user._id.toString(), 'avatar-updated', payload);
+      for (const wsId of memberships) {
+        emitToWorkspace('avatar-updated', payload, wsId.toString());
+      }
+    } catch (socketErr) {
+      console.error('Socket emit error in handleUserUpdated:', socketErr);
+    }
+  }
+
+  res.status(200).json({
+    success: true,
+    data: {
+      userId: user._id.toString(),
+      avatar: user.avatar,
+      name: user.name,
+    },
+  });
+});
+
+export default { handleWorkspaceCreated, handleWorkspaceLinked, handleWorkspaceUpdated, handleUserUpdated };
+

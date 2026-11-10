@@ -2,6 +2,7 @@ import User from '../models/User.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { uploadAvatarToCloudinary, deleteFromCloudinary } from '../utils/cloudinary.js';
+import { publishUserProfileUpdate } from '../services/chat/userProfileSync.js';
 
 // Allowed avatar file types
 const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
@@ -41,8 +42,9 @@ export const uploadAvatar = asyncHandler(async (req, res, next) => {
   }
 
   try {
-    // Store old avatar public_id for cleanup (if exists)
+    // Store old avatar for cleanup & sync
     const oldAvatarPublicId = user.avatarPublicId || null;
+    const oldAvatarUrl = user.avatar || '';
 
     // Upload to Cloudinary with avatar-specific optimizations
     const result = await uploadAvatarToCloudinary(file.buffer, {
@@ -82,6 +84,11 @@ export const uploadAvatar = asyncHandler(async (req, res, next) => {
     } catch (socketErr) {
       console.error('Socket emit error:', socketErr);
     }
+
+    // Synchronize profile photo update to ChatApp
+    publishUserProfileUpdate(user, { avatar: oldAvatarUrl }, req.user, req.workspaceId).catch((syncErr) => {
+      console.error('Failed to sync avatar update to ChatApp:', syncErr.message);
+    });
 
     res.status(200).json({
       success: true,
@@ -145,8 +152,9 @@ export const uploadAvatarFromGoogleDrive = asyncHandler(async (req, res, next) =
       ));
     }
 
-    // Store old avatar for cleanup
+    // Store old avatar for cleanup & sync
     const oldAvatarPublicId = user.avatarPublicId || null;
+    const oldAvatarUrl = user.avatar || '';
 
     // Upload to Cloudinary
     const result = await uploadAvatarToCloudinary(buffer, {
@@ -188,6 +196,11 @@ export const uploadAvatarFromGoogleDrive = asyncHandler(async (req, res, next) =
       console.error('Socket emit error:', socketErr);
     }
 
+    // Synchronize profile photo update to ChatApp
+    publishUserProfileUpdate(user, { avatar: oldAvatarUrl }, req.user, req.workspaceId).catch((syncErr) => {
+      console.error('Failed to sync Google Drive avatar update to ChatApp:', syncErr.message);
+    });
+
     res.status(200).json({
       success: true,
       data: {
@@ -214,6 +227,7 @@ export const removeAvatar = asyncHandler(async (req, res, next) => {
   }
 
   const avatarPublicId = user.avatarPublicId;
+  const oldAvatarUrl = user.avatar || '';
 
   // Clear avatar from user
   user.avatar = '';
@@ -240,6 +254,11 @@ export const removeAvatar = asyncHandler(async (req, res, next) => {
   } catch (socketErr) {
     console.error('Socket emit error:', socketErr);
   }
+
+  // Synchronize profile photo removal to ChatApp
+  publishUserProfileUpdate(user, { avatar: oldAvatarUrl }, req.user, req.workspaceId).catch((syncErr) => {
+    console.error('Failed to sync avatar removal to ChatApp:', syncErr.message);
+  });
 
   res.status(200).json({
     success: true,
