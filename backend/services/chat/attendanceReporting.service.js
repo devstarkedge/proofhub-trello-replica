@@ -170,11 +170,27 @@ export async function syncReportingDirectory(workspaceId, settings, state) {
   { $set: { fingerprint: hash, syncedAt: new Date(), dirty: false, nextDirectoryCheckAt } });
 }
 
+// One local owner per workspace. The persisted lease still coordinates replicas.
+const activeDrains = new Map();
+const priorityBatchSize = 20;
+const pendingPrioritySessions = new Map();
+
 export async function processAttendanceReports(workspaceId, options = {}) {
   if (!workspaceId) throw new Error('Reporting requires an explicit workspace');
-  return run({ workspaceId }, () => processScopedAttendanceReports(workspaceId, options));
+  const key = String(workspaceId);
+  const active = activeDrains.get(key);
+  if (active) {
+    if (!options.prioritySessionIds && active.full) return active.promise;
+    await active.promise;
+    return processAttendanceReports(workspaceId, options);
+  }
+  const drain = run({ workspaceId }, () => processScopedAttendanceReports(workspaceId, options));
+  activeDrains.set(key, { promise: drain, full: !options.prioritySessionIds });
+  try { return await drain; }
+  finally { activeDrains.delete(key); }
 }
-async function processScopedAttendanceReports(workspaceId, { limit = 20 } = {}) {
+
+async function processScopedAttendanceReports(workspaceId, { limit = 20, prioritySessionIds } = {}) {
   const settings = await resolveWorkspaceChatSettings(workspaceId, { requireLinkedWorkspace: true });
   if (!settings.enabled || !settings.webhookUrl || !process.env.FLOWTASK_WEBHOOK_SECRET) return;
   try { await ReportingDirectoryState.updateOne({}, { $setOnInsert: { workspaceId } }, { upsert: true, runValidators: true }); }
@@ -186,22 +202,60 @@ async function processScopedAttendanceReports(workspaceId, { limit = 20 } = {}) 
     { $set: { leaseToken: token, leaseUntil: new Date(Date.now() + 120000) } }, { new: true }).lean();
   if (!state) return;
   try {
-  await syncReportingDirectory(workspaceId, settings, state);
-  try { await processLeaveReporting(workspaceId, settings, deliverReportingPayload, new Date(), async () => {
-    const renewed = await ReportingDirectoryState.updateOne({ workspaceId, leaseToken: token }, { $set: { leaseUntil: new Date(Date.now() + 120000) } });
-    if (!renewed.matchedCount) throw new Error('Leave reporting lease was lost');
-  }); } catch (error) {
-    if (isWorkspaceMappingUnavailable(error)) throw error;
-    logger.warn('Leave reporting will retry independently', { workspaceId: String(workspaceId), error: error.message });
+    await syncReportingDirectory(workspaceId, settings, state);
+    if (prioritySessionIds) {
+      await drainAttendanceOutbox(workspaceId, settings, token, limit, prioritySessionIds);
+    } else {
+      await drainWaitingPrioritySessions(workspaceId, settings, token);
+      try {
+        await processLeaveReporting(workspaceId, settings, deliverReportingPayload, new Date(), async () => {
+          const renewed = await ReportingDirectoryState.updateOne({ workspaceId, leaseToken: token }, { $set: { leaseUntil: new Date(Date.now() + 120000) } });
+          if (!renewed.matchedCount) throw new Error('Leave reporting lease was lost');
+        });
+      } catch (error) {
+        if (isWorkspaceMappingUnavailable(error)) throw error;
+        logger.warn('Leave reporting will retry independently', { workspaceId: String(workspaceId), error: error.message });
+      }
+      await drainWaitingPrioritySessions(workspaceId, settings, token);
+      await reconcileReportingHistoryReports(workspaceId);
+      await reconcileCheckoutReports(workspaceId);
+      await drainWaitingPrioritySessions(workspaceId, settings, token);
+      await drainAttendanceOutbox(workspaceId, settings, token, limit);
+    }
+    await ReportingDirectoryState.updateOne({ workspaceId, leaseToken: token }, { $set: {
+      failureCount: 0, nextAttemptAt: new Date(0), lastFailureCode: '', lastFailureStatus: null,
+    } });
+  } catch (error) {
+    const retry = reportingRetry(error, state);
+    await ReportingDirectoryState.updateOne({ workspaceId, leaseToken: token }, { $set: retry });
+    logger.warn('Attendance reporting worker will retry', { workspaceId: String(workspaceId), error: error.message,
+      eventType: error.reportingEventType, status: retry.lastFailureStatus, code: retry.lastFailureCode, nextAttemptAt: retry.nextAttemptAt.toISOString() });
   }
-  await reconcileReportingHistoryReports(workspaceId);
-  await reconcileCheckoutReports(workspaceId);
+  finally { await ReportingDirectoryState.updateOne({ workspaceId, leaseToken: token }, { $set: { leaseUntil: new Date(0) }, $unset: { leaseToken: 1 } }); }
+}
+
+// Reuse the current lease at phase boundaries if attendance commits while
+// maintenance is already running. The queued wake handles later arrivals.
+async function drainWaitingPrioritySessions(workspaceId, settings, token) {
+  const pending = pendingPrioritySessions.get(String(workspaceId));
+  if (!pending?.size) return;
+  const sessionIds = [...pending];
+  pending.clear();
+  await drainAttendanceOutbox(workspaceId, settings, token, priorityBatchSize, sessionIds);
+}
+
+async function drainAttendanceOutbox(workspaceId, settings, token, limit, prioritySessionIds) {
   const blocked = [];
+  // Check-out shares the session's queue with check-in and work changes.
+  // Claim ready predecessors first, leaving legacy rows to reconciliation.
+  const sort = prioritySessionIds ? { attendanceSession: 1, reportOrder: 1 } : { createdAt: 1, reportOrder: 1 };
   for (let i = 0; i < limit; i++) {
     const now = new Date();
     const event = await AttendanceEvent.findOneAndUpdate({ workspaceId, kind: 'CHAT_REPORT', processedAt: null,
-      attendanceSession: { $nin: blocked }, availableAt: { $lte: now }, claimedUntil: { $lte: now } },
-    { $set: { claimedUntil: new Date(+now + 60000) }, $inc: { attempts: 1 } }, { new: true, sort: { createdAt: 1, reportOrder: 1 } }).lean();
+      ...(prioritySessionIds ? { 'reportPayload.presentationVersion': 2 } : {}),
+      attendanceSession: { ...(prioritySessionIds ? { $in: prioritySessionIds } : {}), $nin: blocked },
+      availableAt: { $lte: now }, claimedUntil: { $lte: now } },
+    { $set: { claimedUntil: new Date(+now + 60000) }, $inc: { attempts: 1 } }, { new: true, sort }).lean();
     if (!event) break;
     const lease = { _id: event._id, workspaceId, attempts: event.attempts };
     const renewed = await ReportingDirectoryState.updateOne({ workspaceId, leaseToken: token }, { $set: { leaseUntil: new Date(Date.now() + 120000) } });
@@ -221,16 +275,6 @@ async function processScopedAttendanceReports(workspaceId, { limit = 20 } = {}) 
       if (isWorkspaceMappingUnavailable(error)) throw error;
     }
   }
-  await ReportingDirectoryState.updateOne({ workspaceId, leaseToken: token }, { $set: {
-    failureCount: 0, nextAttemptAt: new Date(0), lastFailureCode: '', lastFailureStatus: null,
-  } });
-  } catch (error) {
-    const retry = reportingRetry(error, state);
-    await ReportingDirectoryState.updateOne({ workspaceId, leaseToken: token }, { $set: retry });
-    logger.warn('Attendance reporting worker will retry', { workspaceId: String(workspaceId), error: error.message,
-      eventType: error.reportingEventType, status: retry.lastFailureStatus, code: retry.lastFailureCode, nextAttemptAt: retry.nextAttemptAt.toISOString() });
-  }
-  finally { await ReportingDirectoryState.updateOne({ workspaceId, leaseToken: token }, { $set: { leaseUntil: new Date(0) }, $unset: { leaseToken: 1 } }); }
 }
 
 // Replay existing durable events once with explicit session associations. This
@@ -283,7 +327,7 @@ export async function reconcileCheckoutReports(workspaceId) {
 
 // Hooks only persist invalidation and request an early drain. The persisted
 // source/outbox and the periodic maintenance remain authoritative after crashes.
-let requested = new Set();
+const requested = new Set();
 export function requestAttendanceReportDelivery(workspaceId) {
   if (!workspaceId || process.env.ATTENDANCE_REPORTING_AUTODRAIN === 'false') return;
   const key = String(workspaceId);
@@ -293,6 +337,42 @@ export function requestAttendanceReportDelivery(workspaceId) {
     try { await processAttendanceReports(workspaceId); }
     catch (error) { logger.warn('Reporting delivery scheduled for retry', { workspaceId: key, error: error.message }); }
     finally { requested.delete(key); }
+  });
+}
+
+export function requestPriorityAttendanceReportDelivery(workspaceId, attendanceSessionId) {
+  if (!workspaceId || !attendanceSessionId || process.env.ATTENDANCE_REPORTING_AUTODRAIN === 'false') return;
+  const workspaceKey = String(workspaceId);
+  const sessionId = String(attendanceSessionId);
+  const pending = pendingPrioritySessions.get(workspaceKey);
+  if (pending) {
+    // The durable sweep handles overflow or a lease held by another replica.
+    if (pending.size < priorityBatchSize) pending.add(sessionId);
+    return;
+  }
+  const sessionIds = new Set([sessionId]);
+  pendingPrioritySessions.set(workspaceKey, sessionIds);
+  schedulePriorityDrain(workspaceId, workspaceKey, sessionIds);
+}
+
+function schedulePriorityDrain(workspaceId, workspaceKey, sessionIds) {
+  setImmediate(async () => {
+    try {
+      // Attendance committed during another local drain gets its own pass
+      // immediately after the current lease is released.
+      await activeDrains.get(workspaceKey)?.promise.catch(() => {});
+      const batch = [...sessionIds];
+      sessionIds.clear();
+      if (batch.length) await processAttendanceReports(workspaceId, { prioritySessionIds: batch, limit: priorityBatchSize });
+    } catch (error) {
+      logger.warn('Priority attendance report retained for scheduled delivery', { workspaceId: workspaceKey, code: error.code || error.name });
+    } finally {
+      if (sessionIds.size && process.env.ATTENDANCE_REPORTING_AUTODRAIN !== 'false') {
+        schedulePriorityDrain(workspaceId, workspaceKey, sessionIds);
+      } else {
+        pendingPrioritySessions.delete(workspaceKey);
+      }
+    }
   });
 }
 

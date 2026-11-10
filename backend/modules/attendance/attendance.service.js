@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { enqueueAttendanceReport, requestAttendanceReportDelivery } from '../../services/chat/attendanceReporting.service.js';
+import { enqueueAttendanceReport, requestPriorityAttendanceReportDelivery } from '../../services/chat/attendanceReporting.service.js';
 import AuditLog from '../../models/AuditLog.js';
 import { evaluateCheckout, assertCheckoutConfirmation } from './attendanceCheckout.service.js';
 import { enqueueAttendanceEvent, processAttendanceEvents } from './attendanceEvents.service.js';
@@ -429,7 +429,7 @@ export async function checkIn({ workspaceId, userId, membership, workspace, gps 
     await dbSession.endSession();
   }
   if (!result.replay) {
-    requestAttendanceReportDelivery(workspaceId);
+    requestPriorityAttendanceReportDelivery(workspaceId, result.session._id);
     try {
       attendanceHooks.onCheckedIn(userId, result.session, result.attendanceDay, []);
     } catch (error) { console.error('[Attendance] check-in realtime hook error:', error.message); }
@@ -538,7 +538,7 @@ export async function checkOut({ workspaceId, userId, membership, workspace, gps
   // Transport delivery is recoverable; a committed checkout is never reopened.
   // The durable outbox is drained by existing maintenance/BullMQ workers.
   // Observer authorization and transport retries must not hold the response.
-  if (!result.replay) requestAttendanceReportDelivery(workspaceId);
+  if (!result.replay) requestPriorityAttendanceReportDelivery(workspaceId, result.session._id);
   if(!result.replay)try{attendanceHooks.onCheckedOut(userId,result.session,result.attendanceDay,[]);}catch{/* durable retry */}
   if (!result.replay && result.summary?.workSessionIds?.length) {
     void processAttendanceEvents(workspaceId, { key: `checkout-${result.session._id}` }).catch(() => {});
