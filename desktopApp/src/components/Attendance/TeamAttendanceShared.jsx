@@ -7,7 +7,13 @@ export function TeamStatus({ day }) {
     {day?.activeSession && <span className="text-xs text-blue-600 dark:text-blue-300">In progress</span>}</span>;
 }
 export function Rate({ rate }) {
-  return <span title={rate?.reason || 'Full-period presence credit ÷ required attendance after approved leave'} className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums ${rate?.value == null ? 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'}`}>{rate?.value == null ? 'N/A' : `${rate.value}%`}</span>;
+  const recorded = rate?.recorded;
+  const value = rate?.value ?? recorded?.value;
+  const explanation = recorded ? 'Based on completed workdays with a recorded attendance outcome.' : rate?.reason || 'Full-period presence credit ÷ required attendance after approved leave';
+  return <div title={explanation}>
+    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums ${value == null ? 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'}`}>{value == null ? 'N/A' : `${value}%`}</span>
+    {recorded && <span className="mt-0.5 block whitespace-nowrap text-xs" style={mutedStyle}>{recorded.days} recorded {recorded.days === 1 ? 'day' : 'days'}</span>}
+  </div>;
 }
 export function ReadState({ read, children, retry }) {
   if (read.loading) return <div role="status" className="animate-pulse rounded-xl border p-8 text-center text-sm" style={mutedStyle}>Loading attendance…</div>;

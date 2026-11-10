@@ -30,7 +30,7 @@ import { validateTeamQuery, serializeTeamRow, csvLine, TEAM_STATUSES, TEAM_WORK_
 const id = value => String(value?._id || value || '');
 const oid = value => new mongoose.Types.ObjectId(id(value));
 const queryOptions = { maxTimeMS: 20000, allowDiskUse: true };
-const emptyTotals = () => ({ totalMembers: 0, membersWithRecords: 0, present: 0, halfDays: 0, absent: 0, missingCheckout: 0, leaveDays: 0, attendanceMinutes: null });
+const emptyTotals = () => ({ totalMembers: 0, membersWithRecords: 0, membersPresent: 0, present: 0, halfDays: 0, absent: 0, missingCheckout: 0, leaveDays: 0, attendanceMinutes: null });
 const dayFields = { _id: 1, user: 1, workDateKey: 1, calendarDayType: 1, isCalendarWorkingDay: 1, workMode: 1,
   firstCheckInAt: 1, lastCheckOutAt: 1, workedMinutes: 1, shiftExpectedMinutes: 1, presenceState: 1,
   punctualityState: 1, leaveState: 1, presenceFraction: 1, leaveFraction: 1, exceptionFlags: 1,
@@ -166,6 +166,7 @@ function summarizedPipeline(ctx) {
     { $ne: [{ $ifNull: ['$$s.regularizationResolution.appliedAt', null] }, null] }, { $in: ['$$s.status', ['CLOSED', 'COMPLETED']] }
   ] } } } }] }] };
   const required = { $and: [{ $eq: ['$isCalendarWorkingDay', true] }, { $lt: ['$leaveFraction', 1] }] };
+  const completedWorkday = { $and: ['$_elapsed', '$_required', { $not: ['$_ongoing'] }, { $not: ['$_unresolved'] }] };
   return [
     ...teamDayPipeline({ ...ctx, userIds: ctx.subjects.map(s => s.user._id), startDate: q.startDate, endDate: q.endDate }),
     ...sessionFactsStages(ctx),
@@ -177,7 +178,7 @@ function summarizedPipeline(ctx) {
       { $not: [{ $in: ['$isCalendarWorkingDay', [true, false]] }] },
       { $eq: ['$presenceState', 'MISSING_CHECKOUT'] },
       { $and: ['$_required', { $not: [{ $and: [
-      '$hasAttendance', '$_ended', { $ne: ['$presenceState', 'MISSING_CHECKOUT'] }, { $ne: ['$presenceState', 'NOT_STARTED'] },
+      '$hasAttendance', '$_ended', { $in: ['$presenceState', ['PRESENT', 'HALF_PRESENT', 'ABSENT']] },
       { $ne: [{ $ifNull: ['$policyVersion', null] }, null] }, { $isNumber: '$presenceFraction' },
       { $not: [{ $in: ['LEAVE_COVERAGE_UNRESOLVED', { $ifNull: ['$exceptionFlags', []] }] }] },
       { $gte: ['$presenceFraction', 0] }, { $lte: ['$presenceFraction', { $subtract: [1, '$leaveFraction'] }] }
@@ -187,8 +188,9 @@ function summarizedPipeline(ctx) {
       ...Object.fromEntries([['present', 'PRESENT'], ['halfDays', 'HALF_PRESENT'], ['absent', 'ABSENT'], ['missingCheckout', 'MISSING_CHECKOUT'], ['leaveDays', 'ON_LEAVE']].map(([key, state]) => [key, countIf({ $and: ['$_matches', { $eq: ['$displayStatus', state] }] })])),
       attendanceMinutes: { $sum: { $cond: [{ $and: ['$_matches', '$hasAttendance', { $isNumber: '$workedMinutes' }] }, '$workedMinutes', 0] } },
       coveredDates: countIf('$_elapsed'), unresolvedDays: countIf({ $and: ['$_elapsed', { $not: ['$_ongoing'] }, '$_unresolved'] }),
-      presenceCredit: { $sum: { $cond: [{ $and: ['$_elapsed', '$_required', { $not: ['$_ongoing'] }, { $not: ['$_unresolved'] }] }, '$presenceFraction', 0] } },
-      requiredCredit: { $sum: { $cond: [{ $and: ['$_elapsed', '$_required', { $not: ['$_ongoing'] }] }, { $subtract: [1, '$leaveFraction'] }, 0] } }
+      completedWorkdays: countIf(completedWorkday),
+      presenceCredit: { $sum: { $cond: [completedWorkday, '$presenceFraction', 0] } },
+      requiredCredit: { $sum: { $cond: [completedWorkday, { $subtract: [1, '$leaveFraction'] }, 0] } }
     } }
   ];
 }
@@ -210,8 +212,12 @@ async function summaryRows(ctx) {
     row.workSeconds = entries.length && entries.every(value => value.seconds != null) ? entries.reduce((total, value) => total + value.seconds, 0) : null;
   }
   const { sort, direction } = ctx.q, sign = direction === 'asc' ? 1 : -1;
+  const value = row => {
+    if (sort === 'department') return row.departments.map(d => d.name).join(', ');
+    if (sort === 'attendanceRate') return row.attendanceRate.value ?? row.attendanceRate.recorded?.value;
+    return ['name', 'email'].includes(sort) ? row.user[sort] : row[sort];
+  };
   rows.sort((a, b) => {
-    const value = row => sort === 'department' ? row.departments.map(d => d.name).join(', ') : sort === 'attendanceRate' ? row.attendanceRate.value : ['name', 'email'].includes(sort) ? row.user[sort] : row[sort];
     const av = value(a), bv = value(b);
     if (av == null && bv != null) return 1;
     if (bv == null && av != null) return -1;
@@ -225,6 +231,7 @@ export async function getTeamAttendance(args) {
   totals.totalMembers = rows.length;
   for (const row of rows) {
     if (row.recordedDays) totals.membersWithRecords++;
+    if (row.present) totals.membersPresent++;
     for (const key of ['present', 'halfDays', 'absent', 'missingCheckout', 'leaveDays']) totals[key] += row[key];
     if (row.attendanceMinutes != null) totals.attendanceMinutes = (totals.attendanceMinutes || 0) + row.attendanceMinutes;
   }
@@ -233,7 +240,7 @@ export async function getTeamAttendance(args) {
     filters: { departments: ctx.departments.filter(d => d.isActive !== false).map(d => ({ _id: d._id, name: d.name })), statuses: TEAM_STATUSES, workModes: TEAM_WORK_MODES },
     query: ctx.q, totals, pagination: { page, pageSize: ctx.q.pageSize, total: rows.length, pageCount },
     rows: rows.slice((page - 1) * ctx.q.pageSize, page * ctx.q.pageSize),
-    coverageNotice: 'Day counts reflect recorded attendance results. Work time reflects authorized Time Tracking records. Missing records are not absences. Rates require complete historical coverage.' };
+    coverageNotice: 'Day counts reflect recorded attendance results. Work time reflects authorized Time Tracking records. When period coverage is incomplete, the rate uses completed workdays with a recorded outcome.' };
 }
 
 async function subjectContext(args) {
@@ -339,8 +346,12 @@ export async function exportTeamAttendance(args, response) {
     });
   };
   if (format === 'summary') {
-    await write(['Employee', 'Email', 'Department', 'Present days', 'Half days', 'Absent days', 'Missing checkout', 'Full leave days', 'Attendance minutes', 'Full-period attendance %', 'Rate availability', 'Work seconds']);
-    for (const row of rows) { if (response.destroyed) break; await write([row.user.name, row.user.email, row.departments.map(d => d.name).join('; '), row.present, row.halfDays, row.absent, row.missingCheckout, row.leaveDays, row.attendanceMinutes ?? 'N/A', row.attendanceRate.value ?? 'N/A', row.attendanceRate.reason, row.workSeconds ?? 'N/A']); }
+    await write(['Employee', 'Email', 'Department', 'Present days', 'Half days', 'Absent days', 'Missing checkout', 'Full leave days', 'Attendance minutes', 'Full-period attendance %', 'Rate availability', 'Work seconds', 'Recorded-workday attendance %', 'Workdays used for recorded rate']);
+    for (const row of rows) {
+      if (response.destroyed) break;
+      const rate = row.attendanceRate;
+      await write([row.user.name, row.user.email, row.departments.map(d => d.name).join('; '), row.present, row.halfDays, row.absent, row.missingCheckout, row.leaveDays, row.attendanceMinutes ?? 'N/A', rate.value ?? 'N/A', rate.reason, row.workSeconds ?? 'N/A', rate.recorded?.value, rate.recorded?.days]);
+    }
   } else {
     await write(['Employee', 'Date', 'Work mode', 'Worked hours', 'Status', 'Tracked work hours']);
     const tracked = await readAttendanceWork({ ...ctx, userIds: rows.map(row => row.user._id), startDate: ctx.q.startDate, endDate: ctx.q.endDate });

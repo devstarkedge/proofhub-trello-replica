@@ -23,11 +23,22 @@ export function validateTeamQuery(query, timezone, now = new Date()) {
   return q;
 }
 
-export function attendanceRate({ coveredDates = 0, unresolvedDays = 0, presenceCredit = 0, requiredCredit = 0 }, expectedDates) {
-  if (coveredDates !== expectedDates || unresolvedDays) return { value: null, reason: 'Complete historical schedule, eligibility or attendance outcomes are unavailable.', coveredDates, expectedDates };
+export function attendanceRate({ coveredDates = 0, unresolvedDays = 0, completedWorkdays = 0, presenceCredit = 0, requiredCredit = 0 }, expectedDates) {
+  const validCredit = requiredCredit > 0 && Number.isFinite(requiredCredit)
+    && Number.isFinite(presenceCredit) && presenceCredit >= 0 && presenceCredit <= requiredCredit;
+  const percent = validCredit ? Math.round(presenceCredit / requiredCredit * 1000) / 10 : null;
+  if (coveredDates !== expectedDates || unresolvedDays) {
+    return {
+      value: null,
+      reason: 'Complete historical schedule, eligibility or attendance outcomes are unavailable.',
+      coveredDates,
+      expectedDates,
+      recorded: completedWorkdays > 0 && percent != null ? { value: percent, days: completedWorkdays } : null
+    };
+  }
   if (!requiredCredit) return { value: null, reason: 'No completed attendance obligation in this period.', coveredDates, expectedDates };
-  if (presenceCredit < 0 || presenceCredit > requiredCredit || !Number.isFinite(presenceCredit) || !Number.isFinite(requiredCredit)) return { value: null, reason: 'Attendance credit requires review.', coveredDates, expectedDates };
-  return { value: Math.round(presenceCredit / requiredCredit * 1000) / 10, reason: null, coveredDates, expectedDates };
+  if (!validCredit) return { value: null, reason: 'Attendance credit requires review.', coveredDates, expectedDates };
+  return { value: percent, reason: null, coveredDates, expectedDates };
 }
 
 export function reportStatus(day) {
