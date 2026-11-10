@@ -5,6 +5,7 @@ import {contextFor,fail,policyFor,emitChanged} from './tracking.service.js';
 import {can} from './tracking.authorization.js';
 import {emitToUser} from '../../realtime/emitters.js';
 import {ensureDefaultTrackingAgenda} from './tracking.agendas.js';
+import {pauseForWorkBreak, readWorkBreak} from '../attendance/attendanceWorkBreak.js';
 export async function roleFor(workspaceId,userId){return trackingRole(await WorkspaceMembership.findOne({workspace:workspaceId,user:userId,status:'active'}).lean(),workspaceId);}
 export async function requireTrackingAdmin(workspaceId,userId){const ctx=await contextFor(workspaceId,userId);if(await roleFor(workspaceId,userId)!=='admin'||!can(ctx,'tracking.manage_policy',{workspaceId}))fail('The current workspace Admin role and Time Tracking settings permission are required',403);}
 export function validateConfiguration(body){
@@ -53,9 +54,12 @@ export async function finishDisable(workspaceId,policy){
   if(!policy.disabledAt)return;const at=new Date(policy.disabledAt);
   await TrackingDevice.updateMany({workspaceId},{$set:{activeSession:null,leaseUntil:at}});
   await TrackingCaptureLease.updateMany({workspaceId,endedAt:{$gt:at}},{$set:{endedAt:at}});
+  let schedule;
   for await(const session of WorkSession.find({workspaceId,endedAt:null,status:'RUNNING'}).lean().cursor()){
+    schedule ||= await readWorkBreak(workspaceId, new Date(+at - 24 * 3600000));
+    pauseForWorkBreak(session, schedule, at);
     const segments=session.segments.map(s=>!s.endedAt?{...s,endedAt:new Date(Math.max(+new Date(s.startedAt),+at))}:s);
-    const saved=await WorkSession.findOneAndUpdate({_id:session._id,revision:session.revision},{$set:{segments,status:'PAUSED'},$inc:{revision:1},$push:{audit:{id:`disable-${policy.revision}`,type:'WORKSPACE_DISABLED',at,actor:policy.updatedBy}}},{new:true}).lean();
+    const saved=await WorkSession.findOneAndUpdate({_id:session._id,revision:session.revision},{$set:{segments,pauses:session.pauses||[],status:'PAUSED'},$inc:{revision:1},$push:{audit:{id:`disable-${policy.revision}`,type:'WORKSPACE_DISABLED',at,actor:policy.updatedBy}}},{new:true}).lean();
     if(saved)emitChanged(saved);
   }
   if(!await WorkSession.exists({workspaceId,endedAt:null,status:'RUNNING'}))await TrackingPolicy.updateOne({workspaceId,revision:policy.revision},{$set:{disableRecoveryPending:false}});

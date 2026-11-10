@@ -1,4 +1,5 @@
 import {readCheckoutPreview} from '../../services/checkoutPreviewState';
+import { activeScheduledWorkBreak } from '../../../../shared/sessionReadCache.mjs';
 import useSessionAction from '../../hooks/useSessionAction';
 import {finalizeDesktopCapture} from '../../services/desktopTracking';
 import { formatHours } from '../../utils/duration';
@@ -178,7 +179,7 @@ const AttendanceQuickControl = () => {
   const handleCheckIn = () => {
     if (operationRef.current || sessionAction.busy || sessionError) return;
     const tracking=trackingStore(scope,workspaceId).getSnapshot().state;
-    setAttendanceOnly(tracking ? !(tracking.policy?.enabled&&tracking.canTrack) : false);
+    setAttendanceOnly(tracking ? Boolean(activeScheduledWorkBreak(tracking)) || !(tracking.policy?.enabled&&tracking.canTrack) : false);
     operationRef.current='selecting';setShowWorkSelection(true);
   };
   const closeWorkSelection = () => {

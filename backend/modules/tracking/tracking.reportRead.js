@@ -5,6 +5,7 @@ import {DateTime} from 'luxon';
 import User from '../../models/User.js';
 import AttendanceDay from '../attendance/attendanceDay.model.js';
 import {effectiveAttendanceSession} from '../attendance/attendanceRegularizationOverlay.js';
+import {readRecentWorkBreakWindows} from '../attendance/attendanceWorkBreak.js';
 import {WorkSession,TrackingScreenshot,ActivityInterval} from './tracking.models.js';
 import {contextFor,policyFor,fail,objectId,authorizeRecord} from './tracking.service.js';
 import {can} from './tracking.authorization.js';
@@ -31,12 +32,13 @@ export async function readTrackingReports(workspaceId,viewerId,query){
   return cachedTrackingRead({workspaceId,viewerId,kind:'reports',query,access:trackingAccessFingerprint(ctx,scope),ttlMs:15000},async()=>{
   const owners=team==='true'&&!userId?scope.members.filter(m=>scope.canOwner(m.user)).map(m=>m.user):[userId||viewerId];
   const now=new Date(),bounds={workspaceId:oid(workspaceId),...(fromDate||toDate?{workDateKey:{...(fromDate?{$gte:fromDate}:{}),...(toDate?{$lte:toDate}:{})}}:{}),...(cursor?{_id:{$lt:oid(cursor)}}:{})};
-  const pipeline=dashboardReadPipeline({workspaceId,ctx,scope,owners,bounds,query,dates:{start:new Date(0),end:now},now,policy,attendanceDetails:true});
+  const workBreakWindows=await readRecentWorkBreakWindows(workspaceId,now);
+  const pipeline=dashboardReadPipeline({workspaceId,ctx,scope,owners,bounds,query,dates:{start:new Date(0),end:now},now,policy,attendanceDetails:true,workBreakWindows});
   if(Object.keys(sf).length)pipeline.push({$match:{'_selected.0':{$exists:true}}});
   pipeline.push({$sort:{_id:-1}},{$limit:21},{$project:{workspaceId:1,user:1,workDateKey:1,attendanceSession:1,startedAt:1,revision:1,includePreAssignment:1,departmentIdsAtStart:1,_attendance:1,
     status:'$_viewStatus',endedAt:{$cond:[{$eq:['$_viewStatus','CLOSED']},'$_cutoff','$endedAt']},
     segments:{$map:{input:'$_selected',as:'s',in:{$mergeObjects:['$$s',{endedAt:{$cond:[{$and:[{$eq:[{$ifNull:['$$s.endedAt',null]},null]},{$gte:['$_cutoff',now]}]},null,{$min:[{$ifNull:['$$s.endedAt','$_cutoff']},'$_cutoff']}]}}]}}},
-    pauses:{$map:{input:{$ifNull:['$pauses',[]]},as:'p',in:{startedAt:'$$p.startedAt',endedAt:{$cond:[{$and:[{$eq:[{$ifNull:['$$p.endedAt',null]},null]},{$gte:['$_cutoff',now]}]},null,{$min:[{$ifNull:['$$p.endedAt','$_cutoff']},'$_cutoff']}]}}}}
+    pauses:{$map:{input:{$ifNull:['$pauses',[]]},as:'p',in:{reason:'$$p.reason',startedAt:'$$p.startedAt',endedAt:{$cond:[{$and:[{$eq:[{$ifNull:['$$p.endedAt',null]},null]},{$gte:['$_cutoff',now]}]},null,{$min:[{$ifNull:['$$p.endedAt','$_cutoff']},'$_cutoff']}]}}}}
   }});
   pipeline.push(
     {$lookup:{from:User.collection.name,localField:'user',foreignField:'_id',pipeline:[{$project:{name:1}}],as:'_subject'}},

@@ -8,6 +8,7 @@ import {readVisibilityScope,departmentsOf} from './tracking.visibility.js';
 import {evidenceByUser} from './tracking.evidenceRead.js';
 import {summarizeEvidence} from './tracking.evidence.js';
 import {readDashboardGroups,readOfficeGroups} from './tracking.dashboardRead.js';
+import {readRecentWorkBreakWindows} from '../attendance/attendanceWorkBreak.js';
 const id=v=>String(v?._id||v||'');
 const literal=value=>Array.from(value).map(c=>'\\^$.*+?()[]{}|'.includes(c)?'\\'+c:c).join('');
 export function reportDates(query,timezone){
@@ -49,7 +50,8 @@ export async function dashboard(workspaceId,userId,query){
   let members=scope.members.filter(m=>scope.roleMap.get(id(m.user))!=='admin'&&scope.canOwner(m.user)&&(!query.userId||id(m.user)===id(query.userId))&&(!query.departmentId||departmentsOf(m).includes(id(query.departmentId)))&&(!query.role||m.role===query.role));
   if(query.search){const search=literal(String(query.search).trim().slice(0,80));const matches=await User.find({_id:{$in:members.map(m=>m.user)},name:{$regex:search,$options:'i'}}).select('_id').lean();const names=new Set(matches.map(id));members=members.filter(m=>names.has(id(m.user)));}
   const bounds={workspaceId,startedAt:{$lte:dates.end},$or:[{endedAt:null},{endedAt:{$gte:dates.start}}]},filtered=Object.keys(sf).length>0;
-  const options={workspaceId,ctx,scope,bounds,query,dates,now,policy,filtered};
+  const workBreakWindows=await readRecentWorkBreakWindows(workspaceId,now);
+  const options={workspaceId,ctx,scope,bounds,query,dates,now,policy,filtered,workBreakWindows};
   let matchingGroups=null;
   if(filtered||query.status){
     matchingGroups=await readDashboardGroups({...options,owners:members.map(m=>m.user)});

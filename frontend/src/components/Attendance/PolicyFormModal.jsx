@@ -17,6 +17,7 @@ function defaultContent(version) {
       startLocalTime: version?.officeHours?.startLocalTime || '09:00',
       endLocalTime: version?.officeHours?.endLocalTime || '18:00'
     },
+    scheduledWorkBreak: version?.scheduledWorkBreak || null,
     graceMinutes: version?.graceMinutes ?? 15,
     earlyExitGraceMinutes: version?.earlyExitGraceMinutes ?? 0,
     minimumFullDayMinutes: version?.minimumFullDayMinutes ?? 480,
@@ -88,6 +89,8 @@ const PolicyFormModal = ({ mode = 'create', initialPolicy, initialVersion, submi
 
   const updateContent = (patch) => setContent((prev) => ({ ...prev, ...patch }));
   const updateNested = (key, patch) => setContent((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
+  const workBreak = content.scheduledWorkBreak;
+  const invalidWorkBreak = workBreak && (!workBreak.startLocalTime || !workBreak.endLocalTime || workBreak.startLocalTime === workBreak.endLocalTime);
 
   const toggleWorkMode = (mode_) => {
     const set = new Set(content.allowedWorkModes);
@@ -102,6 +105,7 @@ const PolicyFormModal = ({ mode = 'create', initialPolicy, initialVersion, submi
 
   const handleSubmit = (event) => {
     event.preventDefault();
+    if (invalidWorkBreak) return;
     onSubmit({
       name, description, effectiveDate,
       content: {
@@ -204,6 +208,29 @@ const PolicyFormModal = ({ mode = 'create', initialPolicy, initialVersion, submi
           </div>
         </Section>
 
+        <Section title="Scheduled Workspace Break" description="Pauses Work Tracking every day in the workspace time zone. Attendance continues, and work can be resumed when the break ends.">
+          <Checkbox checked={Boolean(workBreak)} onChange={(enabled) => updateContent({
+            scheduledWorkBreak: enabled ? { startLocalTime: '', endLocalTime: '' } : null
+          })} label="Enable scheduled break" />
+          {workBreak && (
+            <>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className={labelClass} style={labelStyle}>Break start time
+                  <input type="time" required className={inputClass} style={inputStyle} value={workBreak.startLocalTime}
+                    onChange={(e) => updateNested('scheduledWorkBreak', { startLocalTime: e.target.value })} />
+                </label>
+                <label className={labelClass} style={labelStyle}>Break end time
+                  <input type="time" required className={inputClass} style={inputStyle} value={workBreak.endLocalTime}
+                    onChange={(e) => updateNested('scheduledWorkBreak', { endLocalTime: e.target.value })} />
+                </label>
+              </div>
+              {workBreak.startLocalTime && workBreak.startLocalTime === workBreak.endLocalTime && (
+                <p role="alert" className="text-xs text-red-600">Choose different start and end times.</p>
+              )}
+            </>
+          )}
+        </Section>
+
         <Section title="Work From Home">
           <Checkbox checked={content.wfh.enabled} onChange={(v) => updateNested('wfh', { enabled: v })} label="Enable Work From Home" />
           {content.wfh.enabled && (
@@ -262,7 +289,7 @@ const PolicyFormModal = ({ mode = 'create', initialPolicy, initialVersion, submi
 
         <div className="flex justify-end gap-2 border-t pt-4" style={{ borderColor: 'var(--color-border-subtle)' }}>
           <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>
-          <Button type="submit" disabled={submitting || !content.allowedWorkModes.length}>{submitting ? 'Saving…' : mode === 'create' ? 'Create Policy' : 'Save Changes'}</Button>
+          <Button type="submit" disabled={submitting || !content.allowedWorkModes.length || Boolean(invalidWorkBreak)}>{submitting ? 'Saving…' : mode === 'create' ? 'Create Policy' : 'Save Changes'}</Button>
         </div>
       </form>
     </div>

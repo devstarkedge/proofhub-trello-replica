@@ -16,16 +16,46 @@ export function dashboardSegmentExpression(query){
   return tests.length?{$and:tests}:true;
 }
 
+export const projectedTrackingStatus = {
+  $cond: [
+    { $and: [{ $eq: ['$status', 'RUNNING'] }, { $gt: [{ $size: { $ifNull: ['$segments', []] } }, 0] },
+      { $allElementsTrue: [{ $map: { input: { $ifNull: ['$segments', []] }, as: 'segment', in: {
+        $ne: [{ $ifNull: ['$$segment.endedAt', null] }, null]
+      } } }] }
+    ] },
+    'PAUSED', '$status'
+  ]
+};
+
 // Shared by interactive history and generated exports: attendance/policy closes
 // stale open segments at the same authoritative boundary in both projections.
-export function trackingSessionCutoffStages({workspaceId,now,policy,attendanceDetails=false}) {
+export function trackingSessionCutoffStages({workspaceId,now,policy,attendanceDetails=false,workBreakWindows=[]}) {
   const tenant=oid(workspaceId);
-  return [{$lookup:{from:AttendanceSession.collection.name,let:{attendance:'$attendanceSession',owner:'$user'},pipeline:[{$match:{workspaceId:tenant,$expr:{$and:[{$eq:['$_id','$$attendance']},{$eq:['$user','$$owner']}]}}},{$project:{status:1,checkOutAt:1,missedCheckoutCutoffAt:1,reconciledAt:1,...(attendanceDetails?{attendanceDay:1,checkInAt:1,regularizationResolution:1}:{})}}],as:'_attendance'}},
+  const stages = [{$lookup:{from:AttendanceSession.collection.name,let:{attendance:'$attendanceSession',owner:'$user'},pipeline:[{$match:{workspaceId:tenant,$expr:{$and:[{$eq:['$_id','$$attendance']},{$eq:['$user','$$owner']}]}}},{$project:{status:1,checkOutAt:1,missedCheckoutCutoffAt:1,reconciledAt:1,...(attendanceDetails?{attendanceDay:1,checkInAt:1,regularizationResolution:1}:{})}}],as:'_attendance'}},
     {$set:{_attendance:{$first:'$_attendance'}}},
     {$set:{_cutoff:{$min:[{$ifNull:['$endedAt',now]},{$ifNull:['$_attendance.checkOutAt',{$ifNull:['$_attendance.missedCheckoutCutoffAt',{$ifNull:['$_attendance.reconciledAt',now]}]}]},...(policy.enabled?[]:[{$literal:policy.disabledAt||now}])]}}} ];
+  if (workBreakWindows.length) stages.push({
+    $set: { segments: { $map: { input: { $ifNull: ['$segments', []] }, as: 'segment', in: {
+      $cond: [
+        { $ne: [{ $ifNull: ['$$segment.endedAt', null] }, null] }, '$$segment',
+        { $let: { vars: { window: { $first: { $filter: {
+          input: { $literal: workBreakWindows }, as: 'window',
+          cond: { $and: [
+            { $gt: ['$$window.endsAt', '$$segment.startedAt'] },
+            { $lte: ['$$window.startsAt', '$_cutoff'] }
+          ] }
+        } } } }, in: { $cond: [
+          { $ne: [{ $ifNull: ['$$window', null] }, null] },
+          { $mergeObjects: ['$$segment', { endedAt: { $max: ['$$segment.startedAt', '$$window.startsAt'] } }] },
+          '$$segment'
+        ] } } }
+      ]
+    } } } }
+  });
+  return stages;
 }
 
-export function dashboardReadPipeline({workspaceId,ctx,scope,owners,bounds,query,dates,now,policy,attendanceDetails=false}){
+export function dashboardReadPipeline({workspaceId,ctx,scope,owners,bounds,query,dates,now,policy,attendanceDetails=false,workBreakWindows}){
   const tenant=oid(workspaceId),viewer=oid(ctx.userId),otherOwners=owners.filter(owner=>id(owner)!==id(viewer));
   const projects=[...scope.projectMap.values()].filter(project=>can(ctx,'project.view',project)).map(project=>project._id);
   const projectGuard={segments:{$not:{$elemMatch:{$or:['project','attributedProject'].map(field=>({[field]:{$exists:true,$ne:null,$nin:projects}}))}}}};
@@ -45,8 +75,8 @@ export function dashboardReadPipeline({workspaceId,ctx,scope,owners,bounds,query
     ],as:'_foreignHistory'}},{$match:{$or:[{user:viewer},{'_foreignHistory.0':{$exists:false}}]}});
   }
   const end=new Date(Math.min(+now,+dates.end));
-  pipeline.push(...trackingSessionCutoffStages({workspaceId,now,policy,attendanceDetails}),
-    {$set:{_rangeEnd:{$min:['$_cutoff',end]},_viewStatus:{$cond:[{$and:[{$eq:[{$ifNull:['$endedAt',null]},null]},{$eq:['$_attendance.status','ACTIVE']},{$eq:[{$ifNull:['$_attendance.checkOutAt',null]},null]},{$gte:['$_cutoff',now]}]},'$status','CLOSED']}}},
+  pipeline.push(...trackingSessionCutoffStages({workspaceId,now,policy,attendanceDetails,workBreakWindows}),
+    {$set:{_rangeEnd:{$min:['$_cutoff',end]},_viewStatus:{$cond:[{$and:[{$eq:[{$ifNull:['$endedAt',null]},null]},{$eq:['$_attendance.status','ACTIVE']},{$eq:[{$ifNull:['$_attendance.checkOutAt',null]},null]},{$gte:['$_cutoff',now]}]},workBreakWindows?.length?projectedTrackingStatus:'$status','CLOSED']}}},
     {$set:{_selected:{$filter:{input:{$ifNull:['$segments',[]]},as:'s',cond:{$and:[dashboardSegmentExpression(query),{$lt:['$$s.startedAt','$_rangeEnd']},{$gt:[{$ifNull:['$$s.endedAt','$_rangeEnd']},dates.start]}]}}}}},
     {$set:{_workSeconds:{$sum:{$map:{input:'$_selected',as:'s',in:{$max:[0,{$divide:[{$subtract:[{$min:[{$ifNull:['$$s.endedAt','$_rangeEnd']},'$_rangeEnd']},{$max:['$$s.startedAt',dates.start]}]},1000]}]}}}},_latest:{$arrayElemAt:['$_selected',-1]}}});
   return pipeline;
@@ -55,7 +85,14 @@ export function dashboardReadPipeline({workspaceId,ctx,scope,owners,bounds,query
 export async function readDashboardGroups(options){
   const pipeline=dashboardReadPipeline(options);
   if(options.filtered)pipeline.push({$match:{'_selected.0':{$exists:true}}});
-  pipeline.push({$sort:{startedAt:-1,_id:-1}},{$group:{_id:'$user',workSeconds:{$sum:'$_workSeconds'},...(options.includeSessionIds?{sessionIds:{$push:'$_id'}}:{}),latest:{$first:{_id:'$_id',startedAt:'$startedAt',revision:'$revision',status:'$_viewStatus',personalPaused:{$anyElementTrue:{$map:{input:{$ifNull:['$pauses',[]]},as:'pause',in:{$eq:[{$ifNull:['$$pause.endedAt',null]},null]}}}},segment:'$_latest'}}}});
+  const paused = { $or: [
+    { $and: [{ $eq: ['$status', 'RUNNING'] }, { $eq: ['$_viewStatus', 'PAUSED'] }] },
+    { $anyElementTrue: { $map: { input: { $ifNull: ['$pauses', []] }, as: 'pause', in: { $or: [
+      { $eq: [{ $ifNull: ['$$pause.endedAt', null] }, null] },
+      { $and: [{ $eq: ['$$pause.reason', 'SCHEDULED_WORK_BREAK'] }, { $gt: ['$$pause.endedAt', options.now] }] }
+    ] } } } }
+  ] };
+  pipeline.push({$sort:{startedAt:-1,_id:-1}},{$group:{_id:'$user',workSeconds:{$sum:'$_workSeconds'},...(options.includeSessionIds?{sessionIds:{$push:'$_id'}}:{}),latest:{$first:{_id:'$_id',startedAt:'$startedAt',revision:'$revision',status:'$_viewStatus',personalPaused:paused,segment:'$_latest'}}}});
   return WorkSession.aggregate(pipeline).option({maxTimeMS:10000,allowDiskUse:true});
 }
 

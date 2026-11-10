@@ -4,6 +4,7 @@ import { dashboardReadPipeline } from '../tracking/tracking.dashboardRead.js';
 import { WorkSession } from '../tracking/tracking.models.js';
 import { effectiveAttendanceSession } from './attendanceRegularizationOverlay.js';
 import { intervalMinutes, unionIntervals } from './attendanceIntervals.js';
+import { readRecentWorkBreakWindows } from './attendanceWorkBreak.js';
 const id = value => String(value?._id || value || '');
 export const unavailableWork = () => ({ seconds: null, reason: 'No authorized tracked work records are available.' });
 
@@ -16,7 +17,8 @@ export async function readAttendanceWork({ workspaceId, viewer, userIds, startDa
     const [ctx, policy] = await Promise.all([contextFor(workspaceId, viewer._id || viewer.id, { readOnly: true }), policyFor(workspaceId)]);
     const scope = await readVisibilityScope(ctx), owners = userIds.filter(owner => scope.canOwner(owner));
     if (!owners.length) return result;
-    const pipeline = dashboardReadPipeline({ workspaceId, ctx, scope, owners, bounds: { workDateKey: { $gte: startDate, $lte: endDate } }, query: {}, dates: { start: new Date(0), end: now }, now, policy, attendanceDetails: true });
+    const workBreakWindows = await readRecentWorkBreakWindows(workspaceId, now);
+    const pipeline = dashboardReadPipeline({ workspaceId, ctx, scope, owners, bounds: { workDateKey: { $gte: startDate, $lte: endDate } }, query: {}, dates: { start: new Date(0), end: now }, now, policy, attendanceDetails: true, workBreakWindows });
     pipeline.push({ $project: { user: 1, workDateKey: 1, _selected: 1, _cutoff: 1, _attendance: 1 } });
     const groups = new Map();
     for (const session of await WorkSession.aggregate(pipeline).option({ maxTimeMS: 20000, allowDiskUse: true })) {

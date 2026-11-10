@@ -6,7 +6,8 @@ import { WorkSession } from './tracking.models.js';
 import Board from '../../models/Board.js';
 import Card from '../../models/Card.js';
 import { policyFor } from './tracking.service.js';
-import { trackingSessionCutoffStages, dashboardSegmentExpression } from './tracking.dashboardRead.js';
+import { readRecentWorkBreakWindows } from '../attendance/attendanceWorkBreak.js';
+import { trackingSessionCutoffStages, dashboardSegmentExpression, projectedTrackingStatus } from './tracking.dashboardRead.js';
 import { generatedReportAccess, validateGeneratedReportFilters, assertGeneratedReportScope, generatedReportRecipients, reportId as id, reportError as fail } from './tracking.generatedReport.access.js';
 import { buildTrackingWorkbook } from './tracking.generatedReport.build.js';
 import { aggregateTrackingRows } from './tracking.generatedReport.workbook.js';
@@ -93,12 +94,13 @@ export async function retryGeneratedReportEmail(workspaceId,userId,reportId,inpu
 }
 async function generate(report,access) {
   assertGeneratedReportScope(access,report);
-  const policy=await policyFor(report.workspaceId),now=new Date(report.createdAt),filters=report.filters;
+  const now=new Date(report.createdAt),filters=report.filters;
+  const [policy,workBreakWindows]=await Promise.all([policyFor(report.workspaceId),readRecentWorkBreakWindows(report.workspaceId,now)]);
   const projects=await Board.find(access.visibleProjectIds?{_id:{$in:[...access.visibleProjectIds]}}:{}).select('name department').lean();
   const collector=aggregateTrackingRows(null,access,report,new Map(projects.map(project=>[id(project._id),project])));
   const pipeline=[{$match:{user:{$in:report.subjectIds},startedAt:{$lt:new Date(filters.endAt)},$or:[{endedAt:null},{endedAt:{$gt:new Date(filters.startAt)}}]}},
-    ...trackingSessionCutoffStages({workspaceId:report.workspaceId,now,policy}),
-    {$set:{_viewStatus:{$cond:[{$and:[{$eq:[{$ifNull:['$endedAt',null]},null]},{$eq:['$_attendance.status','ACTIVE']},{$gte:['$_cutoff',now]}]},'$status','CLOSED']}}},
+    ...trackingSessionCutoffStages({workspaceId:report.workspaceId,now,policy,workBreakWindows}),
+    {$set:{_viewStatus:{$cond:[{$and:[{$eq:[{$ifNull:['$endedAt',null]},null]},{$eq:['$_attendance.status','ACTIVE']},{$gte:['$_cutoff',now]}]},workBreakWindows.length?projectedTrackingStatus:'$status','CLOSED']}}},
     ...(filters.status?[{$match:{_viewStatus:filters.status}}]:[]),
     {$set:{segments:{$filter:{input:'$segments',as:'s',cond:dashboardSegmentExpression(filters)}}}},
     {$unwind:'$segments'},

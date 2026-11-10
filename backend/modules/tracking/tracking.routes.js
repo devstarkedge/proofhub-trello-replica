@@ -1,5 +1,6 @@
 import generatedReportRoutes from './tracking.generatedReport.routes.js';
 import { trackingFilterOptions } from './tracking.filterOptions.js';
+import { readRecentWorkBreakWindows } from '../attendance/attendanceWorkBreak.js';
 import express from 'express';
 import { protect } from '../../middleware/authMiddleware.js';
 import asyncHandler from '../../middleware/asyncHandler.js';
@@ -75,10 +76,12 @@ router.get('/tasks/:taskId/totals',asyncHandler(async(req,res)=>{
   if(!task||!project||!can(ctx,'task.view',{...task,project,taskResource:task}))fail('Task not found',404);
   let trackedSeconds=0,assignedSeconds=0,preAssignmentSeconds=0,preAssignmentIncludedSeconds=0;
   const now=Date.now();
+  const workBreakWindows=await readRecentWorkBreakWindows(req.workspaceId,new Date(now));
   for await(const session of WorkSession.find({$or:[{'segments.task':task._id},{'segments.linkedTask':task._id},{'segments.attributedTask':task._id}]}).cursor()){
     try{await authorizeRecord(ctx,session);}catch(e){if(e.statusCode===404)continue;throw e;}
     for(const segment of session.segments){
-      const seconds=Math.max(0,(Math.min(segment.endedAt?+segment.endedAt:now,now)-+segment.startedAt)/1000);
+      const window=!segment.endedAt&&workBreakWindows.find(item=>+item.endsAt>+segment.startedAt);
+      const seconds=Math.max(0,(Math.min(segment.endedAt?+segment.endedAt:now,window?+window.startsAt:now,now)-+segment.startedAt)/1000);
       if(id(segment.task)===id(task._id)){assignedSeconds+=seconds;trackedSeconds+=seconds;}
       if(id(segment.attributedTask)===id(task._id)){preAssignmentSeconds+=seconds;preAssignmentIncludedSeconds+=seconds;trackedSeconds+=seconds;}
       if(id(segment.linkedTask)===id(task._id)){preAssignmentSeconds+=seconds;if(session.includePreAssignment){preAssignmentIncludedSeconds+=seconds;trackedSeconds+=seconds;}}

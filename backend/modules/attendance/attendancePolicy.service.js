@@ -6,6 +6,9 @@ import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import { getWorkspaceTimezone, nowInWorkspaceTz, dateOnlyToInstant, instantToDateOnlyKey } from '../leave/leaveTimezone.util.js';
 import * as workspaceContext from '../workspaces/workspaceContext.js';
+import { activateWorkBreak, validateWorkBreak } from './attendanceWorkBreak.js';
+import { onPolicyUpdated } from './attendanceHooks.js';
+import { invalidateTrackingReads } from '../tracking/tracking.readCache.js';
 
 /**
  * Attendance policy lifecycle — a simplified, workspace-only version of
@@ -20,11 +23,11 @@ import * as workspaceContext from '../workspaces/workspaceContext.js';
  */
 
 export async function getPolicyConfiguration({ workspaceId }) {
-  const policy = await AttendancePolicy.findOne({ workspaceId, isDefault: true })
+  const load = (filter) => AttendancePolicy.findOne({ workspaceId, isDefault: true, ...filter })
     .populate('currentVersion')
     .populate('pendingVersion')
     .lean();
-  return policy;
+  return await load({ status: 'active' }) || load({});
 }
 
 /** The published version currently governing this workspace's attendance calculations, or null if none has ever been activated. */
@@ -37,6 +40,7 @@ export async function resolveApplicablePolicyVersion({ workspaceId }) {
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 function assertValidPolicyContent(content) {
+  validateWorkBreak(content.scheduledWorkBreak);
   if (!Array.isArray(content.allowedWorkModes) || content.allowedWorkModes.length === 0) {
     throw new ErrorResponse('At least one allowed work mode (Office/WFH/Hybrid/Field) must be configured', 400);
   }
@@ -71,10 +75,19 @@ async function deactivateOtherPolicies({ workspaceId, exceptPolicyId, session })
   );
 }
 
-async function activatePolicyTransaction({ workspaceId, policy, version }) {
+async function activatePolicyTransaction({ workspaceId, policy, version, expectedVersionId }) {
   const session = await mongoose.startSession();
+  let workBreakChanged = false;
   try {
     await session.withTransaction(async () => {
+      const previousPolicy = await AttendancePolicy.findOne({ workspaceId, isDefault: true, status: 'active' }).select('currentVersion').session(session).lean();
+      if (expectedVersionId && String(previousPolicy?.currentVersion) !== String(expectedVersionId)) {
+        throw new ErrorResponse('The active Attendance Policy version changed. Retry after rechecking it.', 409);
+      }
+      const previousVersion = previousPolicy?.currentVersion
+        ? await AttendancePolicyVersion.findOne({ workspaceId, _id: previousPolicy.currentVersion }).select('scheduledWorkBreak').session(session).lean()
+        : null;
+      workBreakChanged = await activateWorkBreak(workspaceId, previousVersion?.scheduledWorkBreak, version.scheduledWorkBreak, session);
       await deactivateOtherPolicies({ workspaceId, exceptPolicyId: policy._id, session });
 
       if (version.status !== 'published') {
@@ -107,6 +120,8 @@ async function activatePolicyTransaction({ workspaceId, policy, version }) {
   } finally {
     await session.endSession();
   }
+  if (workBreakChanged) await invalidateTrackingReads(workspaceId);
+  try { onPolicyUpdated(workspaceId); } catch { /* Clients also refresh on reconnect. */ }
   return { policy, version };
 }
 
@@ -136,18 +151,17 @@ export async function createPolicy({ workspaceId, name, description, effectiveDa
   return { policy, version };
 }
 
-export async function editPolicy({ workspaceId, policyId, name, description, effectiveDate, content, createdBy }) {
+export async function editPolicy({ workspaceId, policyId, name, description, effectiveDate, content, createdBy, expectedVersionId }) {
   const policy = await AttendancePolicy.findOne({ _id: policyId, workspaceId, isDefault: true });
   if (!policy) throw new ErrorResponse('Attendance policy not found', 404);
   if (policy.status === 'archived') throw new ErrorResponse('An archived policy must be restored before it can be edited', 400);
 
+  if (content) assertValidPolicyContent(content);
   if (name !== undefined && String(name).trim()) policy.name = name;
   if (description !== undefined) policy.description = description;
   await policy.save();
 
   if (!content) return { policy, version: null };
-  assertValidPolicyContent(content);
-
   const workspace = await Workspace.findById(workspaceId).select('timezone').lean();
   const timezone = getWorkspaceTimezone(workspace);
   const targetEffectiveDate = dateOnlyToInstant(effectiveDate, timezone);
@@ -155,13 +169,21 @@ export async function editPolicy({ workspaceId, policyId, name, description, eff
   const isImmediate = targetEffectiveDate.getTime() <= now.getTime();
 
   const latest = await AttendancePolicyVersion.findOne({ workspaceId, policy: policyId }).sort({ versionNumber: -1 }).lean();
+  // Older clients omit this field. Only an explicit null disables a break.
+  let scheduledWorkBreak = content.scheduledWorkBreak;
+  if (!Object.hasOwn(content, 'scheduledWorkBreak')) {
+    const current = policy.currentVersion && String(policy.currentVersion) !== String(latest?._id)
+      ? await AttendancePolicyVersion.findOne({ workspaceId, _id: policy.currentVersion }).select('scheduledWorkBreak').lean()
+      : latest;
+    scheduledWorkBreak = current?.scheduledWorkBreak;
+  }
   const version = await AttendancePolicyVersion.create({
     workspaceId, policy: policyId, versionNumber: (latest?.versionNumber || 0) + 1,
     status: isImmediate ? 'draft' : 'scheduled', effectiveFrom: targetEffectiveDate,
-    createdBy, ...content
+    createdBy, ...content, scheduledWorkBreak
   });
 
-  if (isImmediate) return activatePolicyTransaction({ workspaceId, policy, version });
+  if (isImmediate) return activatePolicyTransaction({ workspaceId, policy, version, expectedVersionId });
 
   version.status = 'scheduled';
   await version.save();

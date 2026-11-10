@@ -16,6 +16,7 @@ import { resolveAttendanceStatus } from './attendanceStatusResolver.service.js';
 import { applyRegularizationOverlay } from './attendanceRegularizationOverlay.js';
 import { attendanceIntervals, intervalMinutes, unionIntervals, scheduleForDay, resolveLeaveCoverage } from './attendanceIntervals.js';
 import { codedError } from './attendanceErrors.js';
+import { readWorkBreak, firstWorkBreak } from './attendanceWorkBreak.js';
 
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const signature = value => createHmac('sha256',config.jwt.secret).update(`attendance-checkout-v1:${value}`).digest();
@@ -72,11 +73,24 @@ export async function evaluateCheckout({workspaceId,userId,membership,workspace,
   const schedule=scheduleForDay(context),coverage=resolveLeaveCoverage(context.leave,schedule);
   const permissions=await trackingContext(workspaceId,userId,{includeProjects:false});
   const workVisible=can(permissions,'tracking.log',{workspaceId,user:userId})||can(permissions,'tracking.view_reports',{workspaceId,user:userId});
-  let trackedWorkSeconds=null,workSessionIds=[],pendingUploads=0;
+  let trackedWorkSeconds=null,workSessionIds=[],pendingUploads=0,workBreak=null;
   if(workVisible){
     const work=await WorkSession.find({workspaceId,user:userId,workDateKey}).select('attendanceSession startedAt endedAt segments.startedAt segments.endedAt').session(dbSession).lean();
     workSessionIds=work.map(s=>s._id);
-    const intervals=work.flatMap(s=>{const source=raw.find(a=>String(a._id)===String(s.attendanceSession));if(!source)return [];const cutoff=source.checkOutAt||source.missedCheckoutCutoffAt;return s.segments.map(segment=>[Math.max(+new Date(segment.startedAt),+new Date(source.checkInAt)),Math.min(+at,cutoff?+new Date(cutoff):Infinity,s.endedAt?+new Date(s.endedAt):Infinity,segment.endedAt?+new Date(segment.endedAt):Infinity)]);});
+    if (work.some(s => s.segments.some(segment => !segment.endedAt))) {
+      workBreak = await readWorkBreak(workspaceId, new Date(Math.min(...raw.map(s => +s.checkInAt))), dbSession);
+    }
+    const intervals=work.flatMap(s=>{
+      const source=raw.find(a=>String(a._id)===String(s.attendanceSession));
+      if(!source)return [];
+      const cutoff=source.checkOutAt||source.missedCheckoutCutoffAt;
+      return s.segments.map(segment=>{
+        const start=Math.max(+segment.startedAt,+source.checkInAt);
+        const end=Math.min(+at,cutoff?+cutoff:Infinity,s.endedAt?+s.endedAt:Infinity,segment.endedAt?+segment.endedAt:Infinity);
+        const breakWindow=!segment.endedAt&&firstWorkBreak(workBreak,new Date(start),new Date(end));
+        return [start,breakWindow?Math.max(start,+breakWindow.startsAt):end];
+      });
+    });
     trackedWorkSeconds=intervalMinutes(unionIntervals(intervals))*60;
     pendingUploads=await TrackingScreenshot.countDocuments({workspaceId,user:userId,session:{$in:workSessionIds},status:'PENDING'}).session(dbSession);
   }
@@ -98,7 +112,7 @@ export async function evaluateCheckout({workspaceId,userId,membership,workspace,
   // only a changed outcome, schedule or approved coverage needs reconfirmation.
   const fingerprint=digest({session:String(attendance._id),workDateKey,policy:String(policyVersion._id),schedule:data.schedule,mode:context.workModeResolution.effectiveMode,
     officeHours:context.officeHours,outcome:data.outcome,leaves:data.approvedLeaves.map(({status:_,...covered})=>covered),warnings:warnings.map(w=>w.code),canConfirm});
-  return {...data,fingerprint,context:{...context,outcome}};
+  return {...data,fingerprint,context:{...context,outcome,workBreak}};
 }
 export async function getCheckoutPreview(args) {
   const attendance=await AttendanceSession.findOne({workspaceId:args.workspaceId,user:args.userId,status:'ACTIVE'}).lean();

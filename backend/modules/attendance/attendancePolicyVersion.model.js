@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import workspaceScopePlugin from '../workspaces/workspaceScopePlugin.js';
+import { workBreakFields } from './attendanceWorkBreak.js';
 
 const gpsRequirementsSchema = new mongoose.Schema({
   // 200m (not a tighter value like 100) is the workspace-wide DEFAULT for
@@ -108,6 +109,7 @@ const attendancePolicyVersionSchema = new mongoose.Schema({
   allowedWorkModes: { type: [String], enum: ['OFFICE', 'WFH', 'HYBRID', 'FIELD'], default: ['OFFICE'] },
 
   officeHours: { type: officeHoursSchema, default: () => ({}) },
+  scheduledWorkBreak: { type: new mongoose.Schema(workBreakFields, { _id: false }), default: null },
   graceMinutes: { type: Number, default: 15, min: 0 },
   earlyExitGraceMinutes: { type: Number, default: 0, min: 0 },
   minimumFullDayMinutes: { type: Number, default: 480, min: 1 },

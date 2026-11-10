@@ -8,7 +8,7 @@ export function retainSessionSynchronization(scope,workspaceId,authorizationKey)
   let entry=owners.get(scope);
   if(entry){clearTimeout(entry.release);entry.count++;if(entry.authorizationKey!==authorizationKey){entry.authorizationKey=authorizationKey;entry.secureRefresh();}entry.ensure();return()=>release(scope,entry);}
   const tracking=trackingStore(scope,workspaceId),attendance=attendanceStore(scope,workspaceId),userId=scope.split(':').at(-1);
-  let refreshTimer,workRefreshTimer,attendanceRefreshTimer,boundaryTimer,lastBoundary='',channel,session=sessionIdentity(localStorage);
+  let refreshTimer,workRefreshTimer,attendanceRefreshTimer,boundaryTimer,breakTimer,lastBoundary='',channel,session=sessionIdentity(localStorage);
   const current=()=>localStorage.getItem('workspaceId')===String(workspaceId)&&Boolean(session.token)&&isCurrentSession(session,localStorage);
   const refresh=()=>{if(current()){tracking.reload();attendance.reload();}};
   const schedule=()=>{clearTimeout(refreshTimer);refreshTimer=setTimeout(refresh,100);};
@@ -46,12 +46,25 @@ export function retainSessionSynchronization(scope,workspaceId,authorizationKey)
     const anchor=a?.serverNow?a:t,now=anchor?.serverNow?+new Date(anchor.serverNow)+Math.max(0,performance.now()-anchor.receivedAt):Date.now();
     boundaryTimer=setTimeout(()=>{lastBoundary=key;invalidate();},Math.min(2147483647,Math.max(0,+new Date(cutoff)-now)));
   };
+  const breakBoundary = () => {
+    clearTimeout(breakTimer);
+    const state = tracking.getSnapshot().state;
+    if (!state?.scheduledWorkBreak) return;
+    const now = +new Date(state.serverNow) + Math.max(0, performance.now() - state.receivedAt);
+    const next = [state.scheduledWorkBreak.startsAt, state.scheduledWorkBreak.endsAt].map(Date.parse).find(at => at > now);
+    if (next === undefined) return;
+    breakTimer = setTimeout(() => {
+      if (!current()) return;
+      tracking.invalidate();
+      tracking.reload();
+    }, next - now + 10);
+  };
   try{if(typeof BroadcastChannel!=='undefined'){channel=new BroadcastChannel('flowtask-session-invalidations');channel.onmessage=event=>{if(event.data?.scope===scope)invalidate();};}}catch{/* Socket.IO plus bounded polling remains available. */}
   const events=[['flowtask:realtime',realtime],['flowtask:tracking-refresh',invalidate],['socket-attendance-updated',invalidate],['flowtask:session-committed',committed],['online',invalidate],['socket-connected',invalidate],['desktop-resume',invalidate],['socket-disconnected',disconnected],['socket-auth-expired',rejected],['socket-workspace-rejected',rejected],['storage',storage]];
   for(const [name,handler]of events)window.addEventListener(name,handler);
   const visibility=()=>{if(document.visibilityState==='visible'&&current()){tracking.ensure();attendance.ensure();}};document.addEventListener('visibilitychange',visibility);
-  const poll=setInterval(()=>{if(current())refresh();},60000),unsubscribers=[tracking.subscribe(boundary),attendance.subscribe(boundary),retainWorkSelectionPrefetch(scope,workspaceId,tracking)];
-  entry={count:1,authorizationKey,secureRefresh,ensure(){if(current()){tracking.ensure();attendance.ensure();}},close(){clearTimeout(attendanceRefreshTimer);clearTimeout(refreshTimer);clearTimeout(workRefreshTimer);clearTimeout(boundaryTimer);clearInterval(poll);channel?.close();for(const unsubscribe of unsubscribers)unsubscribe();for(const [name,handler]of events)window.removeEventListener(name,handler);document.removeEventListener('visibilitychange',visibility);}};
-  owners.set(scope,entry);tracking.ensure();attendance.ensure();boundary();return()=>release(scope,entry);
+  const poll=setInterval(()=>{if(current())refresh();},60000),unsubscribers=[tracking.subscribe(boundary),tracking.subscribe(breakBoundary),attendance.subscribe(boundary),retainWorkSelectionPrefetch(scope,workspaceId,tracking)];
+  entry={count:1,authorizationKey,secureRefresh,ensure(){if(current()){tracking.ensure();attendance.ensure();}},close(){clearTimeout(attendanceRefreshTimer);clearTimeout(refreshTimer);clearTimeout(workRefreshTimer);clearTimeout(boundaryTimer);clearTimeout(breakTimer);clearInterval(poll);channel?.close();for(const unsubscribe of unsubscribers)unsubscribe();for(const [name,handler]of events)window.removeEventListener(name,handler);document.removeEventListener('visibilitychange',visibility);}};
+  owners.set(scope,entry);tracking.ensure();attendance.ensure();boundary();breakBoundary();return()=>release(scope,entry);
 }
 function release(scope,entry){if(--entry.count===0)entry.release=setTimeout(()=>{if(entry.count)return;entry.close();owners.delete(scope);},0);}

@@ -515,7 +515,7 @@ export async function checkOut({ workspaceId, userId, membership, workspace, gps
       const closed=await AttendanceSession.findOneAndUpdate({_id:existing._id,workspaceId,user:userId,status:'ACTIVE'},{$set:{status:'COMPLETED',closureReason:'NORMAL_CHECKOUT',checkOutAt:serverNow,checkOut:checkOutEvidence,checkoutOperationId:operationId,checkoutSummary:summary}},{new:true,session:dbSession});
       if(!closed)throw codedError('Attendance changed concurrently. Retry checkout.',409,'ATTENDANCE_CHANGED');
       const {day}=await computeAndUpsertDay({...evaluation.context,dbSession});
-      await finalizeAttendanceWork(closed,dbSession);
+      await finalizeAttendanceWork(closed,dbSession,evaluation.context.workBreak);
       await enqueueAttendanceReport({ action: 'checkout', attendance: closed, at: closed.checkOutAt, day, dbSession });
       await AuditLog.create([{workspace:workspaceId,actor:userId,actorName,actorRole:membership.role,action:'ATTENDANCE_CHECKED_OUT',category:'attendance_management',targetType:'AttendanceSession',targetId:closed._id,
         resourceLabel:`Attendance check-out: ${actorName||'Employee'}`,summary:`${actorName||'Employee'} checked out`,changes:{after:{workDateKey:closed.workDateKey,checkOutAt:serverNow,policyVersion:policyVersion._id,outcome:summary.outcome,approvedLeaveIds:summary.approvedLeaves.map(l=>l.requestId)}}}],{session:dbSession});

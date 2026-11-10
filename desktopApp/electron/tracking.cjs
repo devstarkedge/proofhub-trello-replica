@@ -137,6 +137,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
       let client;try{client=require('socket.io-client');}catch(error){if(!app.isPackaged)throw error;client=require(path.join(process.resourcesPath,'node_modules','socket.io-client'));}
       realtime=client.io(getBackendURL(),{auth:{...credentials},transports:['polling','websocket'],tryAllTransports:true,reconnection:true,reconnectionDelay:1000,reconnectionDelayMax:5000});
       realtime.on('tracking:policy-updated',value=>{haltPolicy(value);return sync(true);});
+      realtime.on('attendance:policy-updated',()=>sync(true));
       realtime.on('tracking:changed',value=>{acceptTransition(value);return sync(true);});
       realtime.on('attendance:checked-out',value=>{if(String(value?.userId)===String(credentials?.userId)&&value?.session?._id)rememberClosure({attendanceSessionId:value.session._id,cutoffAt:value.session.checkOutAt});return sync();});
       realtime.on('tracking:device-updated',value=>{if(String(value?.deviceId)===String(device?._id)){if(value?.revoked){haltCapture('This desktop device was revoked');generation++;}else if(value?.displaced){haltCapture('Monitoring was moved to another desktop');generation++;}}return sync(true);});
@@ -297,7 +298,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
           if(scope!==generation)return;
           entry.attempts=(entry.attempts||0)+1;entry.nextAttempt=Date.now()+Math.max(Math.min(60000,1000*2**Math.min(entry.attempts,6)),error.retryAfterMs||0);
           entry.lastUploadError=String(error.message||'Saved capture will retry').slice(0,300);entry.lastUploadErrorCode=String(error.code||'UPLOAD_UNAVAILABLE').slice(0,80);
-          if(error.status===403&&error.code==='LEASE_EXPIRED'||['INTERVAL_OVERLAP','INTERVAL_NO_WORK_COVERAGE','INTERVAL_ID_CONFLICT','CAPTURE_AFTER_CHECKOUT'].includes(error.code)){
+          if(error.status===403&&error.code==='LEASE_EXPIRED'||['INTERVAL_OVERLAP','INTERVAL_NO_WORK_COVERAGE','INTERVAL_ID_CONFLICT','CAPTURE_AFTER_CHECKOUT','CAPTURE_DURING_SCHEDULED_BREAK'].includes(error.code)){
             // A new lease cannot authorize activity captured outside an older
             // lease. Retain the encrypted copy without retrying it forever.
             entry.authorizationRejected=true;entry.nextAttempt=0;protectedEntries.add(name);

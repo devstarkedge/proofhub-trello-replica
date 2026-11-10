@@ -40,3 +40,8 @@ export function sessionCutoffReached(value,cutoff){
   const now=value?.serverNow?+new Date(value.serverNow)+Math.max(0,performance.now()-(value.receivedAt??performance.now())):Date.now();
   return now>=+new Date(cutoff);
 }
+export function activeScheduledWorkBreak(state) {
+  const window = state?.scheduledWorkBreak;
+  return window && sessionCutoffReached(state, window.startsAt) && !sessionCutoffReached(state, window.endsAt)
+    ? window : null;
+}

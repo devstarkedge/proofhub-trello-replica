@@ -17,7 +17,7 @@ export function closeTimeline(session, at) {
     ...s, endedAt: new Date(Math.min(s.endedAt ? ms(s.endedAt) : end, end))
   }));
   session.endedAt = new Date(end); session.status = 'CLOSED';
-  for (const pause of session.pauses || []) if (!pause.endedAt) pause.endedAt = new Date(Math.max(ms(pause.startedAt),end));
+  for (const pause of session.pauses || []) if (!pause.endedAt || ms(pause.endedAt) > end) pause.endedAt = new Date(Math.max(ms(pause.startedAt),end));
   assertTimeline(session.segments, session.endedAt);
   return session;
 }
@@ -60,8 +60,11 @@ export function summarize(session, now = new Date()) {
     const task = sid(s.attributedTask||s.task || (session.includePreAssignment && s.linkedTask));
     if (task) tasks[task] = (tasks[task] || 0) + seconds;
   }
-  const personalPauseSeconds = (session.pauses || []).reduce((sum,p)=>sum+Math.max(0,(Math.min(ms(p.endedAt||now),end)-ms(p.startedAt))/1000),0);
-  return { workSeconds, individualSeconds, preAssignmentSeconds, assignedSeconds, personalPauseSeconds, projects, tasks };
+  const pauseSeconds = pauses => pauses.reduce((sum,p)=>sum+Math.max(0,(Math.min(ms(p.endedAt||now),end)-ms(p.startedAt))/1000),0);
+  const pauses = session.pauses || [];
+  const personalPauseSeconds = pauseSeconds(pauses.filter(p => p.reason !== 'SCHEDULED_WORK_BREAK'));
+  const scheduledPauseSeconds = pauseSeconds(pauses.filter(p => p.reason === 'SCHEDULED_WORK_BREAK'));
+  return { workSeconds, individualSeconds, preAssignmentSeconds, assignedSeconds, personalPauseSeconds, scheduledPauseSeconds, projects, tasks };
 }
 export function overlapSeconds(start, end, segments) {
   return (segments || []).reduce((sum, s) => sum + Math.max(0,

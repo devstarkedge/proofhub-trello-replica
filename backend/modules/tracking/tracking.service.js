@@ -16,6 +16,7 @@ import { TrackingPolicy, WorkSession, TrackingDevice, TrackingCaptureLease, Task
 import { assertTimeline, closeTimeline, linkAssignment, endAssignment, summarize } from './tracking.timeline.js';
 import { trackingVisibility, departmentsOf, historicalDepartmentScope,trackingRole } from './tracking.visibility.js';
 import {enqueueAttendanceEvent} from '../attendance/attendanceEvents.service.js';
+import { readWorkBreak, firstWorkBreak, workBreakState, pauseForWorkBreak, refreshWorkBreakPause } from '../attendance/attendanceWorkBreak.js';
 
 export function fail(message, statusCode = 400, code = 'TRACKING_INVALID') {
   const error = new Error(message); Object.assign(error, { statusCode, code }); throw error;
@@ -132,6 +133,8 @@ export async function startWithAttendance({ attendance, selection, dbSession }) 
   if (!selection) return null;
   const existing = await WorkSession.findOne({ workspaceId: attendance.workspaceId, attendanceSession: attendance._id }).session(dbSession);
   if (existing) return existing;
+  const schedule = await readWorkBreak(attendance.workspaceId, attendance.checkInAt, dbSession);
+  if (firstWorkBreak(schedule, attendance.checkInAt, attendance.checkInAt)) return null;
   const policy = await policyFor(attendance.workspaceId, dbSession);
   const member=await WorkspaceMembership.findOne({workspace:attendance.workspaceId,user:attendance.user}).session(dbSession).lean();
   const [created] = await WorkSession.create([{
@@ -143,7 +146,7 @@ export async function startWithAttendance({ attendance, selection, dbSession }) 
   }], { session: dbSession });
   return created;
 }
-export async function finalizeAttendanceWork(attendance, dbSession = null) {
+export async function finalizeAttendanceWork(attendance, dbSession = null, schedule = null) {
   if(!dbSession){
     const transaction=await mongoose.startSession();let saved;
     try{await transaction.withTransaction(async()=>{saved=await finalizeAttendanceWork(attendance,transaction);});}finally{await transaction.endSession();}
@@ -156,7 +159,11 @@ export async function finalizeAttendanceWork(attendance, dbSession = null) {
   for(const session of sessions){
     if(session.status!=='CLOSED'||!session.endedAt||(session.segments||[]).some(s=>!s.endedAt)||(session.pauses||[]).some(p=>!p.endedAt)){
       session.audit ||= [];
-      closeTimeline(session,new Date(Math.min(+new Date(at),session.endedAt?+new Date(session.endedAt):Infinity)));
+      const end = new Date(Math.min(+new Date(at), session.endedAt ? +new Date(session.endedAt) : Infinity));
+      schedule ||= await readWorkBreak(attendance.workspaceId, attendance.checkInAt, dbSession);
+      if (pauseForWorkBreak(session, schedule, end)) pushAudit(session, 'SCHEDULED_WORK_BREAK', session.segments.at(-1).endedAt, session.user);
+      refreshWorkBreakPause(session, schedule);
+      closeTimeline(session,end);
       if(!(session.audit||[]).some(a=>a.type==='ATTENDANCE_CLOSED'))pushAudit(session,'ATTENDANCE_CLOSED',session.endedAt,session.user,attendance.closureReason||attendance.status);
       saved=await WorkSession.findOneAndUpdate({_id:session._id,workspaceId:session.workspaceId,revision:session.revision??{$exists:false}},
         {$set:{segments:session.segments,pauses:session.pauses||[],status:session.status,endedAt:session.endedAt,audit:session.audit},$inc:{revision:1}},{new:true,session:dbSession});
@@ -179,6 +186,19 @@ export async function reconcileSession(sessionId,prepared=null) {
     session.segments = session.segments || [];
     session.pauses = session.pauses || [];
     session.audit = session.audit || [];
+    const attendance = cached?.attendance!==undefined?cached.attendance:await AttendanceSession.findById(session.attendanceSession).lean();
+    let changed = false;
+    if (session.status !== 'CLOSED') {
+      const now = new Date();
+      const cutoff = attendance?.checkOutAt || attendance?.missedCheckoutCutoffAt;
+      const through = cutoff && +cutoff < +now ? cutoff : now;
+      const schedule = prepared?.workBreak || await readWorkBreak(session.workspaceId, session.startedAt);
+      if (pauseForWorkBreak(session, schedule, through)) {
+        pushAudit(session, 'SCHEDULED_WORK_BREAK', session.segments.at(-1).endedAt, session.user);
+        changed = true;
+      }
+      if (refreshWorkBreakPause(session, schedule)) changed = true;
+    }
     const taskIds = [...new Set(session.segments.flatMap(s => [s.candidateTask, s.task]).filter(Boolean).map(id))];
     const tasks = cached?.tasks ? cached.tasks.filter(t=>taskIds.includes(id(t._id))).map(t=>({...t})) : taskIds.length ? await Card.find({ _id: { $in: taskIds } }).select('+assignmentEvents').lean() : [];
     const missing=taskIds.filter(taskId=>!(tasks||[]).some(t=>id(t._id)===taskId));
@@ -187,7 +207,6 @@ export async function reconcileSession(sessionId,prepared=null) {
       for(const taskId of missing){const events=archived.filter(e=>id(e.task)===taskId);if(events.length)tasks.push({_id:taskId,
         title:events.at(-1).taskTitle,board:events[0].project,isArchived:true,assignees:[],assignmentEvents:events.map(e=>({...e,id:e.eventId}))});}
     }
-    let changed = false;
     for (const task of (tasks || [])) for (const event of [...(task.assignmentEvents || [])].sort((a,b) => +new Date(a.at) - +new Date(b.at) || (a.sequence || 0)-(b.sequence || 0) || a.id.localeCompare(b.id))) {
       if (id(event.user) !== id(session.user)) continue;
       if ((session.audit || []).some(a => a.id === event.id)) continue;
@@ -205,7 +224,6 @@ export async function reconcileSession(sessionId,prepared=null) {
       session.audit.push({ id: event.id, type: event.type === 'ASSIGNED' ? 'CANDIDATE_ASSIGNED' : 'TASK_UNASSIGNED', at: event.at, actor: session.user, detail: id(task._id) });
       changed = true;
     }
-    const attendance = cached?.attendance!==undefined?cached.attendance:await AttendanceSession.findById(session.attendanceSession).lean();
     if (session.status !== 'CLOSED' && attendance && (attendance.status !== 'ACTIVE' || attendance.missedCheckoutCutoffAt && +new Date(attendance.missedCheckoutCutoffAt) <= Date.now())) {
       closeTimeline(session, attendance.checkOutAt || attendance.missedCheckoutCutoffAt || attendance.reconciledAt);
       pushAudit(session, 'ATTENDANCE_CLOSED', session.endedAt, session.user); changed = true;
@@ -247,14 +265,17 @@ export async function reconcileWorkspaceSessions(workspaceId = getActiveWorkspac
   if (!workspaceId || mongoose.connection.readyState !== 1) return;
   return run({ workspaceId }, async () => {
     // Closed sessions are also reconciled for late assignment outbox delivery.
-    const recent = await WorkSession.find({ workspaceId, $or: [{ endedAt: null }, { updatedAt: { $gte: new Date(Date.now() - 86400000) } }] }).select('_id').limit(200).lean();
-    for (const s of recent) { try { await reconcileSession(s._id); } catch (e) { console.error('[Tracking] reconciliation:', e.message); } }
+    const recent = await WorkSession.find({ workspaceId, $or: [{ endedAt: null }, { updatedAt: { $gte: new Date(Date.now() - 86400000) } }] })
+      .sort({ status: -1, updatedAt: -1 }).select('_id status startedAt').limit(200).lean();
+    const open = recent.filter(s => s.status !== 'CLOSED');
+    const workBreak = open.length ? await readWorkBreak(workspaceId, new Date(Math.min(...open.map(s => +s.startedAt)))) : null;
+    for (const s of recent) { try { await reconcileSession(s._id,{workBreak}); } catch (e) { console.error('[Tracking] reconciliation:', e.message); } }
   });
 }
-export function publicWorkSession(session) {
+export function publicWorkSession(session, at = new Date()) {
   if(!session)return null;
   const {operations:_,audit:__,evidenceRevision:___,...visible}=session;
-  return {...visible,totals:summarize(session)};
+  return {...visible,totals:summarize(session,at)};
 }
 export async function currentState(workspaceId, userId) {
   const [policy,attendance,devices,member]=await Promise.all([
@@ -264,12 +285,17 @@ export async function currentState(workspaceId, userId) {
   ]);
   let session = await WorkSession.findOne({ workspaceId, user: userId, ...(attendance ? { attendanceSession: attendance._id } : {}) }).sort({ startedAt: -1 }).lean();
   const ctx = await contextFor(workspaceId,userId,{includeProjects:Boolean(session?.segments?.some(s=>s.project||s.attributedProject))});
-  if (session) session = await reconcileSession(session._id,{session,policy,attendance:attendance||undefined,ownerContext:ctx});
+  const workBreak = await readWorkBreak(workspaceId, session && session.status !== 'CLOSED' ? session.startedAt : new Date());
+  if (session) session = await reconcileSession(session._id,{session,policy,workBreak,attendance:attendance||undefined,ownerContext:ctx});
+  const serverNow = new Date();
+  const scheduledWorkBreak = workBreakState(workBreak, serverNow);
+  const through = session?.status === 'RUNNING' && scheduledWorkBreak && +scheduledWorkBreak.startsAt <= +serverNow
+    ? scheduledWorkBreak.startsAt : serverNow;
   const {versions:_,...publicPolicy}=policy;
-  return { workspaceId, userId:String(userId), serverNow: new Date(), policy:publicPolicy, canTrack: policy.enabled && can(ctx, 'tracking.log', { workspaceId, user: userId }),
+  return { workspaceId, userId:String(userId), serverNow, policy:publicPolicy, scheduledWorkBreak, canTrack: policy.enabled && can(ctx, 'tracking.log', { workspaceId, user: userId }),
     canManagePolicy: await trackingRole(member,workspaceId)==='admin'&&can(ctx,'tracking.manage_policy',{workspaceId}), canViewReports: can(ctx, 'tracking.view_reports'),
     attendance: attendance ? { _id: attendance._id, checkInAt: attendance.checkInAt, cutoffAt: attendance.missedCheckoutCutoffAt } : null,
-    session: publicWorkSession(session),
+    session: publicWorkSession(session, through),
     devices: devices.map(d => ({ ...d, connected: Date.now() - +new Date(d.lastSeenAt || 0) < 45000 })) };
 }
 export function changeWork(args) {
@@ -325,6 +351,14 @@ async function changeWorkUnlocked({ workspaceId, userId, action, selection, oper
     const reportingBefore = session ? { ...session, segments: session.segments.map(s => ({ ...s })), pauses: (session.pauses || []).map(p => ({ ...p })) } : null;
     if(session){session.operations=[];session.audit=[];}
     const at = new Date(Math.max(Date.now(), session ? +new Date(session.segments.at(-1)?.startedAt || session.startedAt) : +new Date(attendance.checkInAt)));
+    const workBreak = await readWorkBreak(workspaceId, session?.startedAt || at, dbSession);
+    if (firstWorkBreak(workBreak, at, at)) {
+      fail('Scheduled workspace break is active. You can start or resume work when it ends.', 409, 'SCHEDULED_WORK_BREAK');
+    }
+    if (session && pauseForWorkBreak(session, workBreak, at)) {
+      pushAudit(session, 'SCHEDULED_WORK_BREAK', session.segments.at(-1).endedAt, userId);
+    }
+    if (session) refreshWorkBreakPause(session, workBreak);
     let resumeDevice;
     if(activityChange){
       if(!['pause','resume'].includes(action)||!policy.monitoringEnabled)fail('Automatic work changes require enabled desktop monitoring',403);

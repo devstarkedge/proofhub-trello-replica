@@ -12,6 +12,7 @@ import { departmentsOf } from './tracking.visibility.js';
 import { emitToUser } from '../../realtime/emitters.js';
 import './tracking.legacyStorage.js';
 import {MONITORING_NOTICE_VERSION,hasMonitoringNotice,workspaceCapturePreferences} from './tracking.monitoring.js';
+import { firstWorkBreak, readWorkBreak, workBreakState } from '../attendance/attendanceWorkBreak.js';
 const captureSnapshot=p=>({enabled:p.enabled,monitoringEnabled:p.monitoringEnabled,revision:p.revision,retentionDays:p.retentionDays,blur:p.blur,intervalSeconds:p.intervalSeconds,monitors:p.monitors,excludedDisplayIds:p.excludedDisplayIds||[],excludeWindowTitles:p.excludeWindowTitles||[]});
 async function persistAnchor(device,anchor,dbSession=null){
   await TrackingCaptureAnchor.findOneAndUpdate({device:device._id,id:anchor.id},{$setOnInsert:{...anchor,workspaceId:device.workspaceId,user:device.user,device:device._id,purgeAt:anchor.capturePolicy.retentionDays===null?null:new Date(+new Date(anchor.expiresAt)+anchor.capturePolicy.retentionDays*86400000)}},{upsert:true,runValidators:true,session:dbSession});
@@ -99,16 +100,19 @@ async function heartbeatUnlocked({ workspaceId, userId, deviceId, sessionId, sta
   let session = resolveCurrentSession === true && !takeover
     ? await WorkSession.findOne({workspaceId,user:userId,endedAt:null,status:{$in:['RUNNING','PAUSED']}}).sort({startedAt:-1}).lean()
     : sessionId ? await WorkSession.findOne({ _id: objectId(sessionId), workspaceId, user: userId }).lean() : null;
+  const workBreak = session && session.status !== 'CLOSED' ? await readWorkBreak(workspaceId, session.startedAt) : null;
   if (session) {
     // Agenda-only work needs no project directory or assignment scan. Reuse
     // this request's freshly authorized actor rather than rebuilding the full
     // workspace context a second time on every 15-second heartbeat.
     const agendaOnly=session.segments?.every(segment=>segment.agenda&&!segment.task&&!segment.candidateTask);
-    session = await reconcileSession(session._id,{session,policy,...(agendaOnly?{ownerContext:ctx}:{})});
+    session = await reconcileSession(session._id,{session,policy,workBreak,...(agendaOnly?{ownerContext:ctx}:{})});
   }
+  const scheduledBreak = workBreakState(workBreak, now);
+  const breakActive = scheduledBreak && +scheduledBreak.startsAt <= +now;
   const permitted = policy.enabled && policy.monitoringEnabled && hasMonitoringNotice(device) && can(ctx, 'tracking.log', { workspaceId, user: userId });
-  const canCapture = Boolean(permitted && session?.status === 'RUNNING');
-  const canAutoResume=Boolean(permitted&&canResumeOnActivity(device,session));
+  const canCapture = Boolean(permitted && !breakActive && session?.status === 'RUNNING');
+  const canAutoResume=Boolean(permitted&&!breakActive&&canResumeOnActivity(device,session));
   if(takeover){
     const secret=await TrackingDevice.findOne({_id:device._id,workspaceId,user:userId,revokedAt:null}).select('+noticeAuthorizationHash').lean();
     if(!/^[a-f\d]{64}$/.test(noticeAuthorization||'')||!/^[a-f\d]{64}$/.test(secret?.noticeAuthorizationHash||'')||!timingSafeEqual(Buffer.from(secret.noticeAuthorizationHash,'hex'),createHash('sha256').update(noticeAuthorization).digest()))fail('Switch monitoring from the authorized FlowTask desktop app.',403,'DESKTOP_DEVICE_REQUIRED');
@@ -120,7 +124,7 @@ async function heartbeatUnlocked({ workspaceId, userId, deviceId, sessionId, sta
   const update = { lastSeenAt: now, state: String(state || 'connected').slice(0,40), activeSession: canCapture ? session._id : null };
   update.preferences=workspaceCapturePreferences(policy);
   const startsLease=canCapture&&(String(device.activeSession)!==String(session._id)||!device.leaseUntil||+new Date(device.leaseUntil)<=+now);
-  if(canCapture){update.leaseUntil=new Date(+now+300000);if(startsLease){update.leaseStartedAt=now;update.leaseVersion=(device.leaseVersion||0)+1;}}
+  if(canCapture){update.leaseUntil=new Date(Math.min(+now+300000, scheduledBreak ? +scheduledBreak.startsAt : Infinity));if(startsLease){update.leaseStartedAt=now;update.leaseVersion=(device.leaseVersion||0)+1;}}
   // A new capture lease needs a fresh server/monotonic origin. Reusing an
   // overnight origin can put the first window before its lease after clock
   // adjustments. Historical anchors remain durable for completed offline work.
@@ -230,6 +234,8 @@ async function saveInterval({ workspaceId, userId, deviceId, payload }) {
   if (!['captured','excluded','locked','sleep','unavailable','partial','inactive','activity-only'].includes(payload.coverage) || typeof payload.inputAvailable !== 'boolean' || typeof payload.screenshotAvailable !== 'boolean') fail('Invalid coverage');
   if(intentionalNoImage && payload.screenshotAvailable) fail('This activity interval cannot contain screenshots');
   const covered = overlapSeconds(startedAt, endedAt, session.segments);
+  const workBreak = await readWorkBreak(workspaceId, startedAt);
+  if (firstWorkBreak(workBreak, startedAt, new Date(+endedAt - 1))) fail('Activity overlaps a scheduled workspace break.', 409, 'CAPTURE_DURING_SCHEDULED_BREAK');
   // A final upload after checkout may straddle the close boundary. Preserve
   // the exact screenshot boundaries, flag partial coverage, and never use
   // this evidence to add work duration or to scale unknown counters.

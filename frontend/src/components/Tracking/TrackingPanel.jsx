@@ -30,6 +30,7 @@ import { Button } from '../ui/button';
 import WorkSelectionModal from './WorkSelectionModal';
 import { formatTrackingClock as duration } from '../../utils/duration';
 import useSessionClock from '../../hooks/useSessionClock';
+import { activeScheduledWorkBreak } from '../../../../shared/sessionReadCache.mjs';
 import { monitoringAttention } from '../../../../shared/trackingAttention.mjs';
 
 const TrackingClock = memo(function TrackingClock({ state, kind }) {
@@ -45,6 +46,9 @@ const TrackingClock = memo(function TrackingClock({ state, kind }) {
     )
   );
   const session = state.session;
+  const workDelta = state.scheduledWorkBreak
+    ? Math.min(delta, Math.max(0, (+new Date(state.scheduledWorkBreak.startsAt) - +new Date(state.serverNow)) / 1000))
+    : delta;
   const value =
     kind === 'office'
       ? state.attendance
@@ -60,8 +64,8 @@ const TrackingClock = memo(function TrackingClock({ state, kind }) {
         : 0
       : kind === 'assigned'
       ? (session?.totals.assignedSeconds || 0) +
-        (session?.status === 'RUNNING' && session.segments.at(-1)?.kind === 'TASK' ? delta : 0)
-      : (session?.totals.workSeconds || 0) + (session?.status === 'RUNNING' ? delta : 0);
+        (session?.status === 'RUNNING' && session.segments.at(-1)?.kind === 'TASK' ? workDelta : 0)
+      : (session?.totals.workSeconds || 0) + (session?.status === 'RUNNING' ? workDelta : 0);
   return <span>{duration(value)}</span>;
 });
 
@@ -419,7 +423,11 @@ export default function TrackingPanel({
     : native?.workspaceId === String(state.workspaceId) && native?.userId === state.userId
     ? native
     : null;
-  const busy = sessionAction.busy || Boolean(error) || expired || Boolean(scopedNative?.automaticWorkPending);
+  const scheduledBreak = state.policy.enabled && activeScheduledWorkBreak(state);
+  const breakNotice = scheduledBreak && `Scheduled Break · Until ${new Date(scheduledBreak.endsAt).toLocaleTimeString([], {
+    hour: 'numeric', minute: '2-digit', timeZone: scheduledBreak.timezone
+  })}`;
+  const busy = sessionAction.busy || Boolean(error) || expired || Boolean(scopedNative?.automaticWorkPending) || Boolean(scheduledBreak);
   const capture = isDesktop
     ? scopedNative?.state || device?.state || 'unavailable'
     : device
@@ -534,7 +542,7 @@ export default function TrackingPanel({
     </p>
   );
 
-  const workModal = selecting && state.canTrack && (
+  const workModal = selecting && state.canTrack && !scheduledBreak && (
     <WorkSelectionModal
       currentSession={session}
       linking={selecting === 'link'}
@@ -548,7 +556,7 @@ export default function TrackingPanel({
   if (compact) {
     const running = state.policy.enabled && session?.status === 'RUNNING',
       paused = session?.status === 'PAUSED';
-    const label = !state.policy.enabled ? 'Disabled' : running ? 'Running' : paused ? 'Paused' : 'Enabled';
+    const label = !state.policy.enabled ? 'Disabled' : scheduledBreak ? 'Scheduled Break' : running ? 'Running' : paused ? 'Paused' : 'Enabled';
     const project = latest
       ? latest.attributedProjectName ||
         (latest.agenda ? `${latest.agendaTitle} — ${latest.description}` : latest.projectName)
@@ -666,7 +674,8 @@ export default function TrackingPanel({
             </div>
           )}
           {attendanceDetails && <div className="welcome-attendance-info">{attendanceDetails}</div>}
-          {paused && scopedNative?.autoResumeArmed && <p className="welcome-attendance-info">Work resumes automatically when keyboard or mouse activity returns.</p>}
+          {breakNotice && <p role="status" className="welcome-attendance-info">{breakNotice}. Attendance continues.</p>}
+          {!scheduledBreak && paused && scopedNative?.autoResumeArmed && <p className="welcome-attendance-info">Work resumes automatically when keyboard or mouse activity returns.</p>}
           {latest?.agenda && latest.attributedTask && (
             <p className="welcome-work-provenance">
               Origin: {latest.agendaTitle} — {latest.description} · Task attribution: {latest.attributionIncluded ? 'Yes' : 'No'}
@@ -901,6 +910,7 @@ export default function TrackingPanel({
         </div>
       </div>
 
+      {breakNotice && <p role="status" className="mt-3 text-sm">{breakNotice}. Attendance continues.</p>}
       {/* Bottom Bar: Action buttons & Device connection */}
       <div className="mt-5 pt-4 border-t border-gray-100 dark:border-gray-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         {state.attendance && state.canTrack ? (

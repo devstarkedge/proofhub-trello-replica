@@ -13,7 +13,7 @@
  * before anything here touches the wire.
  */
 import { evaluateAndDeliver, evaluateAndDeliverBulk } from '../../services/notifications/NotificationDecisionEngine.js';
-import { emitToUser, emitToUsers } from '../../realtime/emitters.js';
+import { emitToUser, emitToUsers, emitToWorkspace } from '../../realtime/emitters.js';
 
 const EVENTS = {
   CHECKED_IN: 'attendance:checked-in',
@@ -157,9 +157,9 @@ export function onOfficeHoursOverrideUpdated(affectedUserIds) {
   if (affectedUserIds?.length) emitToUsers(affectedUserIds, EVENTS.OFFICE_HOURS_OVERRIDE_UPDATED, {});
 }
 
-/** A workspace Attendance Policy version just went live (new spec §40) — fanned out to every active member, since a policy change can affect anyone's current/future calculations; still content-free. */
-export function onPolicyUpdated(allMemberUserIds) {
-  if (allMemberUserIds?.length) emitToUsers(allMemberUserIds, EVENTS.POLICY_UPDATED, {});
+/** Notify this workspace's connected clients to refresh when a policy goes live. */
+export function onPolicyUpdated(workspaceId) {
+  emitToWorkspace(EVENTS.POLICY_UPDATED, { workspaceId }, workspaceId);
 }
 
 /** A Location was created/edited/activated/deactivated/deleted — fanned out to every active member, since workspace-wide location availability affects any attendance-eligible person's next check-in. Content-free "refetch" nudge, same as every other config-change hook here. */
