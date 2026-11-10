@@ -11,6 +11,14 @@ import useSidebarLayout from '../hooks/useSidebarLayout';
 import './sidebar.css';
 
 const MainLayout = () => {
+  const { user } = useContext(AuthContext);
+  // Password recovery only needs identity access. Mount the workspace shell
+  // after PrivateRoute resolves an authorized workspace.
+  if (user?.forcePasswordChange) return <Outlet />;
+  return <WorkspaceLayout />;
+};
+
+const WorkspaceLayout = () => {
   useRealtimeSync();
   const { loading, user } = useContext(AuthContext);
   const { isMobile, collapsed, toggleCollapsed } = useSidebarLayout(user?._id || user?.id);
@@ -19,7 +27,7 @@ const MainLayout = () => {
 
   useEffect(() => { setDrawerOpen(false); }, [location.key, isMobile]);
 
-  // MainLayout only ever mounts once PrivateRoute has confirmed both login
+  // WorkspaceLayout only mounts once PrivateRoute has confirmed both login
   // and active-workspace resolution, and remounts fresh on logout->login —
   // exactly the "once per login session" boundary this bootstrap needs.
   useEffect(() => { runAttendanceLocationBootstrapOnce(); }, []);

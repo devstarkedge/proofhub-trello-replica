@@ -1,7 +1,8 @@
 import { useState, useEffect, memo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock, TrendingUp, AlertTriangle, Flame, MoreHorizontal } from 'lucide-react';
+import { Clock, TrendingUp, AlertTriangle, Flame } from 'lucide-react';
 import { createPortal } from 'react-dom';
+import { formatLoggedMinutes, timeSourceLabel } from '../../../../shared/loggedTimeCell.mjs';
 import Database from '../../services/database';
 
 /**
@@ -13,6 +14,8 @@ const DateCellHoverCard = memo(({
   date, 
   isVisible, 
   anchorRef,
+  category,
+  timeRevision,
   onLoad 
 }) => {
   const [data, setData] = useState(null);
@@ -28,23 +31,26 @@ const DateCellHoverCard = memo(({
       return;
     }
 
+    let active = true;
     const fetchData = async () => {
       setLoading(true);
       setError(null);
       try {
-        const response = await Database.getDateHoverDetails(userId, date);
+        const response = await Database.getDateHoverDetails(userId, date, category);
+        if (!active) return;
         setData(response.data);
         onLoad?.(response.data);
       } catch (err) {
         console.error('Failed to fetch hover data:', err);
-        setError(err.message);
+        if (active) setError(err.message);
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
 
     fetchData();
-  }, [isVisible, userId, date, onLoad]);
+    return () => { active = false; };
+  }, [isVisible, userId, date, category, timeRevision, onLoad]);
 
   // Calculate position relative to anchor and viewport
   useEffect(() => {
@@ -101,6 +107,7 @@ const DateCellHoverCard = memo(({
   };
 
   const getStatusBg = () => {
+    if (category === 'agenda') return 'bg-orange-50';
     if (!data) return 'bg-gray-50';
     if (data.status === 'over-logged') return 'bg-gradient-to-r from-orange-50 to-red-50';
     if (data.status === 'under-logged') return 'bg-gradient-to-r from-amber-50 to-yellow-50';
@@ -111,6 +118,7 @@ const DateCellHoverCard = memo(({
     <AnimatePresence>
       <motion.div
         ref={cardRef}
+        role="tooltip"
         initial={{ opacity: 0, y: position.placement === 'bottom' ? -4 : 4, scale: 0.95 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: position.placement === 'bottom' ? -4 : 4, scale: 0.95 }}
@@ -130,7 +138,7 @@ const DateCellHoverCard = memo(({
               <div className="flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-gray-500" />
                 <span className="text-xs font-medium text-gray-600">
-                  {new Date(date).toLocaleDateString('en-US', { 
+                  {new Date(`${date}T12:00:00`).toLocaleDateString('en-US', {
                     weekday: 'short', 
                     month: 'short', 
                     day: 'numeric' 
@@ -139,9 +147,9 @@ const DateCellHoverCard = memo(({
               </div>
               {data && (
                 <div className="flex items-center gap-1">
-                  {getStatusIcon()}
+                  {category !== 'agenda' && getStatusIcon()}
                   <span className="text-sm font-bold text-gray-900">
-                    {Math.floor((data.totalMinutes || 0) / 60)}h {(data.totalMinutes || 0) % 60}m
+                    {formatLoggedMinutes(data.totalMinutes)}
                   </span>
                 </div>
               )}
@@ -156,36 +164,19 @@ const DateCellHoverCard = memo(({
               </div>
             ) : error ? (
               <div className="text-xs text-red-500 text-center py-2">{error}</div>
-            ) : data?.tasks?.length > 0 ? (
+            ) : data?.entries?.length > 0 ? (
               <div className="space-y-2">
-                {data.tasks.map((task, index) => (
-                  <div key={task.taskId || index} className="flex items-start gap-2">
-                    <div 
-                      className="w-2.5 h-2.5 rounded-full mt-1 flex-shrink-0"
-                      style={{ backgroundColor: task.color }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium text-gray-800 truncate">
-                        {task.taskTitle}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {task.formatted}
-                      </div>
-                    </div>
+                {data.entries.map((entry, index) => (
+                  <div key={entry._id || index} className="text-xs text-gray-700">
+                    <div className="font-medium">{entry.title}</div>
+                    <div className="flex items-center gap-2">{formatLoggedMinutes(entry.totalMinutes)} <span className={entry.timeSource === 'AUTO_TRACKED'
+                    ? 'inline-flex rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-800 dark:bg-sky-900 dark:text-sky-100'
+                    : 'text-xs text-gray-500'}>{timeSourceLabel(entry.timeSource)}</span></div>
                   </div>
                 ))}
-                
-                {data.hasMore && (
-                  <div className="flex items-center gap-1.5 pt-1 text-xs text-gray-400">
-                    <MoreHorizontal className="w-3.5 h-3.5" />
-                    <span>+{data.remainingCount} more task{data.remainingCount > 1 ? 's' : ''}</span>
-                  </div>
-                )}
               </div>
             ) : (
-              <div className="text-xs text-gray-400 text-center py-2">
-                No tasks found
-              </div>
+              <div className="text-xs text-gray-500">No time logged</div>
             )}
           </div>
         </div>

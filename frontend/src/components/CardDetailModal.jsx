@@ -256,6 +256,18 @@ const CardDetailModal = React.memo(({
   const [newLoggedMinutes, setNewLoggedMinutes] = useState("");
   const [newLoggedDescription, setNewLoggedDescription] = useState("");
   const [newLoggedDate, setNewLoggedDate] = useState("");
+  const [manualInterval, setManualInterval] = useState(null);
+  const manualSubmission = useRef(null);
+  const [savingManualLog, setSavingManualLog] = useState(false);
+  const manualTimes = target => manualInterval?.target === target
+    ? { startedAt: manualInterval.startedAt, endedAt: manualInterval.endedAt } : {};
+  const showManualInterval = (error, target) => {
+    if (!['MANUAL_TIME_INTERVAL_REQUIRED', 'MANUAL_TIME_OVERLAP'].includes(error.code)) return false;
+    setManualInterval(previous => ({ ...(previous?.target === target ? previous : {}), target,
+      trackedMinutes: error.data?.trackedMinutes ?? previous?.trackedMinutes, message: error.message }));
+    return true;
+  };
+
   const [newBilledHours, setNewBilledHours] = useState("");
   const [newBilledMinutes, setNewBilledMinutes] = useState("");
   const [newBilledDescription, setNewBilledDescription] = useState("");
@@ -486,8 +498,9 @@ const CardDetailModal = React.memo(({
 
     // Setup real-time update listeners
       const handleCardUpdate = (event) => {
-      const { cardId, updates } = event.detail;
-      if (cardId === card._id) {
+      const { cardId, updates, reloadLoggedTime } = event.detail;
+      if (String(cardId) === String(card._id)) {
+        if (reloadLoggedTime) { loadFreshCardData(); return; }
         applyEditableFields(updates);
         mergeAssigneeDetails((updates.assignees || []).filter(a => typeof a === 'object' && a._id));
 
@@ -931,6 +944,7 @@ const CardDetailModal = React.memo(({
   }, [newEstimationHours, newEstimationMinutes, newEstimationReason, newEstimationDate, estimationValidationError, card]);
 
   const handleAddLoggedTime = useCallback(async () => {
+    if (manualSubmission.current?.busy) return;
     // Check validation error first
     if (loggedValidationError) {
       toast.error(loggedValidationError);
@@ -951,14 +965,19 @@ const CardDetailModal = React.memo(({
     const normalized = normalizeTime(hours, minutes);
     const cardId = card._id || card.id;
     
+    const entry = { hours: normalized.hours, minutes: normalized.minutes, description: newLoggedDescription,
+      date: dateObj.toISOString(), dateKey: selectedDate, ...manualTimes('new') };
+    const signature = JSON.stringify([cardId, entry]);
+    const operationId = manualSubmission.current?.signature === signature
+      ? manualSubmission.current.operationId : crypto.randomUUID();
+    manualSubmission.current = { signature, operationId, busy: true };
+    setSavingManualLog(true);
     try {
-      const response = await Database.addCardTimeEntry(cardId, 'logged', {
-        hours: normalized.hours,
-        minutes: normalized.minutes,
-        description: newLoggedDescription,
-        date: dateObj.toISOString()
-      });
-
+      const response = await Database.addCardTimeEntry(cardId, 'logged', { ...entry, operationId });
+      setLoggedTime(previous => previous.some(row => String(row._id) === String(response.data._id))
+        ? previous : [...previous, { ...response.data, id: String(response.data._id) }]);
+      manualSubmission.current = null;
+      setManualInterval(null);
       setNewLoggedHours("");
       setNewLoggedMinutes("");
       setNewLoggedDescription("");
@@ -966,9 +985,12 @@ const CardDetailModal = React.memo(({
       toast.success("Time logged successfully!");
     } catch (error) {
       console.error("Error logging time:", error);
-      toast.error("Failed to log time: " + error.message);
+      if (!showManualInterval(error, 'new')) toast.error("Failed to log time: " + error.message);
+    } finally {
+      if (manualSubmission.current) manualSubmission.current.busy = false;
+      setSavingManualLog(false);
     }
-  }, [newLoggedHours, newLoggedMinutes, newLoggedDescription, newLoggedDate, loggedValidationError, card]);
+  }, [newLoggedHours, newLoggedMinutes, newLoggedDescription, newLoggedDate, loggedValidationError, card, manualInterval]);
 
   const handleAddBilledTime = useCallback(async () => {
     // Check validation error first
@@ -1037,7 +1059,7 @@ const CardDetailModal = React.memo(({
     setEditLoggedMinutes(entry.minutes.toString());
     setEditLoggedDescription(entry.description);
     // Set date in YYYY-MM-DD format
-    const entryDate = entry.date ? new Date(entry.date).toISOString().split('T')[0] : getTodayDate();
+    const entryDate = entry.workDateKey || (entry.date ? new Date(entry.date).toISOString().split('T')[0] : getTodayDate());
     setEditLoggedDate(entryDate);
   }, [userOwnsTimeEntry]);
 
@@ -1116,27 +1138,24 @@ const CardDetailModal = React.memo(({
        const selectedDate = editLoggedDate || getTodayDate();
        const dateObj = new Date(selectedDate + 'T12:00:00.000Z');
 
-       await Database.updateCardTimeEntry(cardId, entryId, 'logged', {
+       const response = await Database.updateCardTimeEntry(cardId, entryId, 'logged', {
          hours: normalized.hours,
          minutes: normalized.minutes,
          description: editLoggedDescription,
-         date: dateObj.toISOString()
+         date: dateObj.toISOString(), dateKey: selectedDate, ...manualTimes(id)
        });
 
         setLoggedTime(prev =>
           prev.map((entry) =>
             entry.id === id
               ? {
-                  ...entry,
-                  hours: normalized.hours,
-                  minutes: normalized.minutes,
-                  description: editLoggedDescription,
-                  date: dateObj.toISOString()
+                  ...entry, ...response.data
                 }
               : entry
           )
         );
         setEditingLogged(null);
+        setManualInterval(null);
         setEditLoggedHours("");
         setEditLoggedMinutes("");
         setEditLoggedDescription("");
@@ -1144,9 +1163,9 @@ const CardDetailModal = React.memo(({
         toast.success("Logged time updated successfully!");
     } catch (error) {
        console.error("Error updating logged time:", error);
-       toast.error("Failed to update: " + error.message);
+       if (!showManualInterval(error, id)) toast.error("Failed to update: " + error.message);
     }
-  }, [editLoggedHours, editLoggedMinutes, editLoggedDescription, editLoggedDate, card, loggedTime]);
+  }, [editLoggedHours, editLoggedMinutes, editLoggedDescription, editLoggedDate, card, loggedTime, manualInterval]);
 
   const cancelEstimationEdit = useCallback(() => {
     setEditingEstimation(null);
@@ -2008,6 +2027,9 @@ const CardDetailModal = React.memo(({
                 <TimeTrackingSection
                   estimationEntries={estimationEntries}
                   loggedTime={loggedTime}
+                  manualInterval={manualInterval}
+                  onManualIntervalChange={patch => setManualInterval(value => ({ ...value, ...patch }))}
+                  savingManualLog={savingManualLog}
                   billedTime={billedTime}
                   newEstimationHours={newEstimationHours}
                   newEstimationMinutes={newEstimationMinutes}

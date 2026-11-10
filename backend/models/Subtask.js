@@ -119,6 +119,7 @@ const subtaskSchema = new mongoose.Schema({
     date: { type: Date, default: Date.now }
   }, { _id: true })],
   loggedTime: [new mongoose.Schema({
+    timeSource: { type: String, enum: ['MANUAL'], default: 'MANUAL' },
     hours: { type: Number, required: true, min: 0 },
     minutes: { type: Number, required: true, min: 0, max: 59 },
     description: { type: String, trim: true, maxlength: 500 },

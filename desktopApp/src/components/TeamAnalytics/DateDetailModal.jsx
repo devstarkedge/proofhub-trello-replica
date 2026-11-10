@@ -1,11 +1,12 @@
 import { useState, useEffect, memo, useCallback, lazy, Suspense } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Clock, Calendar, ChevronDown, ChevronRight,
   AlertTriangle, Flame, CheckCircle2, Folder, FileText,
   Layers, ExternalLink
 } from 'lucide-react';
+import { formatLoggedMinutes, timeSourceLabel } from '../../../../shared/loggedTimeCell.mjs';
 import Database from '../../services/database';
 
 // Lazy load detail modals
@@ -20,7 +21,8 @@ const SubtaskNanoModal = lazy(() => import('../SubtaskNanoModal'));
 const DateDetailModal = memo(({ 
   userId, 
   date, 
-  isOpen, 
+  isOpen,
+  timeRevision,
   onClose,
   userName,
   userAvatar
@@ -38,6 +40,7 @@ const DateDetailModal = memo(({
   const [drilldownLoading, setDrilldownLoading] = useState(false);
 
   const navigate = useNavigate();
+  const { pathname } = useLocation();
 
   // Handlers to open detail modals by fetching full data first
   const handleOpenCard = (taskItem) => {
@@ -47,8 +50,9 @@ const DateDetailModal = memo(({
     const projectId = task.projectId;
     const taskId = task._id;
     
-    if (departmentId && projectId && taskId) {
-      navigate(`/workflow/${departmentId}/${projectId}/${taskId}`);
+    if (task.canNavigate && departmentId && projectId && taskId) {
+      const prefix = pathname.split('/list-view/teams')[0];
+      navigate(`${prefix}/workflow/${departmentId}/${projectId}/${taskId}`);
     }
   };
 
@@ -86,11 +90,13 @@ const DateDetailModal = memo(({
       return;
     }
 
+    let active = true;
     const fetchData = async () => {
       setLoading(true);
       setError(null);
       try {
         const response = await Database.getDateDetailedLogs(userId, date);
+        if (!active) return;
         setData(response.data);
         // Auto-expand first task
         if (response.data?.hierarchy?.length > 0) {
@@ -98,14 +104,15 @@ const DateDetailModal = memo(({
         }
       } catch (err) {
         console.error('Failed to fetch detailed logs:', err);
-        setError(err.message);
+        if (active) setError(err.message);
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
 
     fetchData();
-  }, [isOpen, userId, date]);
+    return () => { active = false; };
+  }, [isOpen, userId, date, timeRevision]);
 
   // Toggle expand/collapse
   const toggleTask = useCallback((taskId) => {
@@ -194,6 +201,9 @@ const DateDetailModal = memo(({
           `}>
             {source}
           </span>
+          <span className={entry.timeSource === 'AUTO_TRACKED'
+                    ? 'inline-flex rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-800 dark:bg-sky-900 dark:text-sky-100'
+                    : 'text-xs text-gray-500'}>{timeSourceLabel(entry.timeSource)}</span>
         </div>
         {entry.description && (
           <p className="text-xs text-gray-500 line-clamp-2">{entry.description}</p>
@@ -341,7 +351,7 @@ const DateDetailModal = memo(({
                             <span className="font-medium text-gray-900 truncate">
                               {taskItem.task.title}
                             </span>
-                            <button
+                            {taskItem.task.canNavigate && <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleOpenCard(taskItem);
@@ -351,14 +361,14 @@ const DateDetailModal = memo(({
                               disabled={drilldownLoading}
                             >
                               <ExternalLink className="w-3.5 h-3.5 text-blue-500" />
-                            </button>
+                            </button>}
                           </div>
                           <div className="text-xs text-gray-500 mt-0.5">
                             {taskItem.task.projectName}
                           </div>
                         </div>
                         <div className="text-sm font-semibold text-gray-700">
-                          {Math.floor(taskItem.totalMinutes / 60)}h {taskItem.totalMinutes % 60}m
+                          {formatLoggedMinutes(taskItem.totalMinutes)}
                         </div>
                       </div>
 
@@ -398,7 +408,7 @@ const DateDetailModal = memo(({
                                     <span className="flex-1 text-sm font-medium text-gray-800 truncate">
                                       {subtaskItem.subtask.title}
                                     </span>
-                                    <button
+                                    {taskItem.task.canNavigate && <button
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         handleOpenSubtask(subtaskItem.subtask._id);
@@ -408,9 +418,9 @@ const DateDetailModal = memo(({
                                       disabled={drilldownLoading}
                                     >
                                       <ExternalLink className="w-3 h-3 text-purple-500" />
-                                    </button>
+                                    </button>}
                                     <span className="text-xs font-medium text-gray-600">
-                                      {Math.floor(subtaskItem.totalMinutes / 60)}h {subtaskItem.totalMinutes % 60}m
+                                      {formatLoggedMinutes(subtaskItem.totalMinutes)}
                                     </span>
                                   </div>
 
@@ -435,16 +445,16 @@ const DateDetailModal = memo(({
                                                 <span className="flex-1 text-xs font-medium text-gray-700 truncate">
                                                   {nanoItem.nano.title}
                                                 </span>
-                                                <button
+                                                {taskItem.task.canNavigate && <button
                                                   onClick={() => handleOpenNano(nanoItem.nano._id)}
                                                   className="p-1 hover:bg-pink-100 rounded transition-colors"
                                                   title="Open neno details"
                                                   disabled={drilldownLoading}
                                                 >
                                                   <ExternalLink className="w-3 h-3 text-pink-500" />
-                                                </button>
+                                                </button>}
                                                 <span className="text-xs font-medium text-gray-600">
-                                                  {Math.floor(nanoItem.totalMinutes / 60)}h {nanoItem.totalMinutes % 60}m
+                                                  {formatLoggedMinutes(nanoItem.totalMinutes)}
                                                 </span>
                                               </div>
                                               {nanoItem.entries?.length > 0 && (

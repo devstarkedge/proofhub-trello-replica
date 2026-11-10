@@ -161,9 +161,9 @@ export const validateNotFutureDate = (dateString) => {
  */
 export const calculateTotalMinutes = (entries = []) => {
   return (entries || []).reduce((total, entry) => {
-    const hours = parseInt(entry?.hours || 0, 10);
-    const minutes = parseInt(entry?.minutes || 0, 10);
-    return total + (hours * 60) + minutes;
+    const hours = Number(entry?.hours || 0) || 0;
+    const minutes = Number(entry?.minutes || 0) || 0;
+    return total + (entry?.durationMs != null ? entry.durationMs / 60000 : hours * 60 + minutes);
   }, 0);
 };
 
@@ -173,11 +173,11 @@ export const calculateTotalMinutes = (entries = []) => {
  * @returns {{ hours: number, minutes: number, totalMinutes: number }}
  */
 export const buildDurationParts = (totalMinutes = 0) => {
-  const normalizedMinutes = parseInt(totalMinutes || 0, 10);
+  const normalizedMinutes = Math.round(totalMinutes || 0);
   return {
     hours: Math.floor(normalizedMinutes / 60),
     minutes: normalizedMinutes % 60,
-    totalMinutes: normalizedMinutes,
+    totalMinutes,
   };
 };
 
@@ -237,7 +237,7 @@ export const processTimeEntriesWithOwnership = (incomingEntries, existingEntries
   existingMap.forEach((entry, id) => {
     if (!incomingIds.has(id)) {
       const entryUserId = extractUserId(entry.user);
-      if (entryUserId !== currentUser.id.toString()) {
+      if (entryUserId !== currentUser.id.toString() || entry.timeSource === 'AUTO_TRACKED') {
         // Other user's entry was removed - this is unauthorized
         unauthorizedDeletions.push(entry);
       }
@@ -275,6 +275,11 @@ export const processTimeEntriesWithOwnership = (incomingEntries, existingEntries
   });
 
   const processedEntries = [];
+  const handledAutoEntries = new Set();
+  const metadata = entry => entryType === 'logged' ? {
+    timeSource: entry.timeSource || 'MANUAL', manualOperationId: entry.manualOperationId,
+    startedAt: entry.startedAt, endedAt: entry.endedAt, workDateKey: entry.workDateKey
+  } : {};
 
   // Process incoming entries
   (incomingEntries || []).forEach(entry => {
@@ -283,6 +288,11 @@ export const processTimeEntriesWithOwnership = (incomingEntries, existingEntries
 
     if (isExistingEntry) {
       const originalEntry = existingMap.get(entryId);
+      if (originalEntry.timeSource === 'AUTO_TRACKED') {
+        if (!handledAutoEntries.has(entryId)) processedEntries.push(originalEntry);
+        handledAutoEntries.add(entryId);
+        return;
+      }
       const originalUserId = extractUserId(originalEntry.user);
       const isOwner = originalUserId === currentUser.id.toString();
 
@@ -297,7 +307,8 @@ export const processTimeEntriesWithOwnership = (incomingEntries, existingEntries
           // CRITICAL: Preserve original ownership
           user: originalEntry.user,
           userName: originalEntry.userName,
-          date: originalEntry.date // Preserve original date
+          date: originalEntry.date, // Preserve original date
+          ...metadata(originalEntry)
         });
       } else {
         // Non-owner: Entry is read-only, preserve exactly as-is
@@ -309,7 +320,8 @@ export const processTimeEntriesWithOwnership = (incomingEntries, existingEntries
           description: originalEntry.description,
           user: originalEntry.user,
           userName: originalEntry.userName,
-          date: originalEntry.date
+          date: originalEntry.date,
+          ...metadata(originalEntry)
         });
       }
     } else {
@@ -356,13 +368,18 @@ export const processTimeEntriesWithOwnership = (incomingEntries, existingEntries
         // CRITICAL: New entries always get authenticated user
         user: currentUser.id,
         userName: currentUser.name,
-        date: entry.date || new Date()
+        date: entry.date || new Date(),
+        ...metadata({})
       });
     }
   });
 
   // Add back other users' entries that were (attempted to be) deleted
   unauthorizedDeletions.forEach(entry => {
+    if (entry.timeSource === 'AUTO_TRACKED') {
+      processedEntries.push(entry);
+      return;
+    }
     processedEntries.push({
       _id: entry._id,
       hours: entry.hours,
@@ -371,7 +388,8 @@ export const processTimeEntriesWithOwnership = (incomingEntries, existingEntries
       description: entry.description,
       user: entry.user,
       userName: entry.userName,
-      date: entry.date
+      date: entry.date,
+      ...metadata(entry)
     });
   });
 

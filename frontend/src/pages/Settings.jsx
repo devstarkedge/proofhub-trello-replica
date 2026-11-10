@@ -1,7 +1,8 @@
 import { useState, useEffect, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'react-toastify';
-import { Bell, Eye, EyeOff, Lock, Save, Loader2 } from 'lucide-react';
+import { Bell, Eye, EyeOff, Lightbulb, Lock, Save, Loader2 } from 'lucide-react';
 import api from '../services/api';
 import AuthContext from '../context/AuthContext';
 import NotificationContext from '../context/NotificationContext';
@@ -11,7 +12,9 @@ import ChatIntegrationSettings from '../components/ChatIntegrationSettings';
 import { validateField, validatePasswordMatch, validateForm } from '../utils/validationUtils';
 
 const Settings = () => {
-  const { user, setUser } = useContext(AuthContext);
+  const { user, setUser, logoutUser } = useContext(AuthContext);
+  const navigate = useNavigate();
+  const passwordChangeRequired = user?.forcePasswordChange === true;
   const { pushSupported, pushEnabled, enablePushNotifications, disablePushNotifications } = useContext(NotificationContext);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -38,8 +41,8 @@ const Settings = () => {
   });
 
   useEffect(() => {
-    fetchSettings();
-  }, []);
+    if (!passwordChangeRequired) fetchSettings();
+  }, [passwordChangeRequired]);
 
   // Keep settingsData in sync if user context changes from outside (e.g., global push modal)
   useEffect(() => {
@@ -72,6 +75,10 @@ const Settings = () => {
   const validatePasswordForm = () => {
     const fieldsToValidate = ['currentPassword', 'newPassword', 'confirmPassword'];
     const { isValid, errors: validationErrors } = validateForm(settingsData, fieldsToValidate);
+
+    if (passwordChangeRequired && !settingsData.newPassword.trim()) {
+      validationErrors.newPassword = 'Please enter a new password';
+    }
 
     // Additional validation for password matching
     if (settingsData.newPassword && settingsData.confirmPassword) {
@@ -126,9 +133,7 @@ const Settings = () => {
 
     setSaving(true);
     try {
-      const updateData = {
-        notifications: settingsData.notifications
-      };
+      const updateData = passwordChangeRequired ? {} : { notifications: settingsData.notifications };
 
       if (settingsData.newPassword) {
         updateData.currentPassword = settingsData.currentPassword;
@@ -149,7 +154,12 @@ const Settings = () => {
         confirmPassword: ''
       }));
 
-      toast.success('Settings updated successfully!');
+      if (passwordChangeRequired) {
+        toast.success('Password updated successfully!');
+        navigate('/', { replace: true });
+      } else {
+        toast.success('Settings updated successfully!');
+      }
     } catch (error) {
       console.error('Settings update error:', error);
       if (error.response?.data?.message) {
@@ -166,7 +176,7 @@ const Settings = () => {
     setShowPasswords(prev => ({ ...prev, [field]: !prev[field] }));
   };
 
-  if (loading) {
+  if (loading && !passwordChangeRequired) {
     return (
       <div className="min-h-full bg-gray-50">
         <div className="flex items-center justify-center min-h-[calc(100vh-64px)]">
@@ -197,7 +207,7 @@ const Settings = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.1 }}
-              className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+              className={`bg-white rounded-xl shadow-sm border p-6 ${passwordChangeRequired ? 'border-amber-400 ring-2 ring-amber-100' : 'border-gray-200'}`}
             >
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
@@ -208,6 +218,13 @@ const Settings = () => {
                   <p className="text-sm text-gray-600">Update your password to keep your account secure</p>
                 </div>
               </div>
+
+              {passwordChangeRequired && (
+                <p className="mb-6 flex items-start gap-2 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  <Lightbulb aria-hidden="true" className="mt-0.5 shrink-0 text-amber-700" size={18} />
+                  Use the password you signed in with as your current password, then choose a new one to continue to your workspace.
+                </p>
+              )}
 
               {/* 
                 Hack to prevent browser autofill:
@@ -321,7 +338,7 @@ const Settings = () => {
             </motion.div>
 
             {/* Notification Settings */}
-            <motion.div
+            {!passwordChangeRequired && <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.2 }}
@@ -411,35 +428,48 @@ const Settings = () => {
                   </motion.button>
                 </div>
               </div>
-            </motion.div>
+            </motion.div>}
 
             {/* Slack Integration Settings */}
-            <motion.div
+            {!passwordChangeRequired && <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.3 }}
               className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
             >
               <SlackSettings />
-            </motion.div>
+            </motion.div>}
 
             {/* Chat Integration Settings */}
-            <motion.div
+            {!passwordChangeRequired && <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.35 }}
               className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
             >
               <ChatIntegrationSettings />
-            </motion.div>
+            </motion.div>}
 
             {/* Save Button */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.5 }}
-              className="flex justify-end"
+              className="flex items-center justify-end gap-4"
             >
+              {passwordChangeRequired && (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => {
+                    logoutUser();
+                    navigate('/login', { replace: true });
+                  }}
+                  className="text-sm font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50"
+                >
+                  Sign out
+                </button>
+              )}
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
@@ -453,7 +483,7 @@ const Settings = () => {
                 ) : (
                   <Save size={20} />
                 )}
-                {saving ? 'Saving...' : 'Save All Settings'}
+                {saving ? 'Saving...' : passwordChangeRequired ? 'Update Password' : 'Save All Settings'}
               </motion.button>
             </motion.div>
           </div>

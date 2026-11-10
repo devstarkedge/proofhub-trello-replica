@@ -12,18 +12,25 @@ const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 // per board/user. Date filtering precedes grouping; Mongo may spill to disk.
 export async function aggregateFinanceTime(Model, projectIds, filters, { cards = false } = {}) {
   if (!projectIds.length) return [];
-  const match = { workspaceId: oid(getActiveWorkspaceId()), board: { $in: projectIds.map(oid) } };
+  const boards = projectIds.map(oid);
+  const match = { workspaceId: oid(getActiveWorkspaceId()), ...(cards ? {
+    $or: [{ board: { $in: boards } }, { 'loggedTime.trackedProject': { $in: boards } }]
+  } : { board: { $in: boards } }) };
   if (cards) match.isArchived = { $ne: true };
   const bounded = Boolean(filters.startDate || filters.endDate);
   const pipeline = [
     { $match: match },
     { $project: { board: 1, entries: { $concatArrays: [
       { $map: { input: { $ifNull: ['$billedTime', []] }, as: 'e', in: { user: '$$e.user', date: '$$e.date', hours: '$$e.hours', minutes: '$$e.minutes', kind: 'billed' } } },
-      { $map: { input: { $ifNull: ['$loggedTime', []] }, as: 'e', in: { user: '$$e.user', date: '$$e.date', hours: '$$e.hours', minutes: '$$e.minutes', kind: 'logged' } } }
+      { $map: { input: { $ifNull: ['$loggedTime', []] }, as: 'e', in: { user: '$$e.user', date: '$$e.date',
+        hours: '$$e.hours', minutes: '$$e.minutes', kind: 'logged', day: '$$e.workDateKey',
+        board: { $cond: [{ $eq: ['$$e.timeSource', 'AUTO_TRACKED'] }, '$$e.trackedProject', '$board'] } } } }
     ] } } },
     { $unwind: '$entries' },
-    { $set: { day: { $dateToString: { date: { $convert: { input: '$entries.date', to: 'date', onError: null, onNull: null } }, format: '%Y-%m-%d', timezone, onNull: '' } }, minutes: { $add: [{ $multiply: [{ $convert: { input: '$entries.hours', to: 'double', onError: 0, onNull: 0 } }, 60] }, { $convert: { input: '$entries.minutes', to: 'double', onError: 0, onNull: 0 } }] } } },
-    { $match: { day: { $ne: '', ...(filters.startDate ? { $gte: filters.startDate } : {}), ...(filters.endDate ? { $lte: filters.endDate } : {}) }, minutes: { $gt: 0 }, ...(filters.userId ? { 'entries.user': oid(filters.userId) } : {}) } },
+    { $set: { board: { $ifNull: ['$entries.board', '$board'] },
+      day: { $ifNull: ['$entries.day', { $dateToString: { date: { $convert: { input: '$entries.date', to: 'date', onError: null, onNull: null } }, format: '%Y-%m-%d', timezone, onNull: '' } }] },
+      minutes: { $add: [{ $multiply: [{ $convert: { input: '$entries.hours', to: 'double', onError: 0, onNull: 0 } }, 60] }, { $convert: { input: '$entries.minutes', to: 'double', onError: 0, onNull: 0 } }] } } },
+    { $match: { board: { $in: boards }, day: { $ne: '', ...(filters.startDate ? { $gte: filters.startDate } : {}), ...(filters.endDate ? { $lte: filters.endDate } : {}) }, minutes: { $gt: 0 }, ...(filters.userId ? { 'entries.user': oid(filters.userId) } : {}) } },
     { $group: { _id: { board: '$board', user: '$entries.user', kind: '$entries.kind', day: bounded ? '$day' : null }, minutes: { $sum: '$minutes' } } },
     { $limit: 100001 }
   ];

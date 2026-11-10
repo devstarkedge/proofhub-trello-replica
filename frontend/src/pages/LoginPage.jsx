@@ -91,7 +91,7 @@ const LoginPage = () => {
       }
 
       // Resolve an authorized workspace before opening Home for this account.
-      const workspaces = (user.role === 'admin' || user.isVerified)
+      const workspaces = !user.forcePasswordChange && (user.role === 'admin' || user.isVerified)
         ? await loadWorkspaces()
         : [];
 

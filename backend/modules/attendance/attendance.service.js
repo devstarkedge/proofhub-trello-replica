@@ -2,8 +2,9 @@ import mongoose from 'mongoose';
 import { enqueueAttendanceReport, requestAttendanceReportDelivery } from '../../services/chat/attendanceReporting.service.js';
 import AuditLog from '../../models/AuditLog.js';
 import { evaluateCheckout, assertCheckoutConfirmation } from './attendanceCheckout.service.js';
-import { enqueueAttendanceEvent } from './attendanceEvents.service.js';
+import { enqueueAttendanceEvent, processAttendanceEvents } from './attendanceEvents.service.js';
 import { validateSelection, startWithAttendance, finalizeAttendanceWork } from '../tracking/tracking.service.js';
+import { finalizeLoggedTime } from '../tracking/tracking.loggedTime.js';
 import AttendanceSession from './attendanceSession.model.js';
 import AttendanceDay from './attendanceDay.model.js';
 import AttendanceLocation from './attendanceLocation.model.js';
@@ -155,6 +156,7 @@ export async function computeAndUpsertDay({ workspaceId, userId, workDateKey, el
         policyVersion: policyVersion._id, shift: shift?._id || null, workMode: status.workMode,
         firstCheckInAt: status.firstCheckInAt, lastCheckOutAt: status.lastCheckOutAt,
         workedMinutes: status.workedMinutes, shiftExpectedMinutes: status.shiftExpectedMinutes,
+        expectedWorkingMinutes: resolveExpectedWorkingMinutes({ workMode: status.workMode, officeHours, calendar, shift, leave }),
         lateMinutes: status.lateMinutes, earlyExitMinutes: status.earlyExitMinutes,
         effectiveOfficeHoursStart: status.effectiveOfficeHoursStart, effectiveOfficeHoursEnd: status.effectiveOfficeHoursEnd,
         effectiveOfficeHoursGraceMinutes: status.effectiveOfficeHoursGraceMinutes, effectiveOfficeHoursSource: status.effectiveOfficeHoursSource,
@@ -516,6 +518,13 @@ export async function checkOut({ workspaceId, userId, membership, workspace, gps
       if(!closed)throw codedError('Attendance changed concurrently. Retry checkout.',409,'ATTENDANCE_CHANGED');
       const {day}=await computeAndUpsertDay({...evaluation.context,dbSession});
       await finalizeAttendanceWork(closed,dbSession,evaluation.context.workBreak);
+      const loggedTime = await finalizeLoggedTime(closed,timezone,dbSession);
+      if (loggedTime && (loggedTime.posted || loggedTime.pendingReview || loggedTime.unavailable)) {
+        summary.loggedTime = loggedTime;
+        await AttendanceSession.updateOne({ _id: closed._id, workspaceId, user: userId },
+          { $set: { checkoutSummary: summary } }, { session: dbSession });
+        closed.checkoutSummary = summary;
+      }
       await enqueueAttendanceReport({ action: 'checkout', attendance: closed, at: closed.checkOutAt, day, dbSession });
       await AuditLog.create([{workspace:workspaceId,actor:userId,actorName,actorRole:membership.role,action:'ATTENDANCE_CHECKED_OUT',category:'attendance_management',targetType:'AttendanceSession',targetId:closed._id,
         resourceLabel:`Attendance check-out: ${actorName||'Employee'}`,summary:`${actorName||'Employee'} checked out`,changes:{after:{workDateKey:closed.workDateKey,checkOutAt:serverNow,policyVersion:policyVersion._id,outcome:summary.outcome,approvedLeaveIds:summary.approvedLeaves.map(l=>l.requestId)}}}],{session:dbSession});
@@ -531,5 +540,8 @@ export async function checkOut({ workspaceId, userId, membership, workspace, gps
   // Observer authorization and transport retries must not hold the response.
   if (!result.replay) requestAttendanceReportDelivery(workspaceId);
   if(!result.replay)try{attendanceHooks.onCheckedOut(userId,result.session,result.attendanceDay,[]);}catch{/* durable retry */}
+  if (!result.replay && result.summary?.workSessionIds?.length) {
+    void processAttendanceEvents(workspaceId, { key: `checkout-${result.session._id}` }).catch(() => {});
+  }
   return result;
 }

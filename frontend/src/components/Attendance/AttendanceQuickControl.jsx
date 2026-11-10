@@ -201,6 +201,8 @@ const AttendanceQuickControl = () => {
     operationRef.current='submitting';
     try {
       return await runAction(attendanceApi.checkOut,'Checked out',{attendanceSessionId:preview.attendanceSessionId,operationId,previewToken:preview.previewToken},{propagateError:true,onResponse:async response=>{
+        const reviewCount = response.summary?.loggedTime?.pendingReview;
+        if (reviewCount) toast.info(`${reviewCount} tracked time ${reviewCount === 1 ? 'entry needs' : 'entries need'} review in the task’s Logged Time.`);
         const stopped=await finalizeDesktopCapture({attendanceSessionId:String(response.data._id),workSessionIds:response.summary?.workSessionIds||preview.workSessionIds,cutoffAt:response.data.checkOutAt});
         if(!stopped)toast.warning('Attendance is checked out. Desktop monitoring stop is awaiting acknowledgment; saved screenshots can still sync. Restart an outdated desktop app.');
       }});

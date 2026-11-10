@@ -12,7 +12,6 @@ import {
   FolderKanban,
   ChevronDown,
   Layers,
-  History,
   AlertCircle,
   Info,
   Loader2,
@@ -26,7 +25,6 @@ import {
 } from '../../services/trackingApi';
 import useWorkSelectionData from '../../hooks/useWorkSelectionData';
 import {invalidateWorkSelections,workSelectionStore} from '../../services/workSelectionState';
-import { formatTrackingClock } from '../../utils/duration';
 
 export default function WorkSelectionDialog({
   onClose,
@@ -56,7 +54,6 @@ export default function WorkSelectionDialog({
   const [description, setDescription] = useState('');
   const [agendaTitle, setAgendaTitle] = useState('');
   const [creatingAgenda, setCreatingAgenda] = useState(false);
-  const [includePrevious, setIncludePrevious] = useState(null);
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
@@ -90,25 +87,7 @@ export default function WorkSelectionDialog({
   const loadMore=async(store)=>{if(moreBusy)return;setMoreBusy(true);try{await store.loadMore();}catch(e){setError(errorMessage(e));}finally{setMoreBusy(false);}};
   const project = options.projects.find((p) => p._id === projectId);
   const last = currentSession?.segments.at(-1);
-  const needsDecision = linking || Boolean(last?.agenda && mode !== 'INDIVIDUAL');
-
-  let rangeStart = last?.startedAt;
-  let rangeSeconds = last
-    ? Math.max(0, ((last.endedAt ? +new Date(last.endedAt) : Date.now()) - +new Date(last.startedAt)) / 1000)
-    : 0;
-
-  for (let i = (currentSession?.segments.length || 0) - 2; i >= 0; i--) {
-    const s = currentSession.segments[i];
-    if (
-      !last?.agenda ||
-      s.agenda !== last.agenda ||
-      s.description !== last.description ||
-      +new Date(s.endedAt) !== +new Date(rangeStart)
-    )
-      break;
-    rangeSeconds += (+new Date(s.endedAt) - +new Date(s.startedAt)) / 1000;
-    rangeStart = s.startedAt;
-  }
+  const linkingAgenda = last?.kind === 'INDIVIDUAL' && Boolean(last.agenda) && mode !== 'INDIVIDUAL';
 
   const valid =
     mode === 'INDIVIDUAL'
@@ -172,7 +151,6 @@ export default function WorkSelectionDialog({
         }
       }
 
-      if (needsDecision) selection.includePrevious = includePrevious;
       await submit(selection);
     } catch (e) {
       if (!mounted.current) return;
@@ -609,63 +587,9 @@ export default function WorkSelectionDialog({
               {index.value?.nextProjectCursor&&mode!=='INDIVIDUAL'&&<button type="button" className="text-xs underline" disabled={moreBusy} onClick={()=>loadMore(index.store)}>{moreBusy?'Loading…':'Load more projects'}</button>}
               {projectData.value?.nextTaskCursor&&mode==='ASSIGNED'&&<button type="button" className="text-xs underline" disabled={moreBusy} onClick={()=>loadMore(projectData.store)}>{moreBusy?'Loading…':'Load more tasks'}</button>}
               {(index.error||projectData.error||agendaData.error)&&<div role="alert" className="text-xs text-red-600">{index.error||projectData.error||agendaData.error}<button type="button" className="ml-2 underline" onClick={()=>{index.store.reload();if(projectId)projectData.store.reload();agendaData.store.reload();}}>Retry selections</button></div>}
-              {/* Transition Decision Section */}
-              {needsDecision && (
-                <div className="rounded-xl border border-indigo-100 dark:border-indigo-900/40 bg-indigo-50/50 dark:bg-indigo-950/20 p-4 space-y-3">
-                  <div className="flex items-start gap-2.5">
-                    <History className="w-4 h-4 text-indigo-600 dark:text-indigo-400 mt-0.5 flex-shrink-0" />
-                    <div className="flex-1">
-                      <h4 className="text-xs font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider">
-                        Include Previous Work?
-                      </h4>
-                      <p className="text-xs text-gray-700 dark:text-gray-300 mt-0.5">
-                        <span className="font-semibold">{last?.agendaTitle || 'Individual work'}</span>{' '}
-                        — {last?.description || last?.projectName}
-                      </p>
-                      <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
-                        Affected period:{' '}
-                        {rangeStart && new Date(rangeStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{' '}
-                        to now ·{' '}
-                        <span className="font-semibold text-gray-700 dark:text-gray-300">
-                          {formatTrackingClock(rangeSeconds)}
-                        </span>
-                        . Breaks remain separate.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                    {[
-                      [true, 'Yes — Include Previous Work', 'Attach tracked time & screenshots to this task'],
-                      [false, 'No — Keep Separate', 'Leave previous tracking on individual agenda']
-                    ].map(([value, label, sub]) => {
-                      const isChosen = includePrevious === value;
-                      return (
-                        <label
-                          key={label}
-                          className={`flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${
-                            isChosen
-                              ? 'border-indigo-500 bg-white dark:bg-gray-900 shadow-sm ring-1 ring-indigo-500/30'
-                              : 'border-gray-200 dark:border-gray-700 bg-white/60 dark:bg-gray-800/40 hover:bg-white dark:hover:bg-gray-800'
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="attribution"
-                            className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
-                            checked={isChosen}
-                            onChange={() => setIncludePrevious(value)}
-                          />
-                          <div className="flex-1 text-xs">
-                            <div className="font-semibold text-gray-900 dark:text-gray-100">{label}</div>
-                            <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{sub}</div>
-                          </div>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+              {linkingAgenda && <p className="text-xs text-gray-600 dark:text-gray-300">
+                Earlier time stays with the agenda. Work from this point goes to the selected task.
+              </p>}
             </>
           )}
 
@@ -708,18 +632,18 @@ export default function WorkSelectionDialog({
             {!attendanceOnly && (
               <button
                 type="button"
-                disabled={busy || !valid || (needsDecision && includePrevious === null)}
+                disabled={busy || !valid}
                 onClick={() => confirm()}
-                style={(!busy && valid && (!needsDecision || includePrevious !== null)) ? { color: '#ffffff' } : undefined}
+                style={(!busy && valid) ? { color: '#ffffff' } : undefined}
                 className="px-5 py-2.5 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white shadow-md shadow-blue-500/20 transition-all disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:text-gray-400 dark:disabled:text-gray-500 disabled:border disabled:border-gray-200 dark:disabled:border-gray-700 disabled:cursor-not-allowed disabled:shadow-none cursor-pointer flex items-center gap-2"
               >
                 {busy && <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />}
-                <span style={(!busy && valid && (!needsDecision || includePrevious !== null)) ? { color: '#ffffff' } : undefined}>
+                <span style={(!busy && valid) ? { color: '#ffffff' } : undefined}>
                   {busy
                     ? 'Saving…'
                     : checkingIn
                     ? 'Check In and Start Tracking'
-                    : needsDecision
+                    : linkingAgenda
                     ? 'Confirm Transition'
                     : 'Start Tracking'}
                 </span>

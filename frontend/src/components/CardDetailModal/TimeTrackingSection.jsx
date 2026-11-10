@@ -2,11 +2,14 @@ import { useState, useContext, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Timer, Target, PlayCircle, AlertCircle, Pencil, Trash2, User, Clock, X, DollarSign, Calendar, Lock, Info, Plus } from "lucide-react";
 import AuthContext from "../../context/AuthContext";
+import LoggedTimeReviews from "./LoggedTimeReviews";
+import { formatLoggedMinutes, timeSourceLabel } from "../../../../shared/loggedTimeCell.mjs";
 import MilestoneApprovalPanel from "./MilestoneApprovalPanel";
 
 const TimeTrackingSection = ({
   estimationEntries = [],
   loggedTime = [],
+  manualInterval, onManualIntervalChange, savingManualLog,
   billedTime = [],
   newEstimationHours,
   newEstimationMinutes,
@@ -89,6 +92,16 @@ const TimeTrackingSection = ({
   const { user } = useContext(AuthContext);
   const isMilestoneProject = String(project?.billingCycle || "").toLowerCase() === "milestone";
   const isEmployee = String(user?.role || "").toLowerCase() === "employee";
+
+  const intervalFields = target => manualInterval?.target === target && (
+    <div className="space-y-1 text-xs">
+      <p role="alert">{manualInterval.trackedMinutes > 0 && `${formatLoggedMinutes(manualInterval.trackedMinutes)} already tracked. `}{manualInterval.message} Times use the workspace time zone.</p>
+      <div className="flex gap-2">
+        <label>Start <input type="time" value={manualInterval.startedAt || ''} onChange={event => onManualIntervalChange({ startedAt: event.target.value })} /></label>
+        <label>End <input type="time" value={manualInterval.endedAt || ''} onChange={event => onManualIntervalChange({ endedAt: event.target.value })} /></label>
+      </div>
+    </div>
+  );
 
   const todayDate = useMemo(() => {
     const today = new Date();
@@ -210,9 +223,10 @@ const TimeTrackingSection = ({
 
   const calculateTotalLoggedTime = () => {
     const total = (loggedTime || []).reduce((acc, entry) => {
-      return acc + (parseInt(entry.hours, 10) || 0) * 60 + (parseInt(entry.minutes, 10) || 0);
+      return acc + (parseInt(entry.hours, 10) || 0) * 60 + (Number(entry.minutes) || 0);
     }, 0);
-    return normalizeTime(Math.floor(total / 60), total % 60);
+    const rounded = Math.round(total);
+    return { hours: Math.floor(rounded / 60), minutes: rounded % 60 };
   };
 
   const calculateTotalBilledTime = () => {
@@ -224,7 +238,7 @@ const TimeTrackingSection = ({
 
   const getTimeProgress = () => {
     const totalLogged = (loggedTime || []).reduce(
-      (acc, entry) => acc + (parseInt(entry.hours, 10) || 0) * 60 + (parseInt(entry.minutes, 10) || 0),
+      (acc, entry) => acc + (parseInt(entry.hours, 10) || 0) * 60 + (Number(entry.minutes) || 0),
       0
     );
     const totalEstimated = (estimationEntries || []).reduce(
@@ -682,6 +696,7 @@ const TimeTrackingSection = ({
                         rows="2"
                       />
 
+                      {intervalFields('new')}
                       {loggedValidationError && (
                         <div className="flex items-center gap-1.5 p-2 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-lg text-rose-600 dark:text-rose-400 text-xs">
                           <AlertCircle size={14} className="shrink-0" />
@@ -692,7 +707,7 @@ const TimeTrackingSection = ({
                       <button
                         type="button"
                         onClick={onAddLoggedTime}
-                        disabled={!!loggedValidationError}
+                        disabled={!!loggedValidationError || savingManualLog}
                         className={`w-full py-2 px-3 rounded-lg text-xs font-medium shadow-sm transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
                           loggedValidationError
                             ? "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed border border-gray-200 dark:border-gray-700"
@@ -702,6 +717,8 @@ const TimeTrackingSection = ({
                         Log Time
                       </button>
                     </div>
+
+                    {onManualIntervalChange && <LoggedTimeReviews cardId={card?._id || card?.id} />}
 
                     {/* Logged Time Entries List (Latest on top) */}
                     <div className="flex-1 flex flex-col min-h-0">
@@ -762,7 +779,8 @@ const TimeTrackingSection = ({
                                       className="w-full p-1 border border-emerald-300 dark:border-emerald-700 rounded text-xs bg-white dark:bg-gray-800"
                                       rows="2"
                                     />
-                                    <div className="flex items-center gap-1.5">
+                                    {intervalFields(entry.id)}
+                                  <div className="flex items-center gap-1.5">
                                       <button
                                         type="button"
                                         onClick={() => onSaveLoggedEdit(entry.id)}
@@ -784,16 +802,19 @@ const TimeTrackingSection = ({
                                     <div className="flex items-center justify-between">
                                       <div className="flex items-center gap-1.5">
                                         <span className="font-semibold text-emerald-600 dark:text-emerald-400 text-xs px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-100 dark:border-emerald-900/50 font-mono">
-                                          {formatTime(entry.hours, entry.minutes)}
+                                          {formatLoggedMinutes(entry.hours * 60 + entry.minutes)}
                                         </span>
-                                        {!userOwnsEntry(entry) && (
+                                        <span className={entry.timeSource === 'AUTO_TRACKED'
+                    ? 'inline-flex rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-800 dark:bg-sky-900 dark:text-sky-100'
+                    : 'text-xs text-gray-500'}>{timeSourceLabel(entry.timeSource)}</span>
+                                        {(!userOwnsEntry(entry) || entry.timeSource === 'AUTO_TRACKED') && (
                                           <span className="flex items-center text-gray-400" title="You can only view this entry">
                                             <Lock size={11} />
                                           </span>
                                         )}
                                       </div>
                                       <div className="flex items-center gap-1">
-                                        {userOwnsEntry(entry) ? (
+                                        {userOwnsEntry(entry) && entry.timeSource !== 'AUTO_TRACKED' ? (
                                           <>
                                             <button
                                               type="button"
@@ -825,7 +846,7 @@ const TimeTrackingSection = ({
                                         <User size={12} className="shrink-0 text-gray-400" />
                                         <span className="truncate">{getUserDisplayName(entry)}</span>
                                       </div>
-                                      <span className="shrink-0 text-gray-400 dark:text-gray-500">{formatDate(entry.date)}</span>
+                                      <span className="shrink-0 text-gray-400 dark:text-gray-500">{formatDate(entry.workDateKey ? `${entry.workDateKey}T12:00:00` : entry.date)}</span>
                                     </div>
                                   </>
                                 )}

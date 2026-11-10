@@ -9,8 +9,11 @@ import Department from '../models/Department.js';
 import '../models/Board.js';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
-import { getExpectedMinutesByUser } from '../modules/workCalendar/workCalendarFacade.js';
+import { getExpectedMinutesByUser as getCalendarExpectedMinutes } from '../modules/workCalendar/workCalendarFacade.js';
+import AttendanceDay from '../modules/attendance/attendanceDay.model.js';
 import { getWorkspaceTimezone, eachCalendarDate, instantToDateOnlyKey, dateOnlyToInstant } from '../modules/leave/leaveTimezone.util.js';
+import { loggedTimeMinutes, readAdditionalTeamTime } from '../modules/tracking/tracking.loggedTime.js';
+import { authorizeProjectResource } from '../services/projectAuthorization.js';
 import { validateDateRange } from '../utils/calendarDateRange.js';
 
 async function analyticsDateBounds(workspaceId, query, defaultDays = 7) {
@@ -28,6 +31,27 @@ async function analyticsDateBounds(workspaceId, query, defaultDays = 7) {
 async function expectedUserDay({ workspaceId, date, departmentId, userId }) {
   const result = await getExpectedMinutesByUser({ workspaceId, users: [{ userId, departmentId }], startDate: date, endDate: date });
   return result.get(String(userId))?.dailyBreakdown[0] || { expectedMinutes: 0, isWorkingDay: false };
+}
+
+async function getExpectedMinutesByUser(args) {
+  const result = await getCalendarExpectedMinutes(args);
+  const dates = result.values().next().value?.dailyBreakdown;
+  if (!dates?.length) return result;
+  const snapshots = await AttendanceDay.find({ workspaceId: args.workspaceId, user: { $in: args.users.map(user => user.userId) },
+    workDateKey: { $gte: dates[0].dateKey, $lte: dates.at(-1).dateKey },
+    expectedWorkingMinutes: { $exists: true } }).select('user workDateKey expectedWorkingMinutes').lean();
+  const byDate = new Map(snapshots.map(day => [`${day.user}:${day.workDateKey}`, day.expectedWorkingMinutes]));
+  for (const [userId, values] of result) {
+    for (const day of values.dailyBreakdown) {
+      const minutes = byDate.get(`${userId}:${day.dateKey}`);
+      if (minutes == null) continue;
+      values.totalExpectedMinutes += minutes - day.expectedMinutes;
+      values.workingDayCount += Number(minutes > 0) - Number(day.isWorkingDay);
+      day.expectedMinutes = minutes;
+      day.isWorkingDay = minutes > 0;
+    }
+  }
+  return result;
 }
 
 async function workspaceAnalyticsUsers(workspaceId, userIds) {
@@ -52,7 +76,7 @@ export const getTeamLoggedTime = asyncHandler(async (req, res, next) => {
   const user = req.user;
 
   // Parse dates (default to last 7 days)
-  const { start, end, timezone, dateRange } = await analyticsDateBounds(req.workspaceId, { startDate, endDate });
+  const { start, end, nextDate, timezone, dateRange } = await analyticsDateBounds(req.workspaceId, { startDate, endDate });
 
   // Role-based access control
   let allowedUserIds = [];
@@ -105,6 +129,7 @@ export const getTeamLoggedTime = asyncHandler(async (req, res, next) => {
 
   // Fetch user details
   const users = await workspaceAnalyticsUsers(req.workspaceId, allowedUserIds);
+  allowedUserIds = users.map(user => user._id);
 
   // Aggregation pipeline to get logged time from Cards, Subtasks, and SubtaskNanos
   const loggedTimeAggregation = [
@@ -130,7 +155,6 @@ export const getTeamLoggedTime = asyncHandler(async (req, res, next) => {
         totalMinutes: {
           $sum: { $add: [{ $multiply: ['$loggedTime.hours', 60] }, '$loggedTime.minutes'] }
         },
-        entries: { $push: '$loggedTime' },
         taskCount: { $sum: 1 }
       }
     },
@@ -141,7 +165,6 @@ export const getTeamLoggedTime = asyncHandler(async (req, res, next) => {
           $push: {
             date: '$_id.date',
             totalMinutes: '$totalMinutes',
-            entries: '$entries',
             taskCount: '$taskCount'
           }
         },
@@ -151,10 +174,11 @@ export const getTeamLoggedTime = asyncHandler(async (req, res, next) => {
   ];
 
   // Get logged time from all sources
-  const [cardLogs, subtaskLogs, nanoLogs] = await Promise.all([
+  const [cardLogs, subtaskLogs, nanoLogs, tracked] = await Promise.all([
     Card.aggregate(loggedTimeAggregation),
     Subtask.aggregate(loggedTimeAggregation),
-    SubtaskNano.aggregate(loggedTimeAggregation)
+    SubtaskNano.aggregate(loggedTimeAggregation),
+    readAdditionalTeamTime({ workspaceId: req.workspaceId, users: allowedUserIds, viewer: req.user, start, end: nextDate, timezone })
   ]);
 
   // Merge all logged time data
@@ -172,12 +196,10 @@ export const getTeamLoggedTime = asyncHandler(async (req, res, next) => {
         const existingDaily = existing.dailyLogs.get(daily.date) || {
           date: daily.date,
           totalMinutes: 0,
-          taskCount: 0,
-          entries: []
+          taskCount: 0
         };
         existingDaily.totalMinutes += daily.totalMinutes;
         existingDaily.taskCount += daily.taskCount;
-        existingDaily.entries.push(...daily.entries);
         existing.dailyLogs.set(daily.date, existingDaily);
       });
 
@@ -214,30 +236,36 @@ export const getTeamLoggedTime = asyncHandler(async (req, res, next) => {
     const dailyTimeline = dateRange.map(date => {
       const dayLog = logData.dailyLogs.get(date);
       const dayExpected = expectedByDate.get(date);
+      const extra = tracked.get(`${userInfo._id}:${date}`);
+      const projectMinutes = (dayLog?.totalMinutes || 0) + (extra?.detachedMinutes || 0);
+      const agendaMinutes = extra?.agendaMinutes || 0;
+      const totalMinutes = projectMinutes + agendaMinutes;
+      const displayedMinutes = Math.round(totalMinutes);
       return {
-        date,
-        totalMinutes: dayLog?.totalMinutes || 0,
-        hours: dayLog ? Math.floor(dayLog.totalMinutes / 60) : 0,
-        minutes: dayLog ? dayLog.totalMinutes % 60 : 0,
+        date, projectMinutes, agendaMinutes, totalMinutes,
+        hours: Math.floor(displayedMinutes / 60),
+        minutes: displayedMinutes % 60,
         taskCount: dayLog?.taskCount || 0,
-        hasData: !!dayLog,
+        hasData: totalMinutes > 0,
         expectedMinutes: dayExpected?.expectedMinutes ?? 0,
         isWorkingDay: dayExpected?.isWorkingDay ?? false,
         dayType: dayExpected?.dayType || null
       };
     });
 
-    const totalHours = Math.floor(logData.totalMinutes / 60);
-    const totalMins = logData.totalMinutes % 60;
+    const totalMinutes = dailyTimeline.reduce((sum, day) => sum + day.totalMinutes, 0);
+    const displayedMinutes = Math.round(totalMinutes);
+    const totalHours = Math.floor(displayedMinutes / 60);
+    const totalMins = displayedMinutes % 60;
     const daysWithLogs = dailyTimeline.filter(d => d.hasData).length;
-    const avgDailyMinutes = daysWithLogs > 0 ? Math.round(logData.totalMinutes / daysWithLogs) : 0;
+    const avgDailyMinutes = daysWithLogs > 0 ? Math.round(totalMinutes / daysWithLogs) : 0;
 
     // Productivity score: logged minutes against the calendar-resolved
     // expected minutes for this exact date range (0 on off days), not a
     // flat 480-minutes-per-calendar-day assumption.
     const expectedTotalMinutes = expected.totalExpectedMinutes;
     const productivityScore = expectedTotalMinutes > 0
-      ? Math.round((logData.totalMinutes / expectedTotalMinutes) * 100)
+      ? Math.round((totalMinutes / expectedTotalMinutes) * 100)
       : 0;
 
     return {
@@ -252,7 +280,7 @@ export const getTeamLoggedTime = asyncHandler(async (req, res, next) => {
       },
       dailyTimeline,
       summary: {
-        totalMinutes: logData.totalMinutes,
+        totalMinutes,
         totalHours,
         totalMins,
         formattedTotal: `${totalHours}h ${totalMins}m`,
@@ -298,7 +326,7 @@ export const getSmartInsights = asyncHandler(async (req, res, next) => {
   }
 
   // Parse dates
-  const { start, end, timezone, dateRange } = await analyticsDateBounds(req.workspaceId, { startDate, endDate }, 7);
+  const { start, end, nextDate, timezone, dateRange } = await analyticsDateBounds(req.workspaceId, { startDate, endDate }, 7);
 
   // Get department access
   let departmentQuery = {};
@@ -361,10 +389,11 @@ export const getSmartInsights = asyncHandler(async (req, res, next) => {
     { $sort: { totalMinutes: -1 } }
   ];
 
-  const [cardInsights, subtaskInsights, nanoInsights] = await Promise.all([
+  const [cardInsights, subtaskInsights, nanoInsights, tracked] = await Promise.all([
     Card.aggregate(insightsAggregation),
     Subtask.aggregate(insightsAggregation),
-    SubtaskNano.aggregate(insightsAggregation)
+    SubtaskNano.aggregate(insightsAggregation),
+    readAdditionalTeamTime({ workspaceId: req.workspaceId, users: users.map(user => user._id), viewer: req.user, start, end: nextDate, timezone })
   ]);
 
   // Merge insights
@@ -387,6 +416,17 @@ export const getSmartInsights = asyncHandler(async (req, res, next) => {
   mergeInsights(cardInsights);
   mergeInsights(subtaskInsights);
   mergeInsights(nanoInsights);
+  for (const user of users) {
+    const insight = userInsightMap.get(String(user._id)) || { totalMinutes: 0, taskCount: 0, daysLogged: new Set() };
+    for (const date of dateRange) {
+      const additional = tracked.get(`${user._id}:${date}`);
+      const minutes = (additional?.agendaMinutes || 0) + (additional?.detachedMinutes || 0);
+      if (!minutes) continue;
+      insight.totalMinutes += minutes;
+      insight.daysLogged.add(date);
+    }
+    userInsightMap.set(String(user._id), insight);
+  }
 
   // Calculate date range days
   const totalDays = dateRange.length;
@@ -1024,257 +1064,61 @@ function generateTaskColor(taskId) {
  * @route   GET /api/team-analytics/date-hover/:userId/:date
  * @access  Private
  */
-export const getDateHoverDetails = asyncHandler(async (req, res, next) => {
-  const { userId, date } = req.params;
-  const user = req.user;
-
-  // Validate parameters
-  if (!userId || !date) {
-    return next(new ErrorResponse('userId and date are required', 400));
+export const getDateHoverDetails = asyncHandler(async (req, res) => {
+  if (req.query.category === 'agenda') {
+    const { targetUserId, targetDate, nextDate, timezone } = await requireDayAccess(req);
+    const data = await readAdditionalTeamTime({ workspaceId: req.workspaceId, users: [targetUserId], viewer: req.user,
+      start: targetDate, end: nextDate, timezone, details: true, agendaOnly: true });
+    const day = data.get(`${targetUserId}:${req.params.date}`);
+    return res.json({ success: true, data: { totalMinutes: day?.agendaMinutes || 0, entries: day?.agendas || [] } });
   }
-
-  const targetUserId = new mongoose.Types.ObjectId(userId);
-  const { start: targetDate, nextDate } = await analyticsDateBounds(req.workspaceId, { startDate: date, endDate: date }, 0);
-
-  // Role-based access check
-  if (user.role === 'employee' && user._id.toString() !== userId) {
-    return next(new ErrorResponse('Not authorized to view other users data', 403));
-  }
-
-  // Needed both for the manager access check below and to resolve this
-  // date against the target user's own department calendar.
-  const targetUser = await WorkspaceMembership.findOne({ workspace: req.workspaceId, user: targetUserId, status: 'active' }).select('department').lean();
-  if (!targetUser) {
-    return next(new ErrorResponse('User not found', 404));
-  }
-
-  // For managers, verify they have access to this user's department
-  if (user.role === 'manager') {
-    const userDeptIds = Array.isArray(user.department) ? user.department.map(d => d.toString()) : [user.department?.toString()];
-    const targetDeptIds = Array.isArray(targetUser.department) ? targetUser.department.map(d => d.toString()) : [targetUser.department?.toString()];
-    const hasAccess = targetDeptIds.some(d => userDeptIds.includes(d));
-    if (!hasAccess) {
-      return next(new ErrorResponse('Not authorized to view this user data', 403));
-    }
-  }
-
-  // Aggregation to get task-wise logged time
-  const taskAggregation = [
-    {
-      $match: {
-        'loggedTime.user': targetUserId,
-        'loggedTime.date': { $gte: targetDate, $lt: nextDate }
-      }
-    },
-    { $unwind: '$loggedTime' },
-    {
-      $match: {
-        'loggedTime.user': targetUserId,
-        'loggedTime.date': { $gte: targetDate, $lt: nextDate }
-      }
-    },
-    {
-      $group: {
-        _id: '$_id',
-        title: { $first: '$title' },
-        totalMinutes: {
-          $sum: { $add: [{ $multiply: ['$loggedTime.hours', 60] }, '$loggedTime.minutes'] }
-        },
-        entryCount: { $sum: 1 }
-      }
-    },
-    { $sort: { totalMinutes: -1 } }
-  ];
-
-  // Get task-wise data from cards
-  const cardTasks = await Card.aggregate(taskAggregation);
-
-  // Subtask aggregation - group by parent task
-  const subtaskTasks = await Subtask.aggregate([
-    {
-      $match: {
-        'loggedTime.user': targetUserId,
-        'loggedTime.date': { $gte: targetDate, $lt: nextDate }
-      }
-    },
-    { $unwind: '$loggedTime' },
-    {
-      $match: {
-        'loggedTime.user': targetUserId,
-        'loggedTime.date': { $gte: targetDate, $lt: nextDate }
-      }
-    },
-    {
-      $lookup: {
-        from: 'cards',
-        localField: 'task',
-        foreignField: '_id',
-        as: 'parentTask'
-      }
-    },
-    { $unwind: { path: '$parentTask', preserveNullAndEmptyArrays: true } },
-    {
-      $group: {
-        _id: '$parentTask._id',
-        title: { $first: '$parentTask.title' },
-        totalMinutes: {
-          $sum: { $add: [{ $multiply: ['$loggedTime.hours', 60] }, '$loggedTime.minutes'] }
-        },
-        entryCount: { $sum: 1 }
-      }
-    },
-    { $sort: { totalMinutes: -1 } }
+  const { hierarchy, ...details } = await getDateProjectTime(req, true);
+  const entries = hierarchy.flatMap(task => [
+    ...task.directEntries.map(entry => ({ ...entry, title: task.task.title })),
+    ...task.subtasks.flatMap(subtask => [
+      ...subtask.directEntries.map(entry => ({ ...entry, title: subtask.subtask.title })),
+      ...subtask.nanoSubtasks.flatMap(nano => nano.entries.map(entry => ({ ...entry, title: nano.nano.title })))
+    ])
   ]);
-
-  // Nano subtask aggregation - group by grandparent task (Card)
-  const nanoTasks = await SubtaskNano.aggregate([
-    {
-      $match: {
-        'loggedTime.user': targetUserId,
-        'loggedTime.date': { $gte: targetDate, $lt: nextDate }
-      }
-    },
-    { $unwind: '$loggedTime' },
-    {
-      $match: {
-        'loggedTime.user': targetUserId,
-        'loggedTime.date': { $gte: targetDate, $lt: nextDate }
-      }
-    },
-    {
-      $lookup: {
-        from: 'subtasks',
-        localField: 'subtask',
-        foreignField: '_id',
-        as: 'parentSubtask'
-      }
-    },
-    { $unwind: { path: '$parentSubtask', preserveNullAndEmptyArrays: true } },
-    {
-      $lookup: {
-        from: 'cards',
-        localField: 'parentSubtask.task',
-        foreignField: '_id',
-        as: 'parentTask'
-      }
-    },
-    { $unwind: { path: '$parentTask', preserveNullAndEmptyArrays: true } },
-    {
-      $group: {
-        _id: '$parentTask._id',
-        title: { $first: '$parentTask.title' },
-        totalMinutes: {
-          $sum: { $add: [{ $multiply: ['$loggedTime.hours', 60] }, '$loggedTime.minutes'] }
-        },
-        entryCount: { $sum: 1 }
-      }
-    },
-    { $sort: { totalMinutes: -1 } }
-  ]);
-
-  // Merge all tasks by task ID
-  const taskMap = new Map();
-  
-  const mergeTasks = (tasks) => {
-    tasks.forEach(task => {
-      if (!task._id) return;
-      const id = task._id.toString();
-      const existing = taskMap.get(id) || {
-        taskId: id,
-        taskTitle: task.title || 'Untitled Task',
-        minutes: 0,
-        entryCount: 0
-      };
-      existing.minutes += task.totalMinutes || 0;
-      existing.entryCount += task.entryCount || 0;
-      taskMap.set(id, existing);
-    });
-  };
-
-  mergeTasks(cardTasks);
-  mergeTasks(subtaskTasks);
-  mergeTasks(nanoTasks);
-
-  // Sort by minutes and add colors
-  const allTasks = Array.from(taskMap.values())
-    .sort((a, b) => b.minutes - a.minutes)
-    .map(task => ({
-      ...task,
-      color: generateTaskColor(task.taskId),
-      formatted: `${Math.floor(task.minutes / 60)}h ${task.minutes % 60}m`
-    }));
-
-  const totalMinutes = allTasks.reduce((sum, t) => sum + t.minutes, 0);
-  const { expectedMinutes, isWorkingDay } = await expectedUserDay({
-    workspaceId: req.workspaceId, userId: targetUserId, date: targetDate, departmentId: primaryDepartmentId(targetUser)
-  });
-
-  // A non-working day (weekly-off/holiday/recurring-off) has 0 expected
-  // minutes — it must never be flagged under-logged just because it's a
-  // day off, regardless of whether the user happened to log time on it.
-  let status = 'normal';
-  if (isWorkingDay) {
-    if (totalMinutes < expectedMinutes * 0.75) status = 'under-logged';
-    else if (totalMinutes > expectedMinutes * 1.25) status = 'over-logged';
-  }
-
-  res.status(200).json({
-    success: true,
-    data: {
-      userId,
-      date: date,
-      totalMinutes,
-      expectedMinutes,
-      isWorkingDay,
-      status,
-      tasks: allTasks.slice(0, 3),
-      hasMore: allTasks.length > 3,
-      totalTasks: allTasks.length,
-      remainingCount: Math.max(0, allTasks.length - 3)
-    }
-  });
+  const tasks = hierarchy.slice(0, 3).map(item => ({
+    taskId: item.task._id, taskTitle: item.task.title, color: item.task.color, minutes: item.totalMinutes,
+    formatted: formatLoggedMinutes(item.totalMinutes)
+  }));
+  res.json({ success: true, data: { ...details, entries, tasks, hasMore: hierarchy.length > 3,
+    totalTasks: hierarchy.length, remainingCount: Math.max(0, hierarchy.length - 3) } });
 });
 
-/**
- * @desc    Get full hierarchical breakdown for modal view
- * @route   GET /api/team-analytics/date-details/:userId/:date
- * @access  Private
- */
-export const getDateDetailedLogs = asyncHandler(async (req, res, next) => {
+async function requireDayAccess(req) {
   const { userId, date } = req.params;
-  const user = req.user;
-
-  // Validate parameters
-  if (!userId || !date) {
-    return next(new ErrorResponse('userId and date are required', 400));
-  }
-
+  if (!mongoose.isValidObjectId(userId) || !date) throw new ErrorResponse('A valid user and date are required', 400);
   const targetUserId = new mongoose.Types.ObjectId(userId);
-  const { start: targetDate, nextDate } = await analyticsDateBounds(req.workspaceId, { startDate: date, endDate: date }, 0);
-
-  // Role-based access check (same as hover)
-  if (user.role === 'employee' && user._id.toString() !== userId) {
-    return next(new ErrorResponse('Not authorized to view other users data', 403));
+  if (!['admin', 'hr', 'manager'].includes(req.user.role) && String(req.user._id) !== userId) {
+    throw new ErrorResponse('Not authorized to view other users data', 403);
   }
-
-  if (user.role === 'manager') {
-    const targetUser = await WorkspaceMembership.findOne({ workspace: req.workspaceId, user: targetUserId, status: 'active' }).select('department').lean();
-    if (!targetUser) {
-      return next(new ErrorResponse('User not found', 404));
-    }
-    const userDeptIds = Array.isArray(user.department) ? user.department.map(d => d.toString()) : [user.department?.toString()];
-    const targetDeptIds = Array.isArray(targetUser.department) ? targetUser.department.map(d => d.toString()) : [targetUser.department?.toString()];
-    const hasAccess = targetDeptIds.some(d => userDeptIds.includes(d));
-    if (!hasAccess) {
-      return next(new ErrorResponse('Not authorized to view this user data', 403));
+  const member = await WorkspaceMembership.findOne({ workspace: req.workspaceId, user: targetUserId, status: 'active' }).select('department').lean();
+  if (!member) throw new ErrorResponse('User not found', 404);
+  if (req.user.role === 'manager') {
+    const departments = [].concat(req.user.department || []).map(String);
+    if (![].concat(member.department || []).some(value => departments.includes(String(value)))) {
+      throw new ErrorResponse('Not authorized to view this user data', 403);
     }
   }
+  const { start: targetDate, nextDate, timezone } = await analyticsDateBounds(req.workspaceId, { startDate: date, endDate: date }, 0);
+  return { targetUserId, targetDate, nextDate, timezone };
+}
 
+export const getDateDetailedLogs = asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await getDateProjectTime(req) });
+});
+
+async function getDateProjectTime(req, hover = false) {
+  const { userId, date } = req.params;
+  const { targetUserId, targetDate, nextDate, timezone } = await requireDayAccess(req);
   // Get user info
   const [targetUser] = await workspaceAnalyticsUsers(req.workspaceId, [targetUserId]);
 
   if (!targetUser) {
-    return next(new ErrorResponse('User not found', 404));
+    throw new ErrorResponse('User not found', 404);
   }
 
   // Get all cards with logged time for this user on this date
@@ -1282,10 +1126,10 @@ export const getDateDetailedLogs = asyncHandler(async (req, res, next) => {
     'loggedTime.user': targetUserId,
     'loggedTime.date': { $gte: targetDate, $lt: nextDate }
   })
-    .select('_id title loggedTime board')
+    .select('_id title loggedTime board isArchived')
     .populate({
       path: 'board',
-      select: 'name department'
+      select: 'name department isDeleted'
     })
     .lean();
 
@@ -1305,20 +1149,17 @@ export const getDateDetailedLogs = asyncHandler(async (req, res, next) => {
     .select('_id title subtask loggedTime')
     .lean();
 
-  // Get parent task info for subtasks
-  const subtaskTaskIds = [...new Set(subtasks.map(s => s.task?.toString()).filter(Boolean))];
-  const parentCards = await Card.find({ _id: { $in: subtaskTaskIds } })
-    .select('_id title board')
-    .populate('board', 'name')
-    .lean();
-  const cardMap = new Map(parentCards.map(c => [c._id.toString(), c]));
-
   // Get parent subtask info for nanos
   const nanoSubtaskIds = [...new Set(nanos.map(n => n.subtask?.toString()).filter(Boolean))];
   const parentSubtasks = await Subtask.find({ _id: { $in: nanoSubtaskIds } })
     .select('_id title task')
     .lean();
   const subtaskMap = new Map(parentSubtasks.map(s => [s._id.toString(), s]));
+  const parentCardIds = [...new Set([...subtasks, ...parentSubtasks].map(s => String(s.task || '')).filter(Boolean))];
+  const parentCards = await Card.find({ _id: { $in: parentCardIds } }).select('_id title board isArchived')
+    .populate('board', 'name department isDeleted').lean();
+  const cardMap = new Map(parentCards.map(card => [String(card._id), card]));
+
 
   // Build hierarchy: Task -> Subtask -> Nano -> Entries
   const hierarchyMap = new Map();
@@ -1328,7 +1169,7 @@ export const getDateDetailedLogs = asyncHandler(async (req, res, next) => {
     return entries
       .filter(e => {
         const entryDate = new Date(e.date);
-        return e.user.toString() === userId && 
+        return String(e.user) === userId &&
                entryDate >= targetDate && 
                entryDate < nextDate;
       })
@@ -1336,17 +1177,41 @@ export const getDateDetailedLogs = asyncHandler(async (req, res, next) => {
         _id: e._id,
         hours: e.hours,
         minutes: e.minutes,
-        totalMinutes: (e.hours * 60) + e.minutes,
-        formatted: `${e.hours}h ${e.minutes}m`,
+        totalMinutes: loggedTimeMinutes(e),
+        formatted: formatLoggedMinutes(loggedTimeMinutes(e)),
+        timeSource: e.timeSource === 'AUTO_TRACKED' ? 'AUTO_TRACKED' : 'MANUAL',
+        trackedProject: e.trackedProject,
+        trackedProjectName: e.trackedProjectName,
+        trackedTaskTitle: e.trackedTaskTitle,
         description: e.description || '',
         date: e.date,
         userName: e.userName
       }));
   };
 
+  function addHistoricalTaskTime(entry) {
+    const key = `unavailable:${entry.task}:${entry.project}`;
+    if (!hierarchyMap.has(key)) hierarchyMap.set(key, {
+      task: { _id: key, title: entry.taskTitle || 'Unavailable task', projectName: entry.projectName || 'Unavailable project',
+        color: generateTaskColor(key), canNavigate: false },
+      directEntries: [], subtasks: new Map(), totalMinutes: 0
+    });
+    const item = hierarchyMap.get(key);
+    item.directEntries.push({ _id: entry._id, timeSource: entry.timeSource, description: entry.description || 'Tracked work session',
+      totalMinutes: entry.totalMinutes, formatted: formatLoggedMinutes(entry.totalMinutes) });
+    item.totalMinutes += entry.totalMinutes;
+  }
+
   // Process cards (direct task entries)
   cards.forEach(card => {
     const taskId = card._id.toString();
+    const entries = filterEntries(card.loggedTime || []).filter(entry => {
+      if (!entry.trackedProject || String(entry.trackedProject) === String(card.board?._id)) return true;
+      addHistoricalTaskTime({ ...entry, task: card._id, project: entry.trackedProject,
+        taskTitle: entry.trackedTaskTitle || card.title, projectName: entry.trackedProjectName });
+      return false;
+    });
+    if (!entries.length) return;
     if (!hierarchyMap.has(taskId)) {
       hierarchyMap.set(taskId, {
         task: {
@@ -1363,15 +1228,13 @@ export const getDateDetailedLogs = asyncHandler(async (req, res, next) => {
       });
     }
     const taskData = hierarchyMap.get(taskId);
-    const entries = filterEntries(card.loggedTime || []);
     taskData.directEntries.push(...entries.map(e => ({ ...e, source: 'Task' })));
     taskData.totalMinutes += entries.reduce((sum, e) => sum + e.totalMinutes, 0);
   });
 
   // Process subtasks
   subtasks.forEach(subtask => {
-    const parentCard = cardMap.get(subtask.task?.toString());
-    if (!parentCard) return;
+    const parentCard = cardMap.get(subtask.task?.toString()) || { _id: subtask.task || subtask._id, title: 'Unavailable task' };
 
     const taskId = parentCard._id.toString();
     if (!hierarchyMap.has(taskId)) {
@@ -1412,15 +1275,8 @@ export const getDateDetailedLogs = asyncHandler(async (req, res, next) => {
 
   // Process nanos
   nanos.forEach(nano => {
-    const parentSubtask = subtaskMap.get(nano.subtask?.toString());
-    if (!parentSubtask) return;
-
-    const parentCard = cardMap.get(parentSubtask.task?.toString());
-    if (!parentCard) {
-      // Try to find the card directly
-      const directCard = cards.find(c => c._id.toString() === parentSubtask.task?.toString());
-      if (!directCard) return;
-    }
+    const parentSubtask = subtaskMap.get(nano.subtask?.toString()) || { _id: nano.subtask || nano._id, title: 'Unavailable subtask' };
+    const parentCard = cardMap.get(parentSubtask.task?.toString()) || { _id: parentSubtask.task || parentSubtask._id, title: 'Unavailable task' };
 
     const taskId = parentCard?._id.toString() || parentSubtask.task?.toString();
     if (!hierarchyMap.has(taskId)) {
@@ -1474,6 +1330,26 @@ export const getDateDetailedLogs = asyncHandler(async (req, res, next) => {
   });
 
   // Convert Maps to arrays and sort
+  const additional = await readAdditionalTeamTime({ workspaceId: req.workspaceId, users: [targetUserId], viewer: req.user,
+    start: targetDate, end: nextDate, timezone, details: true });
+  for (const entry of additional.get(`${targetUserId}:${date}`)?.detached || []) {
+    addHistoricalTaskTime(entry);
+  }
+  if (!hover) {
+    const currentCards = new Map([...parentCards, ...cards].map(card => [String(card._id), card]));
+    for (const item of hierarchyMap.values()) {
+      const card = currentCards.get(String(item.task._id));
+      item.task.canNavigate = false;
+      if (!card || card.isArchived || !card.board || card.board.isDeleted) continue;
+      try {
+        await authorizeProjectResource(req, 'task', String(item.task._id), 'task.view');
+        item.task.canNavigate = Boolean(item.task.projectId && item.task.departmentId);
+      } catch (error) {
+        if (![403, 404].includes(error.statusCode)) throw error;
+      }
+    }
+  }
+
   const hierarchy = Array.from(hierarchyMap.values())
     .map(taskData => ({
       ...taskData,
@@ -1497,23 +1373,17 @@ export const getDateDetailedLogs = asyncHandler(async (req, res, next) => {
     else if (totalMinutes > expectedMinutes * 1.25) status = 'over-logged';
   }
 
-  res.status(200).json({
-    success: true,
-    data: {
-      userId,
-      userName: targetUser.name,
-      userAvatar: targetUser.avatar,
-      userEmail: targetUser.email,
-      date: date,
-      totalMinutes,
-      totalFormatted: `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`,
-      expectedMinutes,
-      isWorkingDay,
-      status,
-      hierarchy
-    }
-  });
-});
+  return {
+    userId, userName: targetUser.name, userAvatar: targetUser.avatar, userEmail: targetUser.email,
+    date, totalMinutes, totalFormatted: formatLoggedMinutes(totalMinutes), expectedMinutes,
+    isWorkingDay, status, hierarchy
+  };
+}
+
+function formatLoggedMinutes(value) {
+  const minutes = Math.round(value);
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
 
 export default {
   getTeamLoggedTime,

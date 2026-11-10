@@ -40,6 +40,7 @@ const attendanceDaySchema = new mongoose.Schema({
   firstCheckInAt: { type: Date, default: null },
   lastCheckOutAt: { type: Date, default: null },
   workedMinutes: { type: Number, default: 0, min: 0 },
+  expectedWorkingMinutes: { type: Number, min: 0 },
   shiftExpectedMinutes: { type: Number, default: 0, min: 0 }, // from policy/shift minimumFullDayMinutes, NOT the calendar's own expected-hours concept
   lateMinutes: { type: Number, default: 0, min: 0 },
   earlyExitMinutes: { type: Number, default: 0, min: 0 },

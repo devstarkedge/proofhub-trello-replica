@@ -12,6 +12,7 @@ import { WorkSession } from '../tracking/tracking.models.js';
 import { resolveAttendanceObserverUserIds } from './attendanceAuthorization.service.js';
 import * as hooks from './attendanceHooks.js';
 import { emitToUser, emitToUsers } from '../../realtime/emitters.js';
+import { publishCheckoutLoggedTime } from '../tracking/tracking.loggedTime.js';
 
 export async function enqueueAttendanceEvent(event,dbSession) {
   return AttendanceEvent.findOneAndUpdate({key:event.key},{$setOnInsert:event},{upsert:true,new:true,runValidators:true,session:dbSession});
@@ -67,7 +68,10 @@ export async function processAttendanceEvents(workspaceId,{limit=20,key=null}={}
         const attendance=await AttendanceSession.findOne({_id:event.attendanceSession,workspaceId,user:event.user}).lean();
         if(!attendance||event.kind==='CHECKED_OUT'&&attendance.status==='ACTIVE')throw new Error('Attendance event has no matching state');
         const {finalizeAttendanceWork,emitChanged}=await import('../tracking/tracking.service.js');
-        if(event.kind==='CHECKED_OUT')await finalizeAttendanceWork(attendance);
+        if(event.kind==='CHECKED_OUT'){
+          await finalizeAttendanceWork(attendance);
+          await publishCheckoutLoggedTime(attendance);
+        }
         const day=await AttendanceDay.findOne({workspaceId,user:event.user,workDateKey:event.workDateKey}).lean();
         const observers=activeMembership?await resolveAttendanceObserverUserIds({workspaceId,subjectUserId:event.user,subjectDepartmentIds:membership.department}):[];
         if(activeMembership){if(event.kind==='CHECKED_IN'){if(attendance.status==='ACTIVE')hooks.onCheckedIn(event.user,attendance,day,observers);}else hooks.onCheckedOut(event.user,attendance,day,observers);}

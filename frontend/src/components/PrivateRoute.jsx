@@ -5,6 +5,7 @@ import WorkspaceContext from '../context/WorkspaceContext';
 import LandingPage from '../pages/LandingPage';
 import logger from '../utils/logger';
 import { getWorkspaceGateDecision } from '../utils/workspaceGate';
+import { requiredPasswordChangePath } from '../../../shared/loginDestination.mjs';
 
 const PrivateRoute = ({ children, requiredRole }) => {
   const { user, isAuthenticated, loading, sessionError, retrySession } = useContext(AuthContext);
@@ -35,8 +36,8 @@ const PrivateRoute = ({ children, requiredRole }) => {
     return <Navigate to={`/login?returnTo=${encodeURIComponent(returnTo)}`} state={{ from: location }} replace />;
   }
 
-  if (user?.forcePasswordChange) {
-    const passwordPath = user.role === 'admin' ? '/admin/settings' : '/settings';
+  const passwordPath = requiredPasswordChangePath(user);
+  if (passwordPath) {
     return location.pathname === passwordPath ? children : <Navigate to={passwordPath} replace />;
   }
 

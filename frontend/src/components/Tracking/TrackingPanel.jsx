@@ -559,7 +559,7 @@ export default function TrackingPanel({
     const label = !state.policy.enabled ? 'Disabled' : scheduledBreak ? 'Scheduled Break' : running ? 'Running' : paused ? 'Paused' : 'Enabled';
     const project = latest
       ? latest.attributedProjectName ||
-        (latest.agenda ? `${latest.agendaTitle} — ${latest.description}` : latest.projectName)
+        (latest.kind === 'INDIVIDUAL' && latest.agenda ? `${latest.agendaTitle} — ${latest.description}` : latest.projectName)
       : 'No work selected';
     const task = latest
       ? latest.attributedTaskTitle || (latest.kind === 'TASK' ? latest.taskTitle : 'Individual agenda work')
@@ -676,9 +676,9 @@ export default function TrackingPanel({
           {attendanceDetails && <div className="welcome-attendance-info">{attendanceDetails}</div>}
           {breakNotice && <p role="status" className="welcome-attendance-info">{breakNotice}. Attendance continues.</p>}
           {!scheduledBreak && paused && scopedNative?.autoResumeArmed && <p className="welcome-attendance-info">Work resumes automatically when keyboard or mouse activity returns.</p>}
-          {latest?.agenda && latest.attributedTask && (
+          {latest?.agenda && (latest.attributedTask || latest.kind === 'TASK') && (
             <p className="welcome-work-provenance">
-              Origin: {latest.agendaTitle} — {latest.description} · Task attribution: {latest.attributionIncluded ? 'Yes' : 'No'}
+              Origin: {latest.agendaTitle} — {latest.description} · Task attribution: {(latest.attributionIncluded || latest.kind === 'TASK') ? 'Yes' : 'No'}
             </p>
           )}
           {(scopedNative?.pending > 0 || warning) && (
@@ -856,9 +856,9 @@ export default function TrackingPanel({
                 <div className="min-w-0">
                   <h3
                     className="font-bold text-base md:text-lg text-gray-900 dark:text-gray-100 truncate"
-                    title={latest.agenda ? `${latest.agendaTitle} — ${latest.description}` : latest.projectName}
+                    title={latest.kind === 'INDIVIDUAL' && latest.agenda ? `${latest.agendaTitle} — ${latest.description}` : latest.projectName}
                   >
-                    {latest.agenda ? `${latest.agendaTitle} — ${latest.description}` : latest.projectName}
+                    {latest.kind === 'INDIVIDUAL' && latest.agenda ? `${latest.agendaTitle} — ${latest.description}` : latest.projectName}
                   </h3>
                   <p className="text-xs md:text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1.5 mt-0.5">
                     <span>{latest.kind === 'TASK' ? latest.taskTitle : 'Individual agenda work'}</span>

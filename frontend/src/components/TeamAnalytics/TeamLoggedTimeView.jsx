@@ -29,6 +29,7 @@ import {
 import TeamAnalyticsCharts from './TeamAnalyticsCharts';
 import SmartInsightsPanel from './SmartInsightsPanel';
 import TeamHeatmap from './TeamHeatmap';
+import { loggedTimeRegions, formatLoggedMinutes, workspaceDateRange } from '../../../../shared/loggedTimeCell.mjs';
 import DateCellHoverCard from './DateCellHoverCard';
 import DateDetailModal from './DateDetailModal';
 import * as XLSX from 'xlsx';
@@ -37,32 +38,11 @@ import 'jspdf-autotable';
 
 // Date presets
 const DATE_PRESETS = [
-  { label: 'Today', getValue: () => {
-    const today = new Date();
-    return { start: today.toISOString().split('T')[0], end: today.toISOString().split('T')[0] };
-  }},
-  { label: 'Last 7 Days', getValue: () => {
-    const end = new Date();
-    const start = new Date(end.getTime() - 6 * 24 * 60 * 60 * 1000);
-    return { start: start.toISOString().split('T')[0], end: end.toISOString().split('T')[0] };
-  }},
-  { label: 'This Week', getValue: () => {
-    const today = new Date();
-    const dayOfWeek = today.getDay();
-    const start = new Date(today);
-    start.setDate(today.getDate() - dayOfWeek);
-    return { start: start.toISOString().split('T')[0], end: today.toISOString().split('T')[0] };
-  }},
-  { label: 'This Month', getValue: () => {
-    const today = new Date();
-    const start = new Date(today.getFullYear(), today.getMonth(), 1);
-    return { start: start.toISOString().split('T')[0], end: today.toISOString().split('T')[0] };
-  }},
-  { label: 'Last 30 Days', getValue: () => {
-    const end = new Date();
-    const start = new Date(end.getTime() - 29 * 24 * 60 * 60 * 1000);
-    return { start: start.toISOString().split('T')[0], end: end.toISOString().split('T')[0] };
-  }}
+  { label: 'Today', range: 1 },
+  { label: 'Last 7 Days', range: 7 },
+  { label: 'This Week', range: 'week' },
+  { label: 'This Month', range: 'month' },
+  { label: 'Last 30 Days', range: 30 }
 ];
 
 // Modern Status Badge Styles - Soft, accessible, dark mode compatible
@@ -334,12 +314,24 @@ const EnhancedDateCell = memo(({
   member,
   date,
   day,
-  style,
   status,
   value,
   onOpenModal,
+  timeRevision,
   dayStatus
 }) => {
+  const [hoverCategory, setHoverCategory] = useState(null);
+  const regionTimer = useRef(null);
+  const showRegion = category => {
+    clearTimeout(regionTimer.current);
+    regionTimer.current = setTimeout(() => setHoverCategory(category), 220);
+  };
+  const clearRegion = () => {
+    clearTimeout(regionTimer.current);
+    setHoverCategory(null);
+  };
+  useEffect(() => () => clearTimeout(regionTimer.current), []);
+  const { project, agenda } = loggedTimeRegions(day?.projectMinutes ?? day?.totalMinutes ?? 0, day?.agendaMinutes ?? 0, day?.expectedMinutes);
   const [showHoverCard, setShowHoverCard] = useState(false);
   const hoverTimeoutRef = useRef(null);
   const cellRef = useRef(null);
@@ -354,12 +346,12 @@ const EnhancedDateCell = memo(({
       clearTimeout(hoverTimeoutRef.current);
     }
     // Show hover card after 300ms delay
-    if (day?.hasData || approvedLeave) {
+    if (approvedLeave) {
       hoverTimeoutRef.current = setTimeout(() => {
         setShowHoverCard(true);
       }, 300);
     }
-  }, [day?.hasData, approvedLeave]);
+  }, [approvedLeave]);
 
   const handleMouseLeave = useCallback(() => {
     // Clear timeout and hide hover card
@@ -379,22 +371,36 @@ const EnhancedDateCell = memo(({
   }, []);
 
   return (
-    <td 
+    <td
       ref={cellRef}
-      className={`px-2 py-2 text-center font-medium border ${approvedLeave ? 'border-[var(--color-border-subtle)]' : `${style.bg} ${style.text} ${style.border} ${style.gradient || ''}`} rounded-md ${day?.hasData ? 'cursor-pointer' : 'cursor-default'} transition-all hover:shadow-md hover:z-10 relative`}
+      className="relative isolate rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-card-bg)] px-2 py-2 text-center font-medium"
       style={approvedLeave ? {
         backgroundColor: `color-mix(in srgb, ${leaveAccent} 5%, var(--color-card-bg))`,
         boxShadow: `inset 0 2px 0 color-mix(in srgb, ${leaveAccent} 45%, transparent)`
       } : undefined}
-      onClick={() => day?.hasData && onOpenModal(member, date)}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       tabIndex={approvedLeave ? 0 : undefined}
       onFocus={approvedLeave ? () => setShowHoverCard(true) : undefined}
       onBlur={approvedLeave ? () => setShowHoverCard(false) : undefined}
     >
+      {project && <button type="button"
+        aria-label={`Open project and task time for ${member.user.name} on ${date}`}
+        className="absolute inset-0 z-0 h-full w-full cursor-pointer bg-emerald-100 focus-visible:bg-emerald-200 dark:bg-emerald-900/55"
+        style={{ clipPath: project }}
+        onMouseEnter={() => showRegion('project')} onMouseLeave={clearRegion}
+        onFocus={() => setHoverCategory('project')} onBlur={() => setHoverCategory(null)}
+        onClick={event => { event.stopPropagation(); clearRegion(); onOpenModal(member, date); }}
+      />}
+      {agenda && <div tabIndex={0} role="img" aria-label={`Separate agenda time for ${member.user.name} on ${date}`}
+        className="absolute inset-0 z-0 h-full w-full cursor-default bg-orange-100 focus-visible:bg-orange-200 dark:bg-orange-900/55"
+        style={{ clipPath: agenda }}
+        onMouseEnter={() => showRegion('agenda')} onMouseLeave={clearRegion}
+        onFocus={() => setHoverCategory('agenda')} onBlur={() => setHoverCategory(null)}
+        onClick={event => event.stopPropagation()}
+      />}
       {approvedLeave ? (
-        <div className="flex min-h-[2.75rem] flex-col items-center justify-center gap-1">
+        <div className="pointer-events-none relative z-10 flex min-h-[2.75rem] flex-col items-center justify-center gap-1">
           <DayStatusIndicator dayStatus={dayStatus} showCode />
           <span className="text-[10px] font-medium leading-3" style={{ color: 'var(--color-text-secondary)' }}>{leaveDayLabel}</span>
           {day?.totalMinutes > 0 && <span className="flex items-center gap-1 text-[10px] leading-3" style={{ color: 'var(--color-text-muted)' }}>
@@ -402,7 +408,7 @@ const EnhancedDateCell = memo(({
           </span>}
         </div>
       ) : (
-      <div className="relative flex items-center justify-center gap-0.5">
+      <div className="pointer-events-none relative z-10 flex items-center justify-center gap-0.5">
         {/* Over/Under indicator */}
         {status === 'over-logged' && (
           <Flame className="w-3 h-3 text-orange-600 flex-shrink-0" />
@@ -418,13 +424,13 @@ const EnhancedDateCell = memo(({
           against GET /api/leave/dashboard/day-status; never derived from or
           written back into this cell's own tracked-time data. */}
       {dayStatus && !['WORKING_DAY', 'ON_LEAVE'].includes(dayStatus.status) && (
-        <div className="absolute top-0.5 right-0.5">
+        <div className="pointer-events-none absolute top-0.5 right-0.5">
           <DayStatusIndicator dayStatus={dayStatus} />
         </div>
       )}
 
       {/* Hover Card */}
-      {showHoverCard && approvedLeave && (
+      {showHoverCard && approvedLeave && !hoverCategory && (
         <LeaveCalendarEventPopover
           anchor={cellRef.current}
           date={new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
@@ -444,11 +450,14 @@ const EnhancedDateCell = memo(({
           onMouseLeave={handleMouseLeave}
         />
       )}
-      {showHoverCard && !approvedLeave && day?.hasData && (
+      {hoverCategory && (
         <DateCellHoverCard
           userId={member.user._id}
           date={date}
-          isVisible={showHoverCard}
+          key={hoverCategory}
+          category={hoverCategory}
+          timeRevision={timeRevision}
+          isVisible
           anchorRef={cellRef}
         />
       )}
@@ -483,6 +492,7 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [teamData, setTeamData] = useState(null);
+  const [timeRevision, setTimeRevision] = useState(0);
   const [insights, setInsights] = useState(null);
   const [error, setError] = useState(null);
   // Leave/holiday/weekly-off overlay — {[userId]: {[dateKey]: {status,...}}}.
@@ -491,7 +501,7 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
 
   
   // Filter state - department is controlled by header context only
-  const [dateRange, setDateRange] = useState(() => DATE_PRESETS[1].getValue());
+  const [dateRange, setDateRange] = useState(() => workspaceDateRange(currentWorkspace?.timezone, 7));
   const [searchQuery, setSearchQuery] = useState('');
   const [filterPreset, setFilterPreset] = useState('all');
   const [sortBy, setSortBy] = useState('productivity');
@@ -557,6 +567,17 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
     },
     refresh: () => { fetchData({ background: true }); refetchOverlay(); }
   }), [currentWorkspace?._id, fetchData, refetchOverlay]);
+
+  useEffect(() => {
+    let timer;
+    const refresh = event => {
+      if (event.detail?.type !== 'team-logged-time:changed' || String(event.detail.payload?.workspaceId) !== String(currentWorkspace?._id)) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => { setTimeRevision(value => value + 1); fetchData({ background: true }); }, 100);
+    };
+    window.addEventListener('flowtask:realtime', refresh);
+    return () => { clearTimeout(timer); window.removeEventListener('flowtask:realtime', refresh); };
+  }, [currentWorkspace?._id, fetchData]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -640,11 +661,7 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
-  const formatMinutes = (minutes = 0) => {
-    const hrs = Math.floor(minutes / 60);
-    const mins = Math.round(minutes % 60);
-    return `${hrs}h ${mins}m`;
-  };
+  const formatMinutes = formatLoggedMinutes;
 
   const getDayData = (member, date) => {
     if (!member?.dailyTimeline) return null;
@@ -652,82 +669,6 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
   };
 
   // Enhanced cell style with heat-intensity gradients
-  const getDayCellStyle = (day) => {
-    if (!day || !day.hasData) {
-      return {
-        bg: 'bg-gray-50',
-        text: 'text-gray-400',
-        border: 'border-gray-100',
-        gradient: ''
-      };
-    }
-
-    const hours = (day.totalMinutes || 0) / 60;
-    // Calendar-resolved expected hours for THIS day (0 on a weekly-off/
-    // holiday/recurring-off day) — supplied by the backend per cell, never
-    // a flat 8h assumption. See teamAnalyticsController.js#getTeamLoggedTime.
-    const expectedHours = (day.expectedMinutes ?? 480) / 60;
-
-    if (expectedHours === 0) {
-      // Time logged on a day with no expected hours (a day off) has no
-      // over/under target to compare against — informational, not a heat
-      // gradient built around a baseline of zero.
-      return {
-        bg: 'bg-gradient-to-br from-sky-50 to-blue-50',
-        text: 'text-sky-700',
-        border: 'border-sky-200',
-        gradient: ''
-      };
-    }
-    const intensity = Math.min(hours / expectedHours, 1.5);
-
-    // Heat-intensity based on percentage of expected hours
-    if (hours >= expectedHours * 1.25) {
-      // Over-logged (>10h) - Strong orange/red heat
-      return { 
-        bg: 'bg-gradient-to-br from-orange-100 to-red-100', 
-        text: 'text-orange-800', 
-        border: 'border-orange-200',
-        gradient: 'shadow-inner shadow-orange-200/50'
-      };
-    }
-    if (hours >= expectedHours) {
-      // On target (8h+) - Strong green
-      return { 
-        bg: 'bg-gradient-to-br from-emerald-100 to-green-100', 
-        text: 'text-emerald-800', 
-        border: 'border-emerald-200',
-        gradient: 'shadow-inner shadow-emerald-200/50'
-      };
-    }
-    if (hours >= expectedHours * 0.75) {
-      // Near target (6-8h) - Medium blue
-      return { 
-        bg: 'bg-gradient-to-br from-blue-50 to-indigo-50', 
-        text: 'text-blue-700', 
-        border: 'border-blue-200',
-        gradient: ''
-      };
-    }
-    if (hours >= expectedHours * 0.5) {
-      // Below target (4-6h) - Light amber
-      return { 
-        bg: 'bg-gradient-to-br from-amber-50 to-yellow-50', 
-        text: 'text-amber-700', 
-        border: 'border-amber-200',
-        gradient: ''
-      };
-    }
-    // Very low (<4h) - Light rose
-    return { 
-      bg: 'bg-gradient-to-br from-rose-50 to-pink-50', 
-      text: 'text-rose-700', 
-      border: 'border-rose-200',
-      gradient: ''
-    };
-  };
-
-  // Get over/under status for a day
   const getDateStatus = (day) => {
     if (!day || !day.hasData) return 'no-data';
     if (day.expectedMinutes === 0) return 'normal'; // a day off is never "under-logged", however much (or little) was logged on it
@@ -1195,7 +1136,7 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
                     {DATE_PRESETS.map((preset) => (
                       <DropdownMenuItem
                         key={preset.label}
-                        onClick={() => setDateRange(preset.getValue())}
+                        onClick={() => setDateRange(workspaceDateRange(currentWorkspace?.timezone, preset.range))}
                         className="hover:bg-blue-50 rounded-lg my-1 cursor-pointer"
                       >
                         <Calendar className="w-4 h-4 mr-2 text-gray-500" />
@@ -1513,7 +1454,6 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
                             </td>
                             {dateColumns.map((date) => {
                               const day = getDayData(member, date);
-                              const style = getDayCellStyle(day);
                               const status = getDateStatus(day);
                               const value = day?.hasData ? `${day.hours}h ${day.minutes}m` : '-';
                               const dayStatus = dayStatusMap[member.user._id]?.[date];
@@ -1523,11 +1463,11 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
                                   member={member}
                                   date={date}
                                   day={day}
-                                  style={style}
                                   status={status}
                                   value={value}
                                   onOpenModal={openDetailModal}
                                   dayStatus={dayStatus}
+                                  timeRevision={timeRevision}
                                 />
                               );
                             })}
@@ -1549,7 +1489,7 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
                             </td>
                           ))}
                           <td className="px-4 py-3 text-right text-gray-900">
-                            {teamData?.analytics?.summary?.totalTeamHours ? `${teamData.analytics.summary.totalTeamHours}h` : '—'}
+                            {teamData?.analytics?.summary?.totalTeamMinutes ? formatMinutes(teamData.analytics.summary.totalTeamMinutes) : '—'}
                           </td>
                         </tr>
                       )}
@@ -1612,6 +1552,7 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
         userId={detailModal.userId}
         date={detailModal.date}
         isOpen={detailModal.isOpen}
+        timeRevision={timeRevision}
         onClose={closeDetailModal}
         userName={detailModal.userName}
         userAvatar={detailModal.userAvatar}

@@ -30,6 +30,8 @@ import { chatHooks } from "../utils/chatHooks.js";
 import { scheduleDueDateJobs, cancelDueDateJobs } from "../schedulers/cardDueDateScheduler.js";
 import { emitTimeEntryDiffs, emitTimeEntryWebhook } from "../utils/chatTimeTracking.js";
 import { processTimeEntriesWithOwnership } from "../utils/timeEntryUtils.js";
+import { autoTracked, getLoggedTimeReviews, resolveLoggedTimeReview, validateManualInterval } from "../modules/tracking/tracking.loggedTime.js";
+import { emitToWorkspace } from "../realtime/emitters.js";
 import { timeEntryUserPopulate } from "../utils/timeEntryPopulate.js";
 import { emitFinanceDataRefresh } from "../realtime/index.js";
 import { sanitizeHtml } from "../utils/sanitizeHtml.js";
@@ -478,6 +480,10 @@ export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
             input: '$loggedTime',
             as: 'log',
             in: {
+              _id: '$$log._id',
+              timeSource: '$$log.timeSource',
+              durationMs: '$$log.durationMs',
+              workDateKey: '$$log.workDateKey',
               hours: '$$log.hours',
               minutes: '$$log.minutes',
               description: '$$log.description',
@@ -1004,6 +1010,13 @@ export const updateCard = asyncHandler(async (req, res, next) => {
         currentUser, 
         'logged'
       );
+      const prior = new Map((card.loggedTime || []).map(entry => [String(entry._id), entry]));
+      for (const entry of result.entries) {
+        const before = prior.get(String(entry._id));
+        if (autoTracked(entry) || String(entry.user) !== String(req.user.id)
+          || before && entry.hours === before.hours && entry.minutes === before.minutes) continue;
+        await validateManualInterval({ workspaceId: req.workspaceId, user: req.user.id, task: card._id, entry });
+      }
       req.body.loggedTime = result.entries;
       if (result.errors.length > 0) {
         timeEntryWarnings.push(...result.errors);
@@ -1022,7 +1035,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
       }
     }
   } catch (validationError) {
-    return next(new ErrorResponse(validationError.message, 400));
+    return next(validationError.statusCode ? validationError : new ErrorResponse(validationError.message, 400));
   }
 
   const placementChanged = ['status','list','position'].some(field => Object.hasOwn(req.body,field) && String(req.body[field]) !== String(card[field]));
@@ -1994,18 +2007,26 @@ export const getArchivedCards = asyncHandler(async (req, res, next) => {
 // @desc    Add time tracking entry
 // @route   POST /api/cards/:id/time-tracking
 // @access  Private
-export const addTimeEntry = asyncHandler(async (req, res, next) => {
+export const listLoggedTimeReviews = asyncHandler(async (req, res) => {
+  await authorizeProjectResource(req, 'task', req.params.id, 'task.view');
+  res.json({ success: true, data: await getLoggedTimeReviews(req.workspaceId, req.user.id, req.params.id) });
+});
+
+export const reviewLoggedTime = asyncHandler(async (req, res) => {
   await authorizeProjectResource(req, 'task', req.params.id, 'time.log');
+  if (!mongoose.isValidObjectId(req.params.entryId)) throw new ErrorResponse('Tracked time review not found.', 404);
+  await resolveLoggedTimeReview({ workspaceId: req.workspaceId, user: req.user.id, task: req.params.id,
+    entryId: req.params.entryId, decision: req.body.decision, extraMinutes: req.body.extraMinutes });
+  res.json({ success: true });
+});
+
+export const addTimeEntry = asyncHandler(async (req, res, next) => {
+  const resource = await authorizeProjectResource(req, 'task', req.params.id, 'time.log');
   const { id } = req.params;
   const { type, entry } = req.body;
 
   if (!['estimation', 'logged', 'billed'].includes(type)) {
     return next(new ErrorResponse('Invalid time entry type', 400));
-  }
-
-  const card = await Card.findById(id);
-  if (!card) {
-    return next(new ErrorResponse('Card not found', 404));
   }
 
   const fieldName = `${type}Time`;
@@ -2021,15 +2042,51 @@ export const addTimeEntry = asyncHandler(async (req, res, next) => {
   if (newEntry.hours) newEntry.hours = parseInt(newEntry.hours) || 0;
   if (newEntry.minutes) newEntry.minutes = parseInt(newEntry.minutes) || 0;
 
-  // Add to array
-  card[fieldName].push(newEntry);
-  await card.save();
+  let card, replay = false;
+  if (type === 'logged') {
+    const operationId = entry?.operationId;
+    if (operationId != null && (typeof operationId !== 'string' || !/^[\w-]{8,128}$/.test(operationId))) {
+      throw new ErrorResponse('Invalid manual time operation.', 400);
+    }
+    Object.assign(newEntry, {
+      timeSource: 'MANUAL', manualOperationId: operationId, durationMs: undefined,
+      trackingSession: undefined, trackedProject: undefined, trackedProjectName: undefined,
+      trackedTaskTitle: undefined, workDateKey: undefined
+    });
+    const transaction = await mongoose.startSession();
+    try {
+      await transaction.withTransaction(async () => {
+        card = await Card.findOne({ _id: id, workspaceId: req.workspaceId, board: resource.board }).session(transaction);
+        if (!card) throw new ErrorResponse('Card not found', 404);
+        const prior = operationId && card.loggedTime.find(row => row.manualOperationId === operationId && String(row.user) === String(req.user.id));
+        replay = Boolean(prior);
+        if (prior) {
+          newEntry._id = prior._id;
+          return;
+        }
+        newEntry.date ||= new Date();
+        await validateManualInterval({ workspaceId: req.workspaceId, user: req.user.id, task: id,
+          entry: newEntry, dbSession: transaction, manualRows: card.loggedTime });
+        card.loggedTime.push(newEntry);
+        await card.save({ session: transaction });
+      });
+    } finally {
+      await transaction.endSession();
+      card?.$session(null);
+    }
+  } else {
+    card = await Card.findById(id);
+    if (!card) throw new ErrorResponse('Card not found', 404);
+    card[fieldName].push(newEntry);
+    await card.save();
+  }
 
   // Populate user info for response
   await card.populate(timeEntryUserPopulate(`${fieldName}.user`));
   
   // Find the newly added entry to return
   const addedEntry = card[fieldName].find(e => e._id.toString() === newEntry._id.toString());
+  if (replay) return res.json({ success: true, data: addedEntry });
   
   // Log activity
   await Activity.create({
@@ -2056,6 +2113,7 @@ export const addTimeEntry = asyncHandler(async (req, res, next) => {
   });
 
   if (type === 'logged' || type === 'billed') {
+    if (type === 'logged') emitToWorkspace('team-logged-time:changed', { workspaceId: req.workspaceId }, req.workspaceId);
     emitFinanceDataRefresh({
       changeType: type === 'billed' ? 'billed_time' : 'logged_time',
       cardId: card._id.toString(),
@@ -2104,6 +2162,7 @@ export const updateTimeEntry = asyncHandler(async (req, res, next) => {
   }
 
   const entry = card[fieldName][entryIndex];
+  if (type === 'logged' && autoTracked(entry)) throw new ErrorResponse('Auto-tracked entries come from the work session.', 403);
     const previousEntry = entry.toObject();
 
   // check ownership
@@ -2114,9 +2173,20 @@ export const updateTimeEntry = asyncHandler(async (req, res, next) => {
   // Update fields
   if (updates.hours !== undefined) entry.hours = parseInt(updates.hours) || 0;
   if (updates.minutes !== undefined) entry.minutes = parseInt(updates.minutes) || 0;
-  if (updates.date !== undefined) entry.date = updates.date;
+  if (updates.date !== undefined && !(type === 'logged' && entry.workDateKey && updates.dateKey === entry.workDateKey)) entry.date = updates.date;
   if (updates.reason !== undefined && type === 'estimation') entry.reason = updates.reason;
   if (updates.description !== undefined && type !== 'estimation') entry.description = updates.description;
+  if (type === 'logged' && (['date', 'hours', 'minutes'].some(key => String(entry[key]) !== String(previousEntry[key]))
+      || updates.startedAt !== undefined || updates.endedAt !== undefined)) {
+    const draft = { ...entry.toObject(), dateKey: updates.dateKey,
+      startedAt: updates.startedAt ?? entry.startedAt, endedAt: updates.endedAt ?? entry.endedAt };
+    await validateManualInterval({ workspaceId: req.workspaceId, user: req.user.id, task: id, entry: draft, manualRows: card.loggedTime });
+    entry.date = draft.date;
+    entry.workDateKey = draft.workDateKey;
+    entry.startedAt = draft.startedAt;
+    entry.endedAt = draft.endedAt;
+  }
+  if (type === 'logged') entry.timeSource = 'MANUAL';
 
   await card.save();
   await card.populate(timeEntryUserPopulate(`${fieldName}.user`));
@@ -2190,6 +2260,7 @@ export const deleteTimeEntry = asyncHandler(async (req, res, next) => {
   }
 
   const entry = card[fieldName][entryIndex];
+  if (type === 'logged' && autoTracked(entry)) throw new ErrorResponse('Auto-tracked entries come from the work session.', 403);
     const previousEntry = entry.toObject();
 
   // check ownership

@@ -18,7 +18,7 @@ export function workContext(segment, includePreAssignment = false) {
     taskId: id(segment.attributedTask || segment.task || includedLink), task: text(segment.attributedTaskTitle || segment.taskTitle || (includedLink ? segment.linkedTaskTitle : '')),
     agenda: text(segment.agendaTitle), description: text(segment.description),
     startedAt: segment.startedAt, endedAt: segment.endedAt || null,
-    attributed: !!segment.attributionIncluded || !!includedLink };
+    attributed: !!segment.attributionIncluded || !!includedLink || segment.kind === 'TASK' && Boolean(segment.agenda) };
 }
 
 export function dailyWorkSummary(sessions, attendanceRows, at) {

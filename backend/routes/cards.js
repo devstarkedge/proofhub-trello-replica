@@ -7,6 +7,7 @@ import { protect } from '../middleware/authMiddleware.js';
 import { managerOrAdmin } from '../middleware/rbacMiddleware.js';
 import { validate } from '../middleware/validation.js';
 import '../middleware/upload.js';
+import { listLoggedTimeReviews, reviewLoggedTime } from '../controllers/cardController.js';
 
 const router = express.Router();
 
@@ -43,6 +44,8 @@ router.put('/:id/restore', protect, restoreCard);
 router.delete('/:id', protect, deleteCard);
 
 router.post('/:id/time-tracking', protect, addTimeEntry);
+router.get('/:id/time-tracking/reviews', protect, listLoggedTimeReviews);
+router.post('/:id/time-tracking/reviews/:entryId', protect, reviewLoggedTime);
 router.put('/:id/time-tracking/:entryId', protect, updateTimeEntry);
 router.delete('/:id/time-tracking/:entryId', protect, deleteTimeEntry);
 

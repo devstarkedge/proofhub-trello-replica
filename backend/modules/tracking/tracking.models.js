@@ -39,6 +39,15 @@ const segment = new mongoose.Schema({
   assignmentEventId: String, linkDecisionAt: Date, reason: String
 }, { _id: true });
 export const WorkSession = model('WorkSession', {
+  autoLogEligible: { type: Boolean, immutable: true },
+  loggedTimeFinalizedAt: Date,
+  loggedTimeResults: { type: [new mongoose.Schema({
+    _id: mongoose.Schema.Types.ObjectId,
+    task: oid('Card'), project: oid('Board'), taskTitle: String, projectName: String,
+    dateKey: String, date: Date, durationMs: Number,
+    ranges: [{ _id: false, start: Date, end: Date }],
+    status: { type: String, enum: ['POSTED', 'REVIEW', 'UNAVAILABLE', 'COVERED'] }
+  })], default: undefined },
   departmentIdsAtStart: {type:[mongoose.Schema.Types.ObjectId],default:undefined},
   user: oid('User', true), attendanceSession: oid('AttendanceSession', true), workDateKey: String,
   startedAt: { type: Date, required: true, immutable: true }, endedAt: { type: Date, default: null },

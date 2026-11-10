@@ -151,7 +151,17 @@ const cardSchema = new mongoose.Schema({
   }, { _id: true })],
   loggedTime: [new mongoose.Schema({
     hours: { type: Number, required: true, min: 0 },
-    minutes: { type: Number, required: true, min: 0, max: 59 },
+    minutes: { type: Number, required: true, min: 0, validate: value => value < 60 },
+    timeSource: { type: String, enum: ['MANUAL', 'AUTO_TRACKED'], default: 'MANUAL' },
+    durationMs: Number,
+    trackingSession: { type: mongoose.Schema.Types.ObjectId, ref: 'WorkSession' },
+    trackedProject: { type: mongoose.Schema.Types.ObjectId, ref: 'Board' },
+    trackedProjectName: String,
+    trackedTaskTitle: String,
+    workDateKey: String,
+    manualOperationId: String,
+    startedAt: Date,
+    endedAt: Date,
     description: { type: String, trim: true, maxlength: 500 },
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     userName: { type: String, trim: true }, // Denormalized for display without population

@@ -493,7 +493,10 @@ class DatabaseService {
       headers,
       body: JSON.stringify({ type, entry })
     });
-    if (!res.ok) throw new Error('Failed to add time entry');
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw Object.assign(new Error(body.message || 'Failed to save time entry'), { code: body.code, data: body.data });
+    }
     return await res.json();
   }
 
@@ -505,8 +508,24 @@ class DatabaseService {
       headers,
       body: JSON.stringify({ type, updates })
     });
-    if (!res.ok) throw new Error('Failed to update time entry');
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw Object.assign(new Error(body.message || 'Failed to save time entry'), { code: body.code, data: body.data });
+    }
     return await res.json();
+  }
+
+  async getLoggedTimeReviews(cardId) {
+    const response = await fetch(`${baseURL}/api/cards/${cardId}/time-tracking/reviews`, { headers: buildHeaders(false) });
+    if (!response.ok) throw new Error('Could not load time reviews');
+    return (await response.json()).data;
+  }
+
+  async resolveLoggedTimeReview(cardId, entryId, decision, extraMinutes) {
+    const response = await fetch(`${baseURL}/api/cards/${cardId}/time-tracking/reviews/${entryId}`, {
+      method: 'POST', headers: buildHeaders(), body: JSON.stringify({ decision, extraMinutes })
+    });
+    if (!response.ok) throw new Error((await response.json()).message || 'Could not save time review');
   }
 
   async deleteCardTimeEntry(cardId, entryId, type) {
@@ -2226,10 +2245,10 @@ class DatabaseService {
    * @param {string} date - Date string (YYYY-MM-DD)
    * @returns {Promise<Object>} Hover preview data
    */
-  async getDateHoverDetails(userId, date) {
+  async getDateHoverDetails(userId, date, category = 'project') {
     const headers = buildHeaders();
 
-    const res = await fetch(`${baseURL}/api/team-analytics/date-hover/${userId}/${date}`, { headers });
+    const res = await fetch(`${baseURL}/api/team-analytics/date-hover/${userId}/${date}?category=${encodeURIComponent(category)}`, { headers });
     if (!res.ok) {
       const error = await res.json();
       throw new Error(error.message || 'Failed to fetch date hover details');

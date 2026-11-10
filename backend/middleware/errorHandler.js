@@ -74,6 +74,7 @@ const errorHandler = (err, req, res, next) => {
     // every existing caller that never sets it is unaffected.
     ...((error.code || err.code) && { code: error.code || err.code }),
     ...(err.code === 'CHECKOUT_RECONFIRM_REQUIRED' && err.checkoutPreview && { data: { checkoutPreview: err.checkoutPreview } }),
+    ...(err.code === 'MANUAL_TIME_INTERVAL_REQUIRED' && { data: { trackedMinutes: err.trackedMinutes } }),
     ...(process.env.NODE_ENV === 'development' && err.code !== 11000 && { stack: err.stack })
   });
 };

@@ -140,7 +140,7 @@ export async function startWithAttendance({ attendance, selection, dbSession }) 
   const [created] = await WorkSession.create([{
     workspaceId: attendance.workspaceId, user: attendance.user, attendanceSession: attendance._id,
     departmentIdsAtStart:departmentsOf(member),
-    workDateKey: attendance.workDateKey, startedAt: attendance.checkInAt, status: 'RUNNING',policyRevision:policy.revision,
+    workDateKey: attendance.workDateKey, startedAt: attendance.checkInAt, status: 'RUNNING',policyRevision:policy.revision, autoLogEligible: true,
     segments: [{ ...selection, startedAt: attendance.checkInAt }], includePreAssignment: policy.includePreAssignment,
     audit: [{ id: randomUUID(), type: 'STARTED', at: attendance.checkInAt, actor: attendance.user }]
   }], { session: dbSession });
@@ -163,6 +163,18 @@ export async function finalizeAttendanceWork(attendance, dbSession = null, sched
       schedule ||= await readWorkBreak(attendance.workspaceId, attendance.checkInAt, dbSession);
       if (pauseForWorkBreak(session, schedule, end)) pushAudit(session, 'SCHEDULED_WORK_BREAK', session.segments.at(-1).endedAt, session.user);
       refreshWorkBreakPause(session, schedule);
+      if (session.autoLogEligible && attendance.closureReason === 'NORMAL_CHECKOUT') {
+        const taskIds = [...new Set(session.segments.filter(segment => segment.task).map(segment => id(segment.task)))];
+        const tasks = taskIds.length ? await Card.find({ workspaceId: attendance.workspaceId, _id: { $in: taskIds } })
+          .select('_id +assignmentEvents').session(dbSession).lean() : [];
+        for (const task of tasks) {
+          for (const event of task.assignmentEvents || []) {
+            if (event.type === 'UNASSIGNED' && id(event.user) === id(session.user) && +event.at >= +session.startedAt && +event.at <= +end) {
+              session.segments = endAssignment(session.segments, event, task);
+            }
+          }
+        }
+      }
       closeTimeline(session,end);
       if(!(session.audit||[]).some(a=>a.type==='ATTENDANCE_CLOSED'))pushAudit(session,'ATTENDANCE_CLOSED',session.endedAt,session.user,attendance.closureReason||attendance.status);
       saved=await WorkSession.findOneAndUpdate({_id:session._id,workspaceId:session.workspaceId,revision:session.revision??{$exists:false}},
@@ -274,7 +286,7 @@ export async function reconcileWorkspaceSessions(workspaceId = getActiveWorkspac
 }
 export function publicWorkSession(session, at = new Date()) {
   if(!session)return null;
-  const {operations:_,audit:__,evidenceRevision:___,...visible}=session;
+  const {operations:_,audit:__,evidenceRevision:___,loggedTimeResults, ...visible}=session;
   return {...visible,totals:summarize(session,at)};
 }
 export async function currentState(workspaceId, userId) {
@@ -316,7 +328,7 @@ async function changeWorkUnlocked({ workspaceId, userId, action, selection, oper
     if(action==='resume'){
       const previous=await WorkSession.findOne({workspaceId,user:userId,endedAt:null}).select('segments').lean();
       const last=previous?.segments?.at(-1);
-      candidate=last?.agenda?{mode:'INDIVIDUAL',agendaId:last.agenda}:{projectId:last?.project};
+      candidate=last?.kind==='INDIVIDUAL'&&last.agenda?{mode:'INDIVIDUAL',agendaId:last.agenda}:{projectId:last?.project};
     }
     const project=candidate?.projectId?await Board.findOne({_id:objectId(candidate.projectId),workspaceId,isDeleted:{$ne:true}}).select('_id workspaceId name visibility owner members managers guests department team isDeleted').lean():null;
     selectionContext=await contextFor(workspaceId,userId,{includeProjects:Boolean(project),projectRecords:project?[project]:[]});
@@ -392,6 +404,11 @@ async function changeWorkUnlocked({ workspaceId, userId, action, selection, oper
       }
       const valid = await validateSelection({ workspaceId, userId, selection: chosen, dbSession, policy, context:selectionContext });
       if (!valid) fail('Select work before starting a timer');
+      const previous = session?.segments.at(-1);
+      if (action === 'resume' && previous?.kind === 'TASK' && previous.agenda) {
+        Object.assign(valid, { agenda: previous.agenda, agendaTitle: previous.agendaTitle,
+          description: previous.description, attributedAt: previous.attributedAt });
+      }
       if (!session) {
         const policy = await policyFor(workspaceId, dbSession);
         const member=await WorkspaceMembership.findOne({workspace:workspaceId,user:userId}).session(dbSession).lean();
@@ -399,15 +416,14 @@ async function changeWorkUnlocked({ workspaceId, userId, action, selection, oper
           workDateKey: attendance.workDateKey, startedAt: at, status: 'RUNNING', endedAt: null, segments: [],
           includePreAssignment: policy.includePreAssignment, policyRevision:policy.revision, departmentIdsAtStart:departmentsOf(member),revision: 0, operations: [], audit: [] };
       } else if (action === 'start') fail('Work already exists; use switch or resume', 409);
-      if (action === 'link'||session.segments.at(-1)?.agenda&&valid.kind==='TASK') {
+      if (action === 'link' || (previous?.kind === 'INDIVIDUAL' && previous.agenda && valid.kind === 'TASK')) {
         const last = session.segments.at(-1);
-        if(last?.agenda){
-          if(valid.kind!=='TASK'||typeof selection?.includePrevious!=='boolean')fail('Choose Yes or No for previous agenda work before linking');
+        if(last?.kind === 'INDIVIDUAL' && last.agenda){
+          if(valid.kind!=='TASK')fail('Choose an assigned task to link the agenda');
           last.endedAt||=at;
-          if(selection.includePrevious){let boundary=+new Date(last.endedAt);for(let i=session.segments.length-1;i>=0;i--){const s=session.segments[i];if(s.kind!=='INDIVIDUAL'||id(s.agenda)!==id(last.agenda)||s.description!==last.description||+new Date(s.endedAt)!==boundary)break;
-            s.attributionIncluded=true;s.attributedTask=valid.task;s.attributedProject=valid.project;s.attributedProjectName=valid.projectName;s.attributedTaskTitle=valid.taskTitle;s.attributedAt=at;boundary=+new Date(s.startedAt);}}
-          session.audit.push({id:operationId,type:selection.includePrevious?'AGENDA_LINK_INCLUDE':'AGENDA_LINK_SEPARATE',at,actor:userId,detail:JSON.stringify({agenda:last.agenda,title:last.agendaTitle,description:last.description,task:valid.task,previousEnd:at})});
-          session.segments.push({...valid,startedAt:at,endedAt:null,reason:'AGENDA_LINK'});
+          session.audit.push({id:operationId,type:'AGENDA_LINK_SEPARATE',at,actor:userId,detail:JSON.stringify({agenda:last.agenda,title:last.agendaTitle,description:last.description,task:valid.task,previousEnd:at})});
+          session.segments.push({...valid,agenda:last.agenda,agendaTitle:last.agendaTitle,description:last.description,
+            attributedAt:at,startedAt:at,endedAt:null,reason:'AGENDA_LINK'});
           const pause=session.pauses?.find(p=>!p.endedAt);if(pause)pause.endedAt=at;session.status='RUNNING';
         }else{
         if (valid.kind !== 'TASK' || last?.kind !== 'INDIVIDUAL' || id(last.project) !== id(valid.project)) fail('Explicit linking requires individual work and an assigned task in the same project',409);
@@ -446,7 +462,7 @@ async function changeWorkUnlocked({ workspaceId, userId, action, selection, oper
       $set: { segments: session.segments, pauses: session.pauses || [], status: session.status },
       $push: {operations:{$each:session.operations},audit:{$each:session.audit}},
       $setOnInsert: { workspaceId, user: userId, attendanceSession: attendance._id, workDateKey: attendance.workDateKey,
-        startedAt: session.startedAt, endedAt: null, policyRevision:session.policyRevision, includePreAssignment: session.includePreAssignment,departmentIdsAtStart:session.departmentIdsAtStart },
+        startedAt: session.startedAt, endedAt: null, policyRevision:session.policyRevision, includePreAssignment: session.includePreAssignment,departmentIdsAtStart:session.departmentIdsAtStart,autoLogEligible:true },
       $inc: { revision: 1 }
     }, { new: true, upsert: session.revision === 0, runValidators: true, session: dbSession }).select('-operations -audit').lean();
     if (!result) fail('Work changed concurrently', 409);

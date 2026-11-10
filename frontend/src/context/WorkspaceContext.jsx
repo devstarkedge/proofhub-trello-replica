@@ -140,18 +140,6 @@ export const WorkspaceProvider = ({ children }) => {
     }
   }), [persistActiveWorkspace, setUser]);
 
-  const passwordRecovery = useRef({ userId: null, required: undefined });
-  useEffect(() => {
-    const current = { userId: user?._id, required: user?.forcePasswordChange };
-    const previous = passwordRecovery.current;
-    passwordRecovery.current = current;
-    if (isAuthenticated && current.userId && previous.userId === current.userId && previous.required === true && current.required === false) {
-      // Settings completed the required password change. Retry the blocked
-      // bootstrap once through the existing coalesced, scoped loader.
-      loadWorkspaces();
-    }
-  }, [isAuthenticated, user?._id, user?.forcePasswordChange, loadWorkspaces]);
-
   // localStorage is shared by tabs: the rendered workspace must follow the same
   // validated selection as request headers before another protected view renders.
   useEffect(() => {
@@ -221,6 +209,11 @@ export const WorkspaceProvider = ({ children }) => {
   // result synchronously for the post-login redirect decision, but nothing
   // would otherwise populate this context on a plain page refresh.
   useEffect(() => {
+    // The backend allows workspace reads after the required password change.
+    if (isAuthenticated && user?.forcePasswordChange) {
+      loadedForUserId.current = null;
+      return;
+    }
     if (isAuthenticated && user?._id && loadedForUserId.current !== user._id) {
       loadedForUserId.current = user._id;
       loadWorkspaces();
@@ -233,7 +226,7 @@ export const WorkspaceProvider = ({ children }) => {
       setCurrentWorkspace(null);
       setStatus("idle");
     }
-  }, [isAuthenticated, user?._id, loadWorkspaces]);
+  }, [isAuthenticated, user?._id, user?.forcePasswordChange, loadWorkspaces]);
 
   /**
    * Accepts the full creation payload (name, slug, type, industry,

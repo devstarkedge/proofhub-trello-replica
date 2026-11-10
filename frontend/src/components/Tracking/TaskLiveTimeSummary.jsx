@@ -15,6 +15,6 @@ export default function TaskLiveTimeSummary({taskId}){
   return <div className="mb-3 rounded-xl border p-3 text-sm" style={{backgroundColor:'var(--color-card-bg)',borderColor:'var(--color-border-default)',color:'var(--color-text-primary)'}}>
     <p className="font-semibold">Live tracked task time: {duration(data.trackedSeconds)}</p>
     <p className="text-xs">Assigned {duration(data.assignedSeconds)} · Individual before assignment {duration(data.preAssignmentSeconds)} ({duration(data.preAssignmentIncludedSeconds)} included under workspace policy)</p>
-    <p className="mt-1 text-xs">These session records are separate from manually entered time below.</p>
+    <p className="mt-1 text-xs">Session totals include tracked time already posted in Logged Time below.</p>
   </div>;
 }
