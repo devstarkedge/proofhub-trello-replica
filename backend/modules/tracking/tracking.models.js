@@ -44,7 +44,7 @@ export const WorkSession = model('WorkSession', {
   loggedTimeResults: { type: [new mongoose.Schema({
     _id: mongoose.Schema.Types.ObjectId,
     task: oid('Card'), project: oid('Board'), taskTitle: String, projectName: String,
-    dateKey: String, date: Date, durationMs: Number,
+    dateKey: String, date: Date, durationMs: Number, description: String,
     ranges: [{ _id: false, start: Date, end: Date }],
     status: { type: String, enum: ['POSTED', 'REVIEW', 'UNAVAILABLE', 'COVERED'] }
   })], default: undefined },

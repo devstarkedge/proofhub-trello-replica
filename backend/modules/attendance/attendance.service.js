@@ -1,7 +1,8 @@
 import mongoose from 'mongoose';
 import { enqueueAttendanceReport, requestPriorityAttendanceReportDelivery } from '../../services/chat/attendanceReporting.service.js';
 import AuditLog from '../../models/AuditLog.js';
-import { evaluateCheckout, assertCheckoutConfirmation } from './attendanceCheckout.service.js';
+import { evaluateCheckout, assertCheckoutConfirmation, checkoutPreview, readCheckoutTasks } from './attendanceCheckout.service.js';
+import { LOGGED_TIME_REASON_MAX_LENGTH, normalizeCheckoutTaskReason } from '../../../shared/checkoutTaskReasons.mjs';
 import { enqueueAttendanceEvent, processAttendanceEvents } from './attendanceEvents.service.js';
 import { validateSelection, startWithAttendance, finalizeAttendanceWork } from '../tracking/tracking.service.js';
 import { finalizeLoggedTime } from '../tracking/tracking.loggedTime.js';
@@ -437,7 +438,43 @@ export async function checkIn({ workspaceId, userId, membership, workspace, gps 
   return result;
 }
 
-export async function checkOut({ workspaceId, userId, membership, workspace, gps = null, ipAddress = null, actorName = null, attendanceSessionId = null, operationId = null, previewToken = null }) {
+export async function settleCheckoutWork(attendance, timezone, dbSession, { schedule, allowUnmarked = false, taskReasons } = {}) {
+  if (!dbSession) {
+    const transaction = await mongoose.startSession();
+    try {
+      return await transaction.withTransaction(() => settleCheckoutWork(attendance, timezone, transaction, { schedule, allowUnmarked, taskReasons }));
+    } finally {
+      await transaction.endSession();
+    }
+  }
+  const work = await finalizeAttendanceWork(attendance, dbSession, schedule);
+  const loggedTime = await finalizeLoggedTime(attendance, timezone, dbSession, { allowUnmarked, taskReasons });
+  if (loggedTime && (loggedTime.posted || loggedTime.pendingReview || loggedTime.unavailable)) {
+    const summary = { ...attendance.checkoutSummary, loggedTime };
+    await AttendanceSession.updateOne({ _id: attendance._id, workspaceId: attendance.workspaceId, user: attendance.user },
+      { $set: { checkoutSummary: summary } }, { session: dbSession });
+    return { summary, hasTrackedWork: true };
+  }
+  return { summary: null, hasTrackedWork: Boolean(work || loggedTime) };
+}
+
+function parseCheckoutTaskReasons(entries) {
+  if (!Array.isArray(entries) || entries.length > 5000) {
+    throw codedError('Send one work reason per task.', 400, 'INVALID_CHECKOUT_TASK_REASONS');
+  }
+  const reasons = new Map();
+  for (const entry of entries) {
+    const reason = normalizeCheckoutTaskReason(entry?.reason);
+    const taskId = typeof entry?.taskId === 'string' && /^[a-f\d]{24}$/i.test(entry.taskId) ? entry.taskId.toLowerCase() : null;
+    if (!taskId || reasons.has(taskId) || !reason) {
+      throw codedError(`Enter one work reason per task using 1–${LOGGED_TIME_REASON_MAX_LENGTH} characters.`, 400, 'INVALID_CHECKOUT_TASK_REASONS');
+    }
+    reasons.set(taskId, reason);
+  }
+  return reasons;
+}
+
+export async function checkOut({ workspaceId, userId, membership, workspace, gps = null, ipAddress = null, actorName = null, attendanceSessionId = null, operationId = null, previewToken = null, taskReasons = [] }) {
   const timezone = getWorkspaceTimezone(workspace);
   if (attendanceSessionId && !mongoose.isValidObjectId(attendanceSessionId)) throw codedError('Invalid attendance session',400,'INVALID_ATTENDANCE_SESSION');
   if (operationId !== null && (typeof operationId !== 'string' || !/^[\w-]{8,128}$/.test(operationId))) throw codedError('Invalid checkout operation',400,'INVALID_CHECKOUT_OPERATION');
@@ -453,7 +490,15 @@ export async function checkOut({ workspaceId, userId, membership, workspace, gps
       }
       if (!existing) throw codedError('No active attendance session. Refresh your attendance status.',409,'NO_ACTIVE_SESSION');
       if (['CLOSED','COMPLETED'].includes(existing.status)) {
-        await finalizeAttendanceWork(existing,dbSession);
+        const { summary } = await settleCheckoutWork(existing, timezone, dbSession);
+        if (summary) {
+          existing.checkoutSummary = summary;
+          const key = `checkout-recovered-${existing._id}`;
+          await enqueueAttendanceEvent({ workspaceId, user: userId, key, kind: 'CHECKED_OUT',
+            attendanceSession: existing._id, workDateKey: existing.workDateKey }, dbSession);
+          result = { session: existing, replay: true, summary, recoveredEventKey: key };
+          return;
+        }
         result={session:existing,replay:true,summary:existing.checkoutSummary||null};return;
       }
       if (existing.status !== 'ACTIVE') throw codedError(friendlyAttendanceMessage('MISSED_CHECKOUT_EXPIRED'),409,'MISSED_CHECKOUT_EXPIRED');
@@ -463,7 +508,13 @@ export async function checkOut({ workspaceId, userId, membership, workspace, gps
       const {policyVersion,shift}=evaluation.context;
       const cutoff=existing.missedCheckoutCutoffAt || calculateMissedCheckoutCutoff({checkInAt:existing.checkInAt,workDateKey:existing.workDateKey,timezone,policyVersion,shift,officeHours:evaluation.context.officeHours}).missedCheckoutCutoffAt;
       if (+serverNow >= +new Date(cutoff)) { overdueSessionToReconcile=existing;throw codedError(friendlyAttendanceMessage('MISSED_CHECKOUT_EXPIRED'),409,'MISSED_CHECKOUT_EXPIRED'); }
-      assertCheckoutConfirmation(previewToken,evaluation,userId,workspaceId);
+      const reasons = parseCheckoutTaskReasons(taskReasons);
+      try {
+        assertCheckoutConfirmation(previewToken,evaluation,userId,workspaceId);
+      } catch (error) {
+        if (error.checkoutPreview) error.checkoutPreview.checkoutTasks = await readCheckoutTasks(existing.toObject(), evaluation, dbSession);
+        throw error;
+      }
       let checkOutEvidence = {
         workMode: existing.checkIn.workMode, location: null, coordinates: null, reportedAccuracyMeters: null,
         capturedAt: null, distanceMeters: null, allowedRadiusMeters: null, ipAddress
@@ -516,20 +567,28 @@ export async function checkOut({ workspaceId, userId, membership, workspace, gps
       const {context:_,fingerprint:__,...summary}=evaluation;
       const closed=await AttendanceSession.findOneAndUpdate({_id:existing._id,workspaceId,user:userId,status:'ACTIVE'},{$set:{status:'COMPLETED',closureReason:'NORMAL_CHECKOUT',checkOutAt:serverNow,checkOut:checkOutEvidence,checkoutOperationId:operationId,checkoutSummary:summary}},{new:true,session:dbSession});
       if(!closed)throw codedError('Attendance changed concurrently. Retry checkout.',409,'ATTENDANCE_CHANGED');
-      const {day}=await computeAndUpsertDay({...evaluation.context,dbSession});
-      await finalizeAttendanceWork(closed,dbSession,evaluation.context.workBreak);
-      const loggedTime = await finalizeLoggedTime(closed,timezone,dbSession);
-      if (loggedTime && (loggedTime.posted || loggedTime.pendingReview || loggedTime.unavailable)) {
-        summary.loggedTime = loggedTime;
-        await AttendanceSession.updateOne({ _id: closed._id, workspaceId, user: userId },
-          { $set: { checkoutSummary: summary } }, { session: dbSession });
+      let settlement;
+      try {
+        settlement = await settleCheckoutWork(closed, timezone, dbSession, {
+          schedule: evaluation.context.workBreak, allowUnmarked: true, taskReasons: reasons
+        });
+      } catch (error) {
+        if (error.code === 'CHECKOUT_TASK_REASONS_REQUIRED') {
+          error.checkoutPreview = checkoutPreview({ ...evaluation, checkoutTasks: error.checkoutTasks }, userId, workspaceId);
+        }
+        throw error;
+      }
+      const { summary: savedSummary, hasTrackedWork } = settlement;
+      if (savedSummary) {
+        Object.assign(summary, savedSummary);
         closed.checkoutSummary = summary;
       }
+      const {day}=await computeAndUpsertDay({...evaluation.context,dbSession});
       await enqueueAttendanceReport({ action: 'checkout', attendance: closed, at: closed.checkOutAt, day, dbSession });
       await AuditLog.create([{workspace:workspaceId,actor:userId,actorName,actorRole:membership.role,action:'ATTENDANCE_CHECKED_OUT',category:'attendance_management',targetType:'AttendanceSession',targetId:closed._id,
         resourceLabel:`Attendance check-out: ${actorName||'Employee'}`,summary:`${actorName||'Employee'} checked out`,changes:{after:{workDateKey:closed.workDateKey,checkOutAt:serverNow,policyVersion:policyVersion._id,outcome:summary.outcome,approvedLeaveIds:summary.approvedLeaves.map(l=>l.requestId)}}}],{session:dbSession});
       await enqueueAttendanceEvent({workspaceId,user:userId,key:`checkout-${closed._id}`,kind:'CHECKED_OUT',attendanceSession:closed._id,workDateKey:closed.workDateKey},dbSession);
-      result={session:closed,replay:false,attendanceDay:day,summary};
+      result={session:closed,replay:false,attendanceDay:day,summary,hasTrackedWork};
     },{readConcern:{level:'snapshot'},writeConcern:{w:'majority'}});
   } catch(error) {
     if(overdueSessionToReconcile)await reconcileOverdueSession({session:overdueSessionToReconcile,workspace,reason:'LATE_CHECKOUT_ATTEMPT'}).catch(e=>console.error('[Attendance] overdue checkout recovery:',e.message));
@@ -540,8 +599,8 @@ export async function checkOut({ workspaceId, userId, membership, workspace, gps
   // Observer authorization and transport retries must not hold the response.
   if (!result.replay) requestPriorityAttendanceReportDelivery(workspaceId, result.session._id);
   if(!result.replay)try{attendanceHooks.onCheckedOut(userId,result.session,result.attendanceDay,[]);}catch{/* durable retry */}
-  if (!result.replay && result.summary?.workSessionIds?.length) {
-    void processAttendanceEvents(workspaceId, { key: `checkout-${result.session._id}` }).catch(() => {});
+  if (result.recoveredEventKey || !result.replay && result.hasTrackedWork) {
+    void processAttendanceEvents(workspaceId, { key: result.recoveredEventKey || `checkout-${result.session._id}` }).catch(() => {});
   }
   return result;
 }

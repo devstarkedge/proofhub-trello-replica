@@ -16,6 +16,11 @@ import { loggedTimeMinutes, readAdditionalTeamTime } from '../modules/tracking/t
 import { authorizeProjectResource } from '../services/projectAuthorization.js';
 import { validateDateRange } from '../utils/calendarDateRange.js';
 
+const savedLoggedMinutes = { $ifNull: [
+  { $divide: ['$loggedTime.durationMs', 60000] },
+  { $add: [{ $multiply: ['$loggedTime.hours', 60] }, '$loggedTime.minutes'] }
+] };
+
 async function analyticsDateBounds(workspaceId, query, defaultDays = 7) {
   const workspace = await Workspace.findById(workspaceId).select('timezone').lean();
   const timezone = getWorkspaceTimezone(workspace);
@@ -153,7 +158,7 @@ export const getTeamLoggedTime = asyncHandler(async (req, res, next) => {
           date: { $dateToString: { format: '%Y-%m-%d', date: '$loggedTime.date', timezone } }
         },
         totalMinutes: {
-          $sum: { $add: [{ $multiply: ['$loggedTime.hours', 60] }, '$loggedTime.minutes'] }
+          $sum: savedLoggedMinutes
         },
         taskCount: { $sum: 1 }
       }
@@ -375,7 +380,7 @@ export const getSmartInsights = asyncHandler(async (req, res, next) => {
       $group: {
         _id: '$loggedTime.user',
         totalMinutes: {
-          $sum: { $add: [{ $multiply: ['$loggedTime.hours', 60] }, '$loggedTime.minutes'] }
+          $sum: savedLoggedMinutes
         },
         taskCount: { $sum: 1 },
         uniqueDays: { $addToSet: { $dateToString: { format: '%Y-%m-%d', date: '$loggedTime.date', timezone } } }
@@ -574,7 +579,7 @@ export const getDepartmentAnalytics = asyncHandler(async (req, res, next) => {
         $group: {
           _id: null,
           totalMinutes: {
-            $sum: { $add: [{ $multiply: ['$loggedTime.hours', 60] }, '$loggedTime.minutes'] }
+            $sum: savedLoggedMinutes
           },
           taskCount: { $sum: 1 }
         }
@@ -670,7 +675,7 @@ export const getDailyTrends = asyncHandler(async (req, res, next) => {
       $group: {
         _id: { $dateToString: { format: dateFormat, date: '$loggedTime.date', timezone } },
         totalMinutes: {
-          $sum: { $add: [{ $multiply: ['$loggedTime.hours', 60] }, '$loggedTime.minutes'] }
+          $sum: savedLoggedMinutes
         },
         uniqueUsers: { $addToSet: '$loggedTime.user' },
         taskCount: { $sum: 1 }
@@ -765,7 +770,7 @@ export const getMyLoggedTimeSummary = asyncHandler(async (req, res, next) => {
       $group: {
         _id: { $dateToString: { format: '%Y-%m-%d', date: '$loggedTime.date', timezone } },
         totalMinutes: {
-          $sum: { $add: [{ $multiply: ['$loggedTime.hours', 60] }, '$loggedTime.minutes'] }
+          $sum: savedLoggedMinutes
         },
         entries: { $push: '$loggedTime' },
         taskCount: { $sum: 1 }

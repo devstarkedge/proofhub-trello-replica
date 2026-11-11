@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 import mongoosePaginate from 'mongoose-paginate-v2';
 import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 import taskAssignmentPlugin from '../modules/tracking/taskAssignment.plugin.js';
+import { LOGGED_TIME_REASON_MAX_LENGTH } from '../../shared/checkoutTaskReasons.mjs';
 const mentionSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -162,7 +163,7 @@ const cardSchema = new mongoose.Schema({
     manualOperationId: String,
     startedAt: Date,
     endedAt: Date,
-    description: { type: String, trim: true, maxlength: 500 },
+    description: { type: String, trim: true, maxlength: LOGGED_TIME_REASON_MAX_LENGTH },
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     userName: { type: String, trim: true }, // Denormalized for display without population
     date: { type: Date, default: Date.now }

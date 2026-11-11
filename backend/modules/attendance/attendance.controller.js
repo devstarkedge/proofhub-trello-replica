@@ -86,7 +86,8 @@ export const postCheckOut = asyncHandler(async (req, res) => {
 
   const result = await checkOut({
     workspaceId: req.workspaceId, userId: req.user.id, membership: membershipFromReq(req),
-    workspace, gps, ipAddress: req.ip, actorName: req.user.name, attendanceSessionId:req.body?.attendanceSessionId, operationId:req.body?.operationId, previewToken:req.body?.previewToken
+    workspace, gps, ipAddress: req.ip, actorName: req.user.name, attendanceSessionId:req.body?.attendanceSessionId, operationId:req.body?.operationId, previewToken:req.body?.previewToken,
+    taskReasons: req.body?.taskReasons
   });
 
   res.json({ success: true, data: result.session, replay: result.replay, summary:result.summary,serverNow:new Date() });

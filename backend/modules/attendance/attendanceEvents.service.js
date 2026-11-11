@@ -69,7 +69,12 @@ export async function processAttendanceEvents(workspaceId,{limit=20,key=null}={}
         if(!attendance||event.kind==='CHECKED_OUT'&&attendance.status==='ACTIVE')throw new Error('Attendance event has no matching state');
         const {finalizeAttendanceWork,emitChanged}=await import('../tracking/tracking.service.js');
         if(event.kind==='CHECKED_OUT'){
-          await finalizeAttendanceWork(attendance);
+          if (attendance.closureReason === 'NORMAL_CHECKOUT' && !attendance.checkoutSummary?.loggedTime) {
+            const {settleCheckoutWork}=await import('./attendance.service.js');
+            await settleCheckoutWork(attendance, getWorkspaceTimezone(workspace));
+          } else {
+            await finalizeAttendanceWork(attendance);
+          }
           await publishCheckoutLoggedTime(attendance);
         }
         const day=await AttendanceDay.findOne({workspaceId,user:event.user,workDateKey:event.workDateKey}).lean();

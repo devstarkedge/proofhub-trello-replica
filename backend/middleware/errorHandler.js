@@ -73,7 +73,7 @@ const errorHandler = (err, req, res, next) => {
     // ALREADY_CHECKED_IN) — set via `err.code = '...'` at the throw site;
     // every existing caller that never sets it is unaffected.
     ...((error.code || err.code) && { code: error.code || err.code }),
-    ...(err.code === 'CHECKOUT_RECONFIRM_REQUIRED' && err.checkoutPreview && { data: { checkoutPreview: err.checkoutPreview } }),
+    ...(['CHECKOUT_RECONFIRM_REQUIRED', 'CHECKOUT_TASK_REASONS_REQUIRED'].includes(err.code) && err.checkoutPreview && { data: { checkoutPreview: err.checkoutPreview } }),
     ...(err.code === 'MANUAL_TIME_INTERVAL_REQUIRED' && { data: { trackedMinutes: err.trackedMinutes } }),
     ...(process.env.NODE_ENV === 'development' && err.code !== 11000 && { stack: err.stack })
   });

@@ -17,6 +17,8 @@ import { applyRegularizationOverlay } from './attendanceRegularizationOverlay.js
 import { attendanceIntervals, intervalMinutes, unionIntervals, scheduleForDay, resolveLeaveCoverage } from './attendanceIntervals.js';
 import { codedError } from './attendanceErrors.js';
 import { readWorkBreak, firstWorkBreak } from './attendanceWorkBreak.js';
+import { checkoutTasks, planLoggedTime } from '../tracking/tracking.loggedTime.js';
+import { closeAttendanceWorkTimeline } from '../tracking/tracking.service.js';
 
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const signature = value => createHmac('sha256',config.jwt.secret).update(`attendance-checkout-v1:${value}`).digest();
@@ -117,5 +119,22 @@ export async function evaluateCheckout({workspaceId,userId,membership,workspace,
 export async function getCheckoutPreview(args) {
   const attendance=await AttendanceSession.findOne({workspaceId:args.workspaceId,user:args.userId,status:'ACTIVE'}).lean();
   if(!attendance)throw codedError('No active attendance session. Refresh your attendance status.',409,'NO_ACTIVE_SESSION');
-  return checkoutPreview(await evaluateCheckout({...args,attendance}),args.userId,args.workspaceId);
+  const evaluation = await evaluateCheckout({ ...args, attendance });
+  evaluation.checkoutTasks = await readCheckoutTasks(attendance, evaluation);
+  return checkoutPreview(evaluation, args.userId, args.workspaceId);
+}
+
+export async function readCheckoutTasks(attendance, evaluation, dbSession = null) {
+  if (!evaluation.canConfirm) return [];
+  const { workspaceId, user, _id } = attendance;
+  const work = await WorkSession.findOne({ workspaceId, user, attendanceSession: _id,
+    autoLogEligible: { $ne: false }, loggedTimeFinalizedAt: null })
+    .select('workspaceId user segments pauses includePreAssignment startedAt endedAt status').session(dbSession).lean();
+  if (!work) return [];
+  if (work.status !== 'CLOSED' || !work.endedAt || work.segments.some(segment => !segment.endedAt)
+      || work.pauses?.some(pause => !pause.endedAt)) {
+    await closeAttendanceWorkTimeline(work, { ...attendance, closureReason: 'NORMAL_CHECKOUT' },
+      evaluation.proposedCheckOutAt, dbSession, evaluation.context.workBreak);
+  }
+  return checkoutTasks(await planLoggedTime(work, evaluation.timezone, dbSession));
 }

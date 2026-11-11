@@ -196,11 +196,11 @@ const AttendanceQuickControl = () => {
     return success;
   };
   const handleCheckOut = () => {if(!operationRef.current){checkoutSessionRef.current=status.activeSession?._id;setShowCheckOut(true);}};
-  const confirmCheckOut = async (preview,operationId) => {
+  const confirmCheckOut = async (preview,operationId,taskReasons) => {
     if(operationRef.current)return false;
     operationRef.current='submitting';
     try {
-      return await runAction(attendanceApi.checkOut,'Checked out',{attendanceSessionId:preview.attendanceSessionId,operationId,previewToken:preview.previewToken},{propagateError:true,onResponse:async response=>{
+      return await runAction(attendanceApi.checkOut,'Checked out',{attendanceSessionId:preview.attendanceSessionId,operationId,previewToken:preview.previewToken,taskReasons},{propagateError:true,onResponse:async response=>{
         const reviewCount = response.summary?.loggedTime?.pendingReview;
         if (reviewCount) toast.info(`${reviewCount} tracked time ${reviewCount === 1 ? 'entry needs' : 'entries need'} review in the task’s Logged Time.`);
         const stopped=await finalizeDesktopCapture({attendanceSessionId:String(response.data._id),workSessionIds:response.summary?.workSessionIds||preview.workSessionIds,cutoffAt:response.data.checkOutAt});

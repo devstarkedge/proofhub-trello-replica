@@ -146,6 +146,28 @@ export async function startWithAttendance({ attendance, selection, dbSession }) 
   }], { session: dbSession });
   return created;
 }
+// Project the same timeline for the read-only preview and the checkout write.
+export async function closeAttendanceWorkTimeline(session, attendance, at, dbSession, schedule) {
+  const end = new Date(Math.min(+new Date(at), session.endedAt ? +new Date(session.endedAt) : Infinity));
+  schedule ||= await readWorkBreak(attendance.workspaceId, attendance.checkInAt, dbSession);
+  session.audit ||= [];
+  if (pauseForWorkBreak(session, schedule, end)) pushAudit(session, 'SCHEDULED_WORK_BREAK', session.segments.at(-1).endedAt, session.user);
+  refreshWorkBreakPause(session, schedule);
+  if (session.autoLogEligible !== false && attendance.closureReason === 'NORMAL_CHECKOUT') {
+    const taskIds = [...new Set(session.segments.filter(segment => segment.task).map(segment => id(segment.task)))];
+    const tasks = taskIds.length ? await Card.find({ workspaceId: attendance.workspaceId, _id: { $in: taskIds } })
+      .select('_id +assignmentEvents').session(dbSession).lean() : [];
+    for (const task of tasks) {
+      for (const event of task.assignmentEvents || []) {
+        if (event.type === 'UNASSIGNED' && id(event.user) === id(session.user) && +event.at >= +session.startedAt && +event.at <= +end) {
+          session.segments = endAssignment(session.segments, event, task);
+        }
+      }
+    }
+  }
+  return closeTimeline(session, end);
+}
+
 export async function finalizeAttendanceWork(attendance, dbSession = null, schedule = null) {
   if(!dbSession){
     const transaction=await mongoose.startSession();let saved;
@@ -154,28 +176,11 @@ export async function finalizeAttendanceWork(attendance, dbSession = null, sched
   }
   const at = attendance.checkOutAt || attendance.missedCheckoutCutoffAt || attendance.reconciledAt;
   if (!at) fail('Attendance closure requires an authoritative cutoff',500);
-  const sessions=await WorkSession.find({workspaceId:attendance.workspaceId,attendanceSession:attendance._id}).session(dbSession).lean();
+  const sessions=await WorkSession.find({workspaceId:attendance.workspaceId,user:attendance.user,attendanceSession:attendance._id}).session(dbSession).lean();
   let saved=null;
   for(const session of sessions){
     if(session.status!=='CLOSED'||!session.endedAt||(session.segments||[]).some(s=>!s.endedAt)||(session.pauses||[]).some(p=>!p.endedAt)){
-      session.audit ||= [];
-      const end = new Date(Math.min(+new Date(at), session.endedAt ? +new Date(session.endedAt) : Infinity));
-      schedule ||= await readWorkBreak(attendance.workspaceId, attendance.checkInAt, dbSession);
-      if (pauseForWorkBreak(session, schedule, end)) pushAudit(session, 'SCHEDULED_WORK_BREAK', session.segments.at(-1).endedAt, session.user);
-      refreshWorkBreakPause(session, schedule);
-      if (session.autoLogEligible && attendance.closureReason === 'NORMAL_CHECKOUT') {
-        const taskIds = [...new Set(session.segments.filter(segment => segment.task).map(segment => id(segment.task)))];
-        const tasks = taskIds.length ? await Card.find({ workspaceId: attendance.workspaceId, _id: { $in: taskIds } })
-          .select('_id +assignmentEvents').session(dbSession).lean() : [];
-        for (const task of tasks) {
-          for (const event of task.assignmentEvents || []) {
-            if (event.type === 'UNASSIGNED' && id(event.user) === id(session.user) && +event.at >= +session.startedAt && +event.at <= +end) {
-              session.segments = endAssignment(session.segments, event, task);
-            }
-          }
-        }
-      }
-      closeTimeline(session,end);
+      await closeAttendanceWorkTimeline(session, attendance, at, dbSession, schedule);
       if(!(session.audit||[]).some(a=>a.type==='ATTENDANCE_CLOSED'))pushAudit(session,'ATTENDANCE_CLOSED',session.endedAt,session.user,attendance.closureReason||attendance.status);
       saved=await WorkSession.findOneAndUpdate({_id:session._id,workspaceId:session.workspaceId,revision:session.revision??{$exists:false}},
         {$set:{segments:session.segments,pauses:session.pauses||[],status:session.status,endedAt:session.endedAt,audit:session.audit},$inc:{revision:1}},{new:true,session:dbSession});

@@ -8,6 +8,7 @@ import { ErrorResponse } from '../../middleware/errorHandler.js';
 import { dateOnlyToInstant, getWorkspaceTimezone, instantToDateOnlyKey } from '../leave/leaveTimezone.util.js';
 import { WorkSession } from './tracking.models.js';
 import { firstWorkBreak, readWorkBreak } from '../attendance/attendanceWorkBreak.js';
+import { LOGGED_TIME_REASON_MAX_LENGTH } from '../../../shared/checkoutTaskReasons.mjs';
 
 const id = value => String(value?._id || value || '');
 const asMs = ranges => ranges.reduce((total, range) => total + (+range.end - +range.start), 0);
@@ -56,19 +57,12 @@ function autoEntry(work, result) {
     _id: result._id, user: work.user, date: result.date, timeSource: 'AUTO_TRACKED',
     hours, minutes: (result.durationMs - hours * 3600000) / 60000, durationMs: result.durationMs,
     trackingSession: work._id, trackedProject: result.project, trackedProjectName: result.projectName,
-    trackedTaskTitle: result.taskTitle, workDateKey: result.dateKey, description: 'Tracked work session'
+    trackedTaskTitle: result.taskTitle, workDateKey: result.dateKey, description: result.description
   };
 }
 
-// Checkout owns the transaction for both the immutable receipt and card rows.
-// The receipt and stable entry IDs also let event delivery retry independently.
-export async function finalizeLoggedTime(attendance, timezone, dbSession) {
-  const { workspaceId, user } = attendance;
-  if (attendance.closureReason !== 'NORMAL_CHECKOUT' || !attendance.checkOutAt) return;
-  const work = await WorkSession.findOne({ workspaceId, user, attendanceSession: attendance._id,
-    status: 'CLOSED', autoLogEligible: true, loggedTimeFinalizedAt: null })
-    .select('user segments includePreAssignment').session(dbSession).lean();
-  if (!work) return;
+export async function planLoggedTime(work, timezone, dbSession) {
+  const { workspaceId, user } = work;
   const groups = new Map();
   for (const segment of work.segments) {
     const destination = segmentDestination(segment, work);
@@ -76,20 +70,24 @@ export async function finalizeLoggedTime(attendance, timezone, dbSession) {
     for (const piece of splitWorkDates(segment.startedAt, segment.endedAt, timezone)) {
       const key = `${destination.project}:${destination.task}:${piece.dateKey}`;
       if (!groups.has(key)) groups.set(key, { ...destination, _id: new mongoose.Types.ObjectId(),
-        date: piece.date, dateKey: piece.dateKey, ranges: [] });
-      groups.get(key).ranges.push({ start: piece.start, end: piece.end });
+        date: piece.date, dateKey: piece.dateKey, ranges: [], descriptions: new Set() });
+      const group = groups.get(key);
+      group.ranges.push({ start: piece.start, end: piece.end });
+      if (segment.description?.trim()) group.descriptions.add(segment.description.trim());
     }
   }
-  const rows = [...groups.values()];
+  const rows = [...groups.values()].map(({ descriptions, ...row }) => ({
+    ...row, description: [...descriptions].join('\n').slice(0, LOGGED_TIME_REASON_MAX_LENGTH)
+  }));
+  const savedEntries = new Set();
   if (rows.length) {
     const cardIds = [...new Set(rows.map(row => id(row.task)))];
     const projects = await Board.find({ workspaceId, _id: { $in: rows.map(row => row.project) }, isDeleted: { $ne: true } })
-      .select('_id').session(dbSession).lean();
-    const validProjects = new Set(projects.map(id));
+      .select('name').session(dbSession).lean();
+    const validProjects = new Map(projects.map(project => [id(project), project]));
     const cards = await Card.find({ workspaceId, _id: { $in: cardIds }, isArchived: { $ne: true } })
-      .select('board loggedTime').session(dbSession).lean();
+      .select('board title loggedTime').session(dbSession).lean();
     const byCard = new Map(cards.map(card => [id(card), card]));
-    const updates = new Map();
     for (const row of rows) {
       const card = byCard.get(id(row.task));
       row.durationMs = asMs(row.ranges);
@@ -97,24 +95,81 @@ export async function finalizeLoggedTime(attendance, timezone, dbSession) {
         row.status = 'UNAVAILABLE';
         continue;
       }
+      row.taskTitle ||= card.title;
+      row.projectName ||= validProjects.get(id(row.project)).name;
+      row.description ||= row.taskTitle?.slice(0, LOGGED_TIME_REASON_MAX_LENGTH);
+      const saved = (card.loggedTime || []).find(entry => autoTracked(entry) && id(entry.trackingSession) === id(work)
+        && id(entry.user) === id(user) && entry.workDateKey === row.dateKey && id(entry.trackedProject) === id(row.project));
+      if (saved) {
+        row._id = saved._id;
+        row.durationMs = Math.round(loggedTimeMinutes(saved) * 60000);
+        row.description = saved.description || row.description;
+        row.status = 'POSTED';
+        savedEntries.add(id(saved));
+        continue;
+      }
       const manual = (card.loggedTime || []).filter(entry => !autoTracked(entry) && id(entry.user) === id(user) && dateOfEntry(entry, timezone) === row.dateKey);
       row.ranges = subtractManualRanges(row.ranges, manual.filter(entry => entry.startedAt && entry.endedAt));
       row.durationMs = asMs(row.ranges);
       row.status = row.durationMs === 0 ? 'COVERED'
         : manual.some(entry => !entry.startedAt || !entry.endedAt) ? 'REVIEW' : 'POSTED';
-      if (row.status === 'POSTED') {
-        if (!updates.has(card)) updates.set(card, []);
-        updates.get(card).push(autoEntry(work, row));
-      }
     }
-    if (updates.size) await Card.bulkWrite([...updates].map(([card, entries]) => ({
-      updateOne: { filter: { workspaceId, _id: card._id, board: card.board },
+  }
+  return { rows, savedEntries };
+}
+
+export function checkoutTasks({ rows, savedEntries }) {
+  const tasks = new Map();
+  for (const row of rows) {
+    if (!['POSTED', 'REVIEW'].includes(row.status) || savedEntries.has(id(row))) continue;
+    const taskId = id(row.task);
+    if (!tasks.has(taskId)) tasks.set(taskId, { taskId, title: row.taskTitle, project: row.projectName, durationMs: 0 });
+    tasks.get(taskId).durationMs += row.durationMs;
+  }
+  return [...tasks.values()];
+}
+
+// Checkout commits the card rows and the receipt in one transaction.
+export async function finalizeLoggedTime(attendance, timezone, dbSession, { allowUnmarked = false, taskReasons } = {}) {
+  const { workspaceId, user } = attendance;
+  if (attendance.closureReason !== 'NORMAL_CHECKOUT' || !attendance.checkOutAt) return;
+  const work = await WorkSession.findOne({ workspaceId, user, attendanceSession: attendance._id,
+    status: 'CLOSED', autoLogEligible: allowUnmarked ? { $ne: false } : true, loggedTimeFinalizedAt: null })
+    .select('workspaceId user segments includePreAssignment').session(dbSession).lean();
+  if (!work) return;
+  const plan = await planLoggedTime(work, timezone, dbSession);
+  const { rows, savedEntries } = plan;
+  // Replays of historical checkouts use their recorded descriptions. Every
+  // fresh checkout supplies a validated map, including an empty map.
+  if (taskReasons) {
+    const tasks = checkoutTasks(plan);
+    if (tasks.some(task => !taskReasons.has(task.taskId))) {
+      const error = new ErrorResponse('Enter a work reason for each listed task before checking out.', 409);
+      error.code = 'CHECKOUT_TASK_REASONS_REQUIRED';
+      error.checkoutTasks = tasks;
+      throw error;
+    }
+  }
+  const updates = new Map();
+  for (const row of rows) {
+    if (savedEntries.has(id(row)) || !['POSTED', 'REVIEW'].includes(row.status)) continue;
+    if (taskReasons) row.description = taskReasons.get(id(row.task));
+    if (row.status !== 'POSTED') continue;
+    const key = id(row.task);
+    if (!updates.has(key)) updates.set(key, { task: row.task, project: row.project, entries: [] });
+    updates.get(key).entries.push(autoEntry(work, row));
+  }
+  if (updates.size) {
+    const written = await Card.bulkWrite([...updates.values()].map(({ task, project, entries }) => ({
+      updateOne: { filter: { workspaceId, _id: task, board: project },
         update: { $push: { loggedTime: { $each: entries } }, $inc: { __v: 1 } } }
     })), { session: dbSession });
+    if (written.matchedCount !== updates.size) throw new Error('Task changed while saving checkout time');
   }
-  await WorkSession.updateOne({ workspaceId, user, _id: work._id, loggedTimeFinalizedAt: null }, {
+  const settled = await WorkSession.updateOne({ workspaceId, user, _id: work._id, loggedTimeFinalizedAt: null }, {
     $set: { loggedTimeFinalizedAt: attendance.checkOutAt, loggedTimeResults: rows }
   }, { session: dbSession });
+  if (!settled.matchedCount) throw new Error('Work session changed while saving checkout time');
   return {
     posted: rows.filter(row => row.status === 'POSTED').length,
     pendingReview: rows.filter(row => row.status === 'REVIEW').length,
@@ -162,8 +217,15 @@ export async function resolveLoggedTimeReview({ workspaceId, user, task, entryId
       let status = 'COVERED';
       if (durationMs) {
         const board = await Board.exists({ workspaceId, _id: row.project, isDeleted: { $ne: true } }).session(transaction);
-        const saved = board && await Card.updateOne({ workspaceId, _id: task, board: row.project, isArchived: { $ne: true } }, {
-          $push: { loggedTime: autoEntry(work, { ...row, durationMs }) }
+        const filter = { workspaceId, _id: task, board: row.project, isArchived: { $ne: true } };
+        let description = row.description;
+        // Reviews created before checkout reasons existed may lack a description.
+        if (board && !description) {
+          const title = row.taskTitle || (await Card.findOne(filter).select('title').session(transaction).lean())?.title;
+          description = title?.slice(0, LOGGED_TIME_REASON_MAX_LENGTH);
+        }
+        const saved = board && description && await Card.updateOne(filter, {
+          $push: { loggedTime: autoEntry(work, { ...row, durationMs, description }) }
         }, { session: transaction });
         status = saved?.matchedCount ? 'POSTED' : 'UNAVAILABLE';
       }
@@ -190,8 +252,10 @@ export async function validateManualInterval({ workspaceId, user, task, entry, d
     entry.workDateKey = dateKey;
   }
   const end = DateTime.fromJSDate(start, { zone: timezone }).plus({ days: 1 }).toJSDate();
-  const candidates = await WorkSession.find({ workspaceId, user, autoLogEligible: true, startedAt: { $lt: end },
+  const candidates = await WorkSession.find({ workspaceId, user, startedAt: { $lt: end },
     $and: [
+      { $or: [{ autoLogEligible: true }, { loggedTimeFinalizedAt: { $type: 'date' } },
+        { autoLogEligible: { $exists: false }, status: { $in: ['RUNNING', 'PAUSED'] } }] },
       { $or: [{ endedAt: { $gt: start } }, { endedAt: null }] },
       { $or: [{ 'segments.task': task }, { 'segments.attributedTask': task }, { 'segments.linkedTask': task }] }
     ] }).select('segments includePreAssignment endedAt').session(dbSession).lean();
