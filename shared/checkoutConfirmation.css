@@ -1,0 +1,20 @@
+.checkout-work-reason {
+  animation: checkout-reason-glow 2s ease-out;
+}
+
+@keyframes checkout-reason-glow {
+  0%, 60% {
+    border-color: var(--color-border-focus, #3b82f6);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-border-focus, #3b82f6) 28%, transparent);
+  }
+  100% {
+    border-color: var(--color-border-default);
+    box-shadow: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .checkout-work-reason {
+    animation-timing-function: steps(1, end);
+  }
+}

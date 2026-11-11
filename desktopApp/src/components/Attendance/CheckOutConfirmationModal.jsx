@@ -3,12 +3,29 @@ import { Dialog } from 'radix-ui';
 import { Clock3, BriefcaseBusiness, Loader2, X, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { readCheckoutPreview } from '../../services/checkoutPreviewState';
 import { actionSnapshot } from '../../services/sessionActions';
-import { formatTrackingClock } from '../../utils/duration';
+import { formatHours, formatTrackingClock } from '../../utils/duration';
 import { Button } from '../ui/button';
+import PresenceStatusBadge from './PresenceStatusBadge';
 import { LOGGED_TIME_REASON_MAX_LENGTH, normalizeCheckoutTaskReason } from '../../../../shared/checkoutTaskReasons.mjs';
+import '../../../../shared/checkoutConfirmation.css';
 
 const surface={backgroundColor:'var(--color-card-bg)',color:'var(--color-text-primary)',borderColor:'var(--color-border-default)'};
 const muted={color:'var(--color-text-secondary)'};
+
+function checkoutOutcomeStatus(outcome) {
+  if (outcome.provisional) return 'PROVISIONAL';
+  if (outcome.leaveState === 'FULL_LEAVE') return 'ON_LEAVE';
+  return outcome.presenceState;
+}
+
+function checkoutWarningMessage(warning, uncoveredEarlyMinutes) {
+  const minutes = warning.minutes ?? uncoveredEarlyMinutes;
+  if (warning.code === 'EARLY_EXIT' && Number.isFinite(minutes)) {
+    return `${formatHours(minutes)} of early departure outside approved leave.`;
+  }
+  return warning.message;
+}
+
 export default function CheckOutConfirmationModal({attendanceSessionId,onClose,onConfirm,onInactive,actionScope}) {
   const [preview,setPreview]=useState(null),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
   const [submitted,setSubmitted]=useState(false);
@@ -71,9 +88,23 @@ export default function CheckOutConfirmationModal({attendanceSessionId,onClose,o
       {preview&&<div className="mt-5 space-y-4">
         <div className="grid grid-cols-2 gap-3">{[[<Clock3 size={15}/>, 'Office Time',preview.attendanceSeconds],[<BriefcaseBusiness size={15}/>, 'Tracked Work',preview.trackedWorkSeconds]].map(([icon,label,seconds])=><div key={label} className="rounded-xl border p-3" style={surface}><p className="flex items-center gap-2 text-xs" style={muted}>{icon}{label}</p><p className="mt-2 text-xl font-semibold tabular-nums">{seconds===null?'Unavailable':formatTrackingClock(seconds)}</p></div>)}</div>
         <dl className="space-y-1 text-xs" style={muted}><div className="flex flex-wrap justify-between gap-2"><dt>Checked in</dt><dd>{time(preview.checkInAt)}</dd></div><div className="flex flex-wrap justify-between gap-2"><dt>Proposed checkout</dt><dd>{time(preview.proposedCheckOutAt)}</dd></div></dl>
-        <div><p className="text-sm font-semibold">Expected outcome · {preview.outcome.label}</p><p className="mt-1 text-xs" style={muted}>{preview.outcome.explanation}</p></div>
-        {preview.approvedLeaves.length>0&&<div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3"><p className="flex items-center gap-2 text-sm font-medium"><ShieldCheck size={16}/>Approved leave</p>{preview.approvedLeaves.map((leave,index)=><p key={`${leave.requestId}-${index}`} className="mt-1 text-xs">{leave.type} · {leave.coverageResolved?`${time(leave.startedAt)} – ${time(leave.endedAt)}`:'Time coverage requires review'}</p>)}</div>}
-        {preview.warnings.map(warning=><p key={warning.code} className="flex items-start gap-2 rounded-lg bg-amber-500/10 p-3 text-xs"><TriangleAlert size={15} className="shrink-0"/>{warning.message}</p>)}
+        <div>
+          <p className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+            Expected outcome
+            <PresenceStatusBadge status={checkoutOutcomeStatus(preview.outcome)} label={preview.outcome.label} />
+          </p>
+          <p className="mt-1 text-xs" style={muted}>{preview.outcome.explanation}</p>
+        </div>
+        {preview.approvedLeaves.length > 0 && <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3">
+          <p className="flex items-center gap-2 text-sm font-medium"><ShieldCheck size={16} />Approved leave</p>
+          {preview.approvedLeaves.map((leave, index) => <p key={`${leave.requestId}-${index}`} className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+            <PresenceStatusBadge status={leave.dayType === 'SHORT_LEAVE' ? 'SHORT_LEAVE' : 'ON_LEAVE'} label={leave.type} />
+            <span>{leave.coverageResolved ? `${time(leave.startedAt)} – ${time(leave.endedAt)}` : 'Time coverage requires review'}</span>
+          </p>)}
+        </div>}
+        {preview.warnings.map(warning => <p key={warning.code} className="flex items-start gap-2 rounded-lg bg-amber-500/10 p-3 text-xs">
+          <TriangleAlert size={15} className="shrink-0" />{checkoutWarningMessage(warning, preview.uncoveredEarlyMinutes)}
+        </p>)}
         {!preview.canConfirm&&<p role="alert" className="text-xs">This session reached its missed-checkout cutoff. Refresh Attendance to review regularization.</p>}
         {preview.pendingUploads>0&&<p className="text-xs" style={muted}>{preview.pendingUploads} screenshots pending. Saved captures can continue uploading after checkout without adding work time.</p>}
         {tasks.length > 0 && <fieldset className="space-y-3" disabled={saving}>
@@ -88,7 +119,7 @@ export default function CheckOutConfirmationModal({attendanceSessionId,onClose,o
             </div>
             <label className="mt-3 block text-xs font-medium" htmlFor={`checkout-reason-${task.taskId}`}>Work reason / Description (required)</label>
             <textarea id={`checkout-reason-${task.taskId}`} aria-describedby={`checkout-task-${task.taskId}`}
-              className="mt-1 w-full rounded-lg border bg-transparent px-3 py-2 text-sm" style={{ borderColor: surface.borderColor }}
+              className="checkout-work-reason mt-1 w-full rounded-lg border bg-transparent px-3 py-2 text-sm" style={{ borderColor: surface.borderColor }}
               rows={2} maxLength={LOGGED_TIME_REASON_MAX_LENGTH} required value={reasons[task.taskId] || ''}
               onChange={event => { const value = event.target.value; setReasons(previous => ({ ...previous, [task.taskId]: value })); }} />
           </div>)}

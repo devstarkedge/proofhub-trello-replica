@@ -13,12 +13,14 @@ const STYLES = {
   MISSING_CHECKOUT: { label: 'Missing Check-Out', color: 'var(--color-error-text)', backgroundColor: 'var(--color-error-subtle)' },
   NOT_STARTED: { label: 'Not Started', color: 'var(--color-text-muted)', backgroundColor: 'var(--color-bg-muted)' },
   ON_LEAVE: { label: 'On Leave', color: 'var(--color-info-text)', backgroundColor: 'var(--color-info-subtle)' },
+  SHORT_LEAVE: { label: 'Short Leave', color: 'var(--color-info-text)', backgroundColor: 'var(--color-info-subtle)' },
+  PROVISIONAL: { label: 'Provisional', color: 'var(--color-warning-text)', backgroundColor: 'var(--color-warning-subtle)' },
   HOLIDAY: { label: 'Holiday', color: 'var(--color-info-text)', backgroundColor: 'var(--color-info-subtle)' },
   WEEKLY_OFF: { label: 'Weekly Off', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg-muted)' },
   LATE: { label: 'Late', color: 'var(--color-warning-text)', backgroundColor: 'var(--color-warning-subtle)' }
 };
 
-const PresenceStatusBadge = ({ day, status }) => {
+const PresenceStatusBadge = ({ day, status, label }) => {
   const key = status || resolveDisplayStatus(day);
   const style = STYLES[key] || STYLES.NOT_STARTED;
   return (
@@ -26,7 +28,7 @@ const PresenceStatusBadge = ({ day, status }) => {
       className="inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide"
       style={{ color: style.color, backgroundColor: style.backgroundColor }}
     >
-      {style.label}
+      {label || style.label}
     </span>
   );
 };
