@@ -7,6 +7,7 @@ import AttendanceDay from '../attendance/attendanceDay.model.js';
 import {effectiveAttendanceSession} from '../attendance/attendanceRegularizationOverlay.js';
 import {readRecentWorkBreakWindows} from '../attendance/attendanceWorkBreak.js';
 import {WorkSession,TrackingScreenshot,ActivityInterval} from './tracking.models.js';
+import { legacyHardCutoff } from '../attendance/attendanceActivity.service.js';
 import {contextFor,policyFor,fail,objectId,authorizeRecord} from './tracking.service.js';
 import {can} from './tracking.authorization.js';
 import {readVisibilityScope} from './tracking.visibility.js';
@@ -47,7 +48,7 @@ export async function readTrackingReports(workspaceId,viewerId,query){
   const candidates=await WorkSession.aggregate(pipeline).option({maxTimeMS:10000,allowDiskUse:true}),sessions=candidates.slice(0,20);
   const previews=query.summaryOnly==='true'?new Map():await readReportPreviews(workspaceId,sessions,ctx,scope,query,now);
   return {workspaceId,timezone:ctx.resolvedRecords.workspace?.timezone||'UTC',serverNow:now,nextCursor:candidates.length>20?id(sessions.at(-1)):null,sessions:sessions.map(record=>{
-    const {_attendance,_subject,_day,...session}=record,attendance=_attendance?effectiveAttendanceSession(_attendance):null,officeEnd=attendance?.checkOutAt||(attendance?.status==='ACTIVE'?new Date(Math.min(+now,attendance.missedCheckoutCutoffAt?+attendance.missedCheckoutCutoffAt:Infinity)):null);
+    const {_attendance,_subject,_day,...session}=record,attendance=_attendance?effectiveAttendanceSession(_attendance):null,officeEnd=attendance?.checkOutAt||(attendance?.status==='ACTIVE'?new Date(Math.min(+now,legacyHardCutoff(attendance) ? +legacyHardCutoff(attendance) : Infinity)):null);
     const preview=previews.get(id(session))||{records:[],totalCount:0},previewsLoaded=query.summaryOnly!=='true';
     return {...session,userName:_subject?.[0]?.name||'Former member',totals:summarize(session,now),attendance:{status:attendance?.status,day:_day?.[0],checkInAt:attendance?.checkInAt,checkOutAt:attendance?.checkOutAt,measuredOfficeSeconds:officeEnd?Math.max(0,(+officeEnd-+attendance.checkInAt)/1000):null},previewsLoaded,latestScreenshots:preview.records,totalScreenshots:previewsLoaded?preview.totalCount:null};
   })};

@@ -1,3 +1,4 @@
+import { legacyHardCutoff } from '../attendance/attendanceActivity.service.js';
 import AttendanceSession from '../attendance/attendanceSession.model.js';
 import {WorkSession} from './tracking.models.js';
 import {contextFor} from './tracking.service.js';
@@ -9,7 +10,8 @@ export async function sendTrackingReminders(workspaceId,policy){
   const now=new Date(),grace=new Date(+now-policy.reminderDelayMinutes*60000),cooldown=new Date(+now-policy.reminderCooldownMinutes*60000);
   for await(const attendance of AttendanceSession.find({workspaceId,status:'ACTIVE',checkInAt:{$lte:grace},$or:[{trackingReminderAt:null},{trackingReminderAt:{$lte:cooldown}}]}).lean().cursor()){
     const session=await WorkSession.findOne({workspaceId,attendanceSession:attendance._id}).lean();
-    if(session?.status==='RUNNING'||session?.pauses?.some(p=>!p.endedAt)||attendance.missedCheckoutCutoffAt&&+attendance.missedCheckoutCutoffAt<=+now)continue;
+    const cutoff = legacyHardCutoff(attendance);
+    if(session?.status==='RUNNING'||session?.pauses?.some(p=>!p.endedAt)||cutoff&&+cutoff<=+now)continue;
     let ctx;try{ctx=await contextFor(workspaceId,attendance.user);}catch{continue;}
     if(!can(ctx,'tracking.log',{workspaceId,user:attendance.user}))continue;
     // Claim atomically across maintenance processes without changing attendance evidence.

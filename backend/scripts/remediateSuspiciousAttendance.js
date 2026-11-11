@@ -18,6 +18,7 @@ import Workspace from '../models/Workspace.js';
 import AttendanceSession from '../modules/attendance/attendanceSession.model.js';
 import AttendanceDay from '../modules/attendance/attendanceDay.model.js';
 import { reconcileOverdueSession } from '../modules/attendance/attendanceSessionLifecycle.service.js';
+import { attendanceClosureCandidate } from '../modules/attendance/attendanceActivity.service.js';
 import { recomputeAttendanceDayForDate } from '../modules/attendance/attendance.service.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 
@@ -58,6 +59,8 @@ export async function scanAndRemediate({
       }).lean();
 
       for (const session of staleActiveSessions) {
+        const closure = attendanceClosureCandidate(session, new Date());
+        if (!closure || closure.reason === 'POST_SHIFT_INACTIVITY') continue;
         report.staleActiveSessionsFound++;
         const recordDetail = {
           workspace: ws.name,
@@ -73,12 +76,9 @@ export async function scanAndRemediate({
 
         if (apply) {
           try {
-            await reconcileOverdueSession({
-              session,
-              workspace: ws,
-              reason: 'REMEDIATION_SCRIPT'
-            });
-            report.staleActiveSessionsRemediated++;
+            const updated = await reconcileOverdueSession({ session, workspace: ws });
+            if (updated) report.staleActiveSessionsRemediated++;
+            else recordDetail.action = 'SKIPPED_AFTER_RECHECK';
           } catch (err) {
             console.error(`Failed to reconcile session ${session._id}:`, err.message);
           }
@@ -89,6 +89,7 @@ export async function scanAndRemediate({
       const allCompletedSessions = await AttendanceSession.find({
         workspaceId: ws._id,
         status: { $in: ['CLOSED', 'COMPLETED'] },
+        lastActivityAt: null,
         checkInAt: { $ne: null },
         checkOutAt: { $ne: null }
       }).lean();

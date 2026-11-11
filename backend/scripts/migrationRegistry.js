@@ -1,4 +1,4 @@
-import { runSmartCheckoutMigration } from './migrateSmartCheckout.js';
+import { runActivityCheckoutIndexMigration, runSmartCheckoutMigration } from './migrateSmartCheckout.js';
 import { runAttendanceReportingMigration } from './migrateAttendanceReporting.js';
 import { runLeaveReportingMigration } from './migrateLeaveReporting.js';
 import {runTrackingDashboardIndexMigration} from './migrateTrackingDashboardIndexes.js';
@@ -123,6 +123,7 @@ const MIGRATIONS = [
   { name: 'audit_integrity_and_private_files', version: '20261027', description: 'Enforce private project files and unique session, recurrence, history and cleanup indexes', run: runAuditIntegrityMigration },
   { name: 'attendance_chat_reporting', version: '20261029', description: 'Add durable attendance reporting delivery and directory lease indexes', run: runAttendanceReportingMigration },
   { name: 'approved_leave_reporting', version: '20261029', description: 'Add durable daily leave reporting delivery indexes', run: runLeaveReportingMigration },
+  { name: 'attendance_activity_checkout_index', version: '20261111', description: 'Index active attendance sessions by inactivity deadline', run: runActivityCheckoutIndexMigration },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

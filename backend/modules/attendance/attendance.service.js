@@ -32,6 +32,8 @@ import {
   reconcileOverdueSession
 } from './attendanceSessionLifecycle.service.js';
 import * as attendanceHooks from './attendanceHooks.js';
+import { confirmedCheckoutStatuses, legacyHardCutoff, publicAttendanceSession } from './attendanceActivity.service.js';
+import { summarize } from '../tracking/tracking.timeline.js';
 
 /**
  * The check-in/check-out engine — spec §35-39's ordered resolution,
@@ -126,7 +128,7 @@ function evaluateCheckInBlockers(ctx) {
     const isStale = ctx.activeSession.workDateKey !== ctx.workDateKey;
     return { allowed: false, code: isStale ? 'STALE_ACTIVE_SESSION' : 'ALREADY_CHECKED_IN' };
   }
-  if (ctx.sessions.some((s) => ['CLOSED', 'COMPLETED', 'MISSED_CHECKOUT'].includes(s.status))) return { allowed: false, code: 'ATTENDANCE_COMPLETED' };
+  if (ctx.sessions.some(s => confirmedCheckoutStatuses.includes(s.status) || s.status === 'MISSED_CHECKOUT')) return { allowed: false, code: 'ATTENDANCE_COMPLETED' };
 
   const isHoliday = ctx.calendar.dayType === 'HOLIDAY';
   if (isHoliday && ctx.policyVersion.holidayAttendanceBehavior === 'REJECT') {
@@ -258,14 +260,16 @@ export async function getTodayStatus({ workspaceId, userId, membership, workspac
 
   return {
     attendanceApplicable: true, attendanceRequired: true, workDateKey: ctx.workDateKey, ...status,
-    activeSession: ctx.activeSession, completed: ctx.sessions.some((s) => ['CLOSED', 'COMPLETED'].includes(s.status)),
+    activeSession: publicAttendanceSession(ctx.activeSession), completed: ctx.sessions.some(s => confirmedCheckoutStatuses.includes(s.status)),
+    autoCheckout: ctx.sessions.some(s => s.status === 'AUTO_CHECKOUT'),
     canCheckIn: checkInBlocker.allowed, canCheckOut: Boolean(ctx.activeSession),
     blockingReason: checkInBlocker.allowed ? null : checkInBlocker.code,
     unresolvedMissedCheckout: unresolvedMissedCheckout ? {
       sessionId: unresolvedMissedCheckout._id,
       workDateKey: unresolvedMissedCheckout.workDateKey,
       checkInAt: unresolvedMissedCheckout.checkInAt,
-      missedCheckoutCutoffAt: unresolvedMissedCheckout.missedCheckoutCutoffAt
+      missedCheckoutCutoffAt: unresolvedMissedCheckout.missedCheckoutCutoffAt,
+      closureReason: unresolvedMissedCheckout.closureReason
     } : null,
     // So the client knows whether to even prompt for location permission
     // BEFORE attempting a check-in — never re-derived on the frontend.
@@ -382,6 +386,7 @@ export async function checkIn({ workspaceId, userId, membership, workspace, gps 
           policyVersion: ctx.policyVersion._id, shift: ctx.shift?._id || null,
           missedCheckoutCutoffAt,
           effectiveShiftEndAt,
+          autoCheckoutDueAt: effectiveShiftEndAt,
           idempotencyKey, createdBy: userId
         }], { session: dbSession });
       } catch (error) {
@@ -449,8 +454,10 @@ export async function settleCheckoutWork(attendance, timezone, dbSession, { sche
   }
   const work = await finalizeAttendanceWork(attendance, dbSession, schedule);
   const loggedTime = await finalizeLoggedTime(attendance, timezone, dbSession, { allowUnmarked, taskReasons });
-  if (loggedTime && (loggedTime.posted || loggedTime.pendingReview || loggedTime.unavailable)) {
-    const summary = { ...attendance.checkoutSummary, loggedTime };
+  const auto = attendance.status === 'AUTO_CHECKOUT';
+  if (auto || loggedTime && (loggedTime.posted || loggedTime.pendingReview || loggedTime.unavailable)) {
+    const summary = { ...attendance.checkoutSummary, ...(loggedTime ? { loggedTime } : {}),
+      ...(auto ? { trackedWorkSeconds: work ? summarize(work, attendance.checkOutAt).workSeconds : 0 } : {}) };
     await AttendanceSession.updateOne({ _id: attendance._id, workspaceId: attendance.workspaceId, user: attendance.user },
       { $set: { checkoutSummary: summary } }, { session: dbSession });
     return { summary, hasTrackedWork: true };
@@ -486,9 +493,13 @@ export async function checkOut({ workspaceId, userId, membership, workspace, gps
       let existing = await AttendanceSession.findOne({workspaceId,user:userId,...(attendanceSessionId?{_id:attendanceSessionId}:{status:'ACTIVE'})}).session(dbSession);
       if (!existing && !attendanceSessionId) {
         const recent = await AttendanceSession.findOne({workspaceId,user:userId}).sort({checkInAt:-1}).session(dbSession);
-        if (recent && ['CLOSED','COMPLETED'].includes(recent.status) && recent.workDateKey === resolveWorkDateKey({nowInstant:serverNow,timezone,shift:null})) existing=recent;
+        if (recent && confirmedCheckoutStatuses.includes(recent.status) && recent.workDateKey === resolveWorkDateKey({nowInstant:serverNow,timezone,shift:null})) existing=recent;
       }
       if (!existing) throw codedError('No active attendance session. Refresh your attendance status.',409,'NO_ACTIVE_SESSION');
+      if (existing.status === 'AUTO_CHECKOUT') {
+        result = { session: existing, replay: true, summary: existing.checkoutSummary };
+        return;
+      }
       if (['CLOSED','COMPLETED'].includes(existing.status)) {
         const { summary } = await settleCheckoutWork(existing, timezone, dbSession);
         if (summary) {
@@ -505,9 +516,9 @@ export async function checkOut({ workspaceId, userId, membership, workspace, gps
       // Leave approvals/cancellations update this same row in their transaction.
       await AttendanceDay.updateOne({_id:existing.attendanceDay,workspaceId},{$inc:{evaluationRevision:1}},{session:dbSession});
       const evaluation = await evaluateCheckout({workspaceId,userId,membership,workspace,attendance:existing.toObject(),at:serverNow,dbSession});
-      const {policyVersion,shift}=evaluation.context;
-      const cutoff=existing.missedCheckoutCutoffAt || calculateMissedCheckoutCutoff({checkInAt:existing.checkInAt,workDateKey:existing.workDateKey,timezone,policyVersion,shift,officeHours:evaluation.context.officeHours}).missedCheckoutCutoffAt;
-      if (+serverNow >= +new Date(cutoff)) { overdueSessionToReconcile=existing;throw codedError(friendlyAttendanceMessage('MISSED_CHECKOUT_EXPIRED'),409,'MISSED_CHECKOUT_EXPIRED'); }
+      const {policyVersion}=evaluation.context;
+      const cutoff = legacyHardCutoff(existing);
+      if (cutoff && +serverNow >= +cutoff) { overdueSessionToReconcile=existing;throw codedError(friendlyAttendanceMessage('MISSED_CHECKOUT_EXPIRED'),409,'MISSED_CHECKOUT_EXPIRED'); }
       const reasons = parseCheckoutTaskReasons(taskReasons);
       try {
         assertCheckoutConfirmation(previewToken,evaluation,userId,workspaceId);
@@ -591,7 +602,7 @@ export async function checkOut({ workspaceId, userId, membership, workspace, gps
       result={session:closed,replay:false,attendanceDay:day,summary,hasTrackedWork};
     },{readConcern:{level:'snapshot'},writeConcern:{w:'majority'}});
   } catch(error) {
-    if(overdueSessionToReconcile)await reconcileOverdueSession({session:overdueSessionToReconcile,workspace,reason:'LATE_CHECKOUT_ATTEMPT'}).catch(e=>console.error('[Attendance] overdue checkout recovery:',e.message));
+    if(overdueSessionToReconcile)await reconcileOverdueSession({session:overdueSessionToReconcile,workspace}).catch(e=>console.error('[Attendance] overdue checkout recovery:',e.message));
     throw error;
   } finally {await dbSession.endSession();}
   // Transport delivery is recoverable; a committed checkout is never reopened.

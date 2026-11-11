@@ -4,5 +4,6 @@
 export function canUseTrackingTelemetryFallback(req) {
   if(req.method!=='POST'||!req.user||!req.workspaceId)return false;
   const route=String(req.originalUrl||'').split('?')[0];
+  if (/^\/api\/attendance\/me\/activity\/?$/i.test(route)) return true;
   return /^\/api\/tracking\/devices\/[a-f\d]{24}\/(?:heartbeat|intervals|screenshots\/prepare|screenshots\/[a-f\d]{24}\/complete)\/?$/i.test(route);
 }

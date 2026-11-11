@@ -8,6 +8,7 @@ import Card from '../../models/Card.js';
 import List from '../../models/List.js';
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import AttendanceSession from '../attendance/attendanceSession.model.js';
+import { legacyHardCutoff } from '../attendance/attendanceActivity.service.js';
 import { id } from '../../authz/engine.js';
 import { can, trackingContext, withTrackingProjects } from './tracking.authorization.js';
 import { getActiveWorkspaceId, run } from '../workspaces/workspaceContext.js';
@@ -153,7 +154,7 @@ export async function closeAttendanceWorkTimeline(session, attendance, at, dbSes
   session.audit ||= [];
   if (pauseForWorkBreak(session, schedule, end)) pushAudit(session, 'SCHEDULED_WORK_BREAK', session.segments.at(-1).endedAt, session.user);
   refreshWorkBreakPause(session, schedule);
-  if (session.autoLogEligible !== false && attendance.closureReason === 'NORMAL_CHECKOUT') {
+  if (session.autoLogEligible !== false && ['NORMAL_CHECKOUT', 'POST_SHIFT_INACTIVITY'].includes(attendance.closureReason)) {
     const taskIds = [...new Set(session.segments.filter(segment => segment.task).map(segment => id(segment.task)))];
     const tasks = taskIds.length ? await Card.find({ workspaceId: attendance.workspaceId, _id: { $in: taskIds } })
       .select('_id +assignmentEvents').session(dbSession).lean() : [];
@@ -179,13 +180,15 @@ export async function finalizeAttendanceWork(attendance, dbSession = null, sched
   const sessions=await WorkSession.find({workspaceId:attendance.workspaceId,user:attendance.user,attendanceSession:attendance._id}).session(dbSession).lean();
   let saved=null;
   for(const session of sessions){
-    if(session.status!=='CLOSED'||!session.endedAt||(session.segments||[]).some(s=>!s.endedAt)||(session.pauses||[]).some(p=>!p.endedAt)){
+    const auto = attendance.status === 'AUTO_CHECKOUT';
+    const mustClip = auto && +session.endedAt > Math.max(+at, +session.startedAt);
+    if(session.status!=='CLOSED'||!session.endedAt||mustClip||(session.segments||[]).some(s=>!s.endedAt)||(session.pauses||[]).some(p=>!p.endedAt)){
       await closeAttendanceWorkTimeline(session, attendance, at, dbSession, schedule);
       if(!(session.audit||[]).some(a=>a.type==='ATTENDANCE_CLOSED'))pushAudit(session,'ATTENDANCE_CLOSED',session.endedAt,session.user,attendance.closureReason||attendance.status);
       saved=await WorkSession.findOneAndUpdate({_id:session._id,workspaceId:session.workspaceId,revision:session.revision??{$exists:false}},
         {$set:{segments:session.segments,pauses:session.pauses||[],status:session.status,endedAt:session.endedAt,audit:session.audit},$inc:{revision:1}},{new:true,session:dbSession});
       if(!saved)fail('Work session changed concurrently; retry checkout',409);
-    }
+    } else if (auto) saved = session;
   }
   const ids=sessions.map(s=>s._id);
   await TrackingDevice.updateMany({workspaceId:attendance.workspaceId,user:attendance.user,activeSession:{$in:ids}},{$set:{activeSession:null,leaseUntil:at,releasedAt:at,state:'awaiting-stop'}},{session:dbSession});
@@ -207,7 +210,7 @@ export async function reconcileSession(sessionId,prepared=null) {
     let changed = false;
     if (session.status !== 'CLOSED') {
       const now = new Date();
-      const cutoff = attendance?.checkOutAt || attendance?.missedCheckoutCutoffAt;
+      const cutoff = attendance?.checkOutAt || (attendance?.status === 'MISSED_CHECKOUT' ? attendance.missedCheckoutCutoffAt : legacyHardCutoff(attendance));
       const through = cutoff && +cutoff < +now ? cutoff : now;
       const schedule = prepared?.workBreak || await readWorkBreak(session.workspaceId, session.startedAt);
       if (pauseForWorkBreak(session, schedule, through)) {
@@ -241,7 +244,8 @@ export async function reconcileSession(sessionId,prepared=null) {
       session.audit.push({ id: event.id, type: event.type === 'ASSIGNED' ? 'CANDIDATE_ASSIGNED' : 'TASK_UNASSIGNED', at: event.at, actor: session.user, detail: id(task._id) });
       changed = true;
     }
-    if (session.status !== 'CLOSED' && attendance && (attendance.status !== 'ACTIVE' || attendance.missedCheckoutCutoffAt && +new Date(attendance.missedCheckoutCutoffAt) <= Date.now())) {
+    const legacyCutoff = legacyHardCutoff(attendance);
+    if (session.status !== 'CLOSED' && attendance && (attendance.status !== 'ACTIVE' || legacyCutoff && +new Date(legacyCutoff) <= Date.now())) {
       closeTimeline(session, attendance.checkOutAt || attendance.missedCheckoutCutoffAt || attendance.reconciledAt);
       pushAudit(session, 'ATTENDANCE_CLOSED', session.endedAt, session.user); changed = true;
     }
@@ -296,7 +300,7 @@ export function publicWorkSession(session, at = new Date()) {
 }
 export async function currentState(workspaceId, userId) {
   const [policy,attendance,devices,member]=await Promise.all([
-    policyFor(workspaceId),AttendanceSession.findOne({ workspaceId, user: userId, status: 'ACTIVE' }).select('_id status checkInAt checkOutAt missedCheckoutCutoffAt').lean(),
+    policyFor(workspaceId),AttendanceSession.findOne({ workspaceId, user: userId, status: 'ACTIVE' }).select('_id status checkInAt checkOutAt effectiveShiftEndAt missedCheckoutCutoffAt').lean(),
     TrackingDevice.find({workspaceId,user:userId,revokedAt:null}).select('-anchor -anchors -noticeHistory').lean(),
     WorkspaceMembership.findOne({workspace:workspaceId,user:userId,status:'active'}).lean()
   ]);
@@ -311,7 +315,7 @@ export async function currentState(workspaceId, userId) {
   const {versions:_,...publicPolicy}=policy;
   return { workspaceId, userId:String(userId), serverNow, policy:publicPolicy, scheduledWorkBreak, canTrack: policy.enabled && can(ctx, 'tracking.log', { workspaceId, user: userId }),
     canManagePolicy: await trackingRole(member,workspaceId)==='admin'&&can(ctx,'tracking.manage_policy',{workspaceId}), canViewReports: can(ctx, 'tracking.view_reports'),
-    attendance: attendance ? { _id: attendance._id, checkInAt: attendance.checkInAt, cutoffAt: attendance.missedCheckoutCutoffAt } : null,
+    attendance: attendance ? { _id: attendance._id, checkInAt: attendance.checkInAt, cutoffAt: legacyHardCutoff(attendance) } : null,
     session: publicWorkSession(session, through),
     devices: devices.map(d => ({ ...d, connected: Date.now() - +new Date(d.lastSeenAt || 0) < 45000 })) };
 }
@@ -346,7 +350,8 @@ async function changeWorkUnlocked({ workspaceId, userId, action, selection, oper
     // invalidate, indefinitely starving a switch under steady heartbeat load.
     const allowed=await TrackingPolicy.updateOne({_id:policy._id||null,revision:policy.revision,enabled:true},{$inc:{__v:1}},{session:dbSession});
     const attendance = await AttendanceSession.findOne({ workspaceId, user: userId, status: 'ACTIVE' }).session(dbSession).lean();
-    if (!attendance || attendance.missedCheckoutCutoffAt && +new Date(attendance.missedCheckoutCutoffAt) <= Date.now()) fail('Check in before starting or changing work', 409);
+    const legacyCutoff = legacyHardCutoff(attendance);
+    if (!attendance || legacyCutoff && +legacyCutoff <= Date.now()) fail('Check in before starting or changing work', 409);
     let session = await WorkSession.findOne({ workspaceId, attendanceSession: attendance._id }).select('-operations -audit').session(dbSession).lean();
     if(expectedSessionId&&id(session)!==id(expectedSessionId))fail('The active work session changed',409,'TRACKING_CONFLICT');
     const previous = session ? await WorkSession.findOne({_id:session._id,'operations.id':operationId}).select('operations.$').session(dbSession).lean() : null;

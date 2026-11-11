@@ -21,7 +21,7 @@ export function trackingStore(scope,workspaceId){
     store.invalidate();const current=store.getSnapshot().state;if(!current)return;
     if(String(current.attendance?._id)===String(session._id))return;
     const matching=String(current.session?.attendanceSession)===String(session._id);
-    store.apply({...current,attendance:{_id:session._id,checkInAt:session.checkInAt,cutoffAt:session.missedCheckoutCutoffAt},session:matching?current.session:null,serverNow:new Date(Math.max(+new Date(current.serverNow),+new Date(session.checkInAt))).toISOString()});
+    store.apply({...current,attendance:{_id:session._id,checkInAt:session.checkInAt,cutoffAt:session.effectiveShiftEndAt ? null : session.missedCheckoutCutoffAt},session:matching?current.session:null,serverNow:new Date(Math.max(+new Date(current.serverNow),+new Date(session.checkInAt))).toISOString()});
   };
   store.closeAttendance=session=>{
     closedAttendance.add(String(session._id));while(closedAttendance.size>32)closedAttendance.delete(closedAttendance.values().next().value);

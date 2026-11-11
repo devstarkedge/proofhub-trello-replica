@@ -16,6 +16,7 @@ import { resolveAttendanceStatus } from './attendanceStatusResolver.service.js';
 import { applyRegularizationOverlay } from './attendanceRegularizationOverlay.js';
 import { attendanceIntervals, intervalMinutes, unionIntervals, scheduleForDay, resolveLeaveCoverage } from './attendanceIntervals.js';
 import { codedError } from './attendanceErrors.js';
+import { legacyHardCutoff } from './attendanceActivity.service.js';
 import { readWorkBreak, firstWorkBreak } from './attendanceWorkBreak.js';
 import { checkoutTasks, planLoggedTime } from '../tracking/tracking.loggedTime.js';
 import { closeAttendanceWorkTimeline } from '../tracking/tracking.service.js';
@@ -67,7 +68,7 @@ export async function evaluateCheckout({workspaceId,userId,membership,workspace,
   // The mode actually authorized at check-in remains authoritative for this cycle.
   const storedMode=attendance.checkIn?.workMode;
   context.workModeResolution=storedMode&&storedMode!=='HYBRID'?{workMode:storedMode,effectiveMode:storedMode}:await resolveAuthorizedWorkMode({workspaceId,userId,membership,dayInstant,timezone,policyVersion,requestedWorkMode:storedMode});
-  const raw=await AttendanceSession.find({workspaceId,user:userId,workDateKey}).select('status checkInAt checkOutAt missedCheckoutCutoffAt systemGeneratedCheckout regularizationResolution').session(dbSession).lean();
+  const raw=await AttendanceSession.find({workspaceId,user:userId,workDateKey}).select('status checkInAt checkOutAt effectiveShiftEndAt missedCheckoutCutoffAt systemGeneratedCheckout regularizationResolution').session(dbSession).lean();
   const proposed=raw.map(s=>String(s._id)===String(attendance._id)?{...s,status:'COMPLETED',checkOutAt:at}:s);
   const regularizations=await AttendanceRegularization.find({workspaceId,requester:userId,workDateKey,status:'APPROVED'}).sort({decidedAt:1,createdAt:1,_id:1}).select('attendanceSession finalCorrection').session(dbSession).lean();
   context.sessions=applyRegularizationOverlay({sessions:proposed,approvedRegularizations:regularizations});
@@ -85,7 +86,7 @@ export async function evaluateCheckout({workspaceId,userId,membership,workspace,
     const intervals=work.flatMap(s=>{
       const source=raw.find(a=>String(a._id)===String(s.attendanceSession));
       if(!source)return [];
-      const cutoff=source.checkOutAt||source.missedCheckoutCutoffAt;
+      const cutoff = source.checkOutAt || (source.status === 'MISSED_CHECKOUT' ? source.missedCheckoutCutoffAt : legacyHardCutoff(source));
       return s.segments.map(segment=>{
         const start=Math.max(+segment.startedAt,+source.checkInAt);
         const end=Math.min(+at,cutoff?+cutoff:Infinity,s.endedAt?+s.endedAt:Infinity,segment.endedAt?+segment.endedAt:Infinity);
@@ -104,7 +105,8 @@ export async function evaluateCheckout({workspaceId,userId,membership,workspace,
   }
   const label=coverage.unresolved?'Provisional — attendance review needed':context.leave.leaveState==='FULL_LEAVE'?'On approved leave':context.leave.leaveFraction===0.5&&outcome.presenceState==='HALF_PRESENT'?'Half present · half approved leave':({PRESENT:'Present',HALF_PRESENT:'Half present',ABSENT:'Absent',MISSING_CHECKOUT:'Missing checkout'})[outcome.presenceState]||'Provisional';
   const explanation=coverage.unresolved?'An approved leave time window could not be resolved safely. Your attendance will retain a review flag.':context.leave.leaveState==='FULL_LEAVE'?'Approved full-day leave is preserved. Recorded attendance remains available for authorized review.':coverage.summaries.some(s=>s.coverageResolved)&&!outcome.earlyExitMinutes?'Approved leave has been included in the attendance evaluation.':'Calculated using your effective attendance policy and recorded attendance.';
-  const canConfirm=!attendance.missedCheckoutCutoffAt||+at<+new Date(attendance.missedCheckoutCutoffAt);
+  const cutoff = legacyHardCutoff(attendance);
+  const canConfirm = !cutoff || +at < +new Date(cutoff);
   const data={attendanceSessionId:attendance._id,workSessionIds,workDateKey,timezone,serverNow:at,proposedCheckOutAt:at,checkInAt:attendance.checkInAt,
     attendanceSeconds:intervalMinutes(attendanceIntervals(context.sessions,at))*60,trackedWorkSeconds,workVisible,
     policyVersionId:policyVersion._id,schedule:schedule?{startedAt:schedule.startedAt,endedAt:schedule.endedAt,midpointAt:schedule.midpointAt}:null,

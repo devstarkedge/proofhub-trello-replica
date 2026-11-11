@@ -1,14 +1,18 @@
 
-import { finalizeAttendanceWork } from '../tracking/tracking.service.js';
+import mongoose from 'mongoose';
+import { emitChanged, finalizeAttendanceWork } from '../tracking/tracking.service.js';
 import { DateTime } from 'luxon';
 import AttendanceSession from './attendanceSession.model.js';
-import './attendanceDay.model.js';
+import AttendanceDay from './attendanceDay.model.js';
+import { attendanceClosureCandidate } from './attendanceActivity.service.js';
+import { enqueueAttendanceEvent, processAttendanceEvents } from './attendanceEvents.service.js';
+import { enqueueAttendanceReport, requestPriorityAttendanceReportDelivery } from '../../services/chat/attendanceReporting.service.js';
 import AttendancePolicyVersion from './attendancePolicyVersion.model.js';
 import AttendanceShift from './attendanceShift.model.js';
 import Workspace from '../../models/Workspace.js';
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import { resolveEffectiveOfficeHours } from './attendanceOfficeHoursOverride.service.js';
-import { recomputeAttendanceDayForDate } from './attendance.service.js';
+import { recomputeAttendanceDayForDate, settleCheckoutWork } from './attendance.service.js';
 import { getWorkspaceTimezone, dateOnlyToInstant } from '../leave/leaveTimezone.util.js';
 import * as attendanceHooks from './attendanceHooks.js';
 import * as workspaceContext from '../workspaces/workspaceContext.js';
@@ -19,8 +23,8 @@ import logger from '../../utils/logger.js';
 /**
  * Enterprise Attendance Session Lifecycle & Cutoff Engine.
  *
- * Implements deterministic, policy-aware missed-checkout cutoffs,
- * preventing unverified elapsed time from inflating attendance records.
+ * Resolves the effective shift end and a separate fallback for sessions
+ * without activity evidence.
  *
  * Supports:
  * - Normal scheduled shifts (same-day start/end + grace)
@@ -34,8 +38,8 @@ const DEFAULT_CUTOFF_GRACE_MINUTES = 60;
 const DEFAULT_MAX_SESSION_HOURS = 16;
 
 /**
- * Calculates the exact UTC instant at which an attendance session must be
- * flagged/closed as a missed checkout if no valid check-out was received.
+ * Snapshots the effective shift end and the legacy missed-checkout deadline.
+ * The legacy deadline applies only when activity evidence is unavailable.
  *
  * @param {Object} params
  * @param {Date|string} params.checkInAt - Actual check-in timestamp
@@ -117,343 +121,173 @@ export function calculateMissedCheckoutCutoff({
   };
 }
 
-/**
- * Safely and idempotently reconciles an overdue active session into MISSED_CHECKOUT.
- * Ensures verified working hours stop accumulating and AttendanceDay reflects MISSING_CHECKOUT.
- *
- * @param {Object} params
- * @param {Object} params.session - AttendanceSession document or lean object
- * @param {Object} [params.workspace] - Optional loaded Workspace doc
- * @param {Object} [params.dbSession] - Optional MongoDB transaction session
- * @param {string} [params.reason] - Closure reason
- * @returns {Promise<Object|null>} Updated session, or null if already closed
- */
-// Tracking closes at the existing policy cutoff; attendance status remains policy-owned.
-export async function reconcileOverdueSession({
-  session,
-  workspace = null,
-  dbSession = null,
-  reason = 'MISSED_CHECKOUT_CUTOFF'
-}) {
-  if (!session || session.status !== 'ACTIVE') return session;
-
-  const targetWsId = session.workspaceId;
-  const execute = async () => {
-    const now = new Date();
-
-    // Atomic conditional update ensures only one transition wins against concurrent checkouts or workers
-    const updated = await AttendanceSession.findOneAndUpdate(
-      { _id: session._id, workspaceId: targetWsId, status: 'ACTIVE' },
-      {
-        $set: {
-          status: 'MISSED_CHECKOUT',
-          closureReason: reason,
-          systemGeneratedCheckout: true,
-          reconciledAt: now,
-          missedCheckoutDetectedAt: now,
-          checkOutAt: null // Explicitly ensure no arbitrary checkout timestamp is recorded
-        }
-      },
-      { session: dbSession, new: true }
-    );
-
-    if (!updated) {
-      // Another worker or a legitimate concurrent checkout already transitioned this session
-      return null;
-    }
-
-    await finalizeAttendanceWork(updated, dbSession);
-    const workspaceDoc = workspace || await Workspace.findById(targetWsId).select('attendanceModuleEnabled timezone').session(dbSession).lean();
-    const membership = await WorkspaceMembership.findOne({ workspace: targetWsId, user: session.user }).session(dbSession).lean();
-
-    // Recompute AttendanceDay so presenceState becomes MISSING_CHECKOUT and workedMinutes is 0
-    let day = null;
-    try {
-      const recomputed = await recomputeAttendanceDayForDate({
-        workspaceId: targetWsId,
-        userId: session.user,
-        membership,
-        workspace: workspaceDoc,
-        workDateKey: session.workDateKey,
-        dbSession
-      });
-      day = recomputed?.day || null;
-    } catch (err) {
-      logger.error('[AttendanceLifecycle] Error recomputing AttendanceDay on missed checkout reconciliation:', {
-        error: err.message,
-        sessionId: session._id,
-        workDateKey: session.workDateKey,
-        workspaceId: targetWsId
-      });
-    }
-
-    // Realtime notification hook
-    try {
-      attendanceHooks.onMissedCheckoutDetected(updated, day);
-    } catch (err) {
-      logger.warn('[AttendanceLifecycle] Missed checkout hook error (non-fatal):', { error: err.message });
-    }
-
-    return updated;
-  };
-
-  if (String(getActiveWorkspaceId()) !== String(targetWsId)) {
-    return await workspaceContext.run({ workspaceId: targetWsId }, async () => await execute());
-  }
-  return await execute();
+// Older active rows may predate the stored cutoff.
+async function restoreLegacyDeadline(session, workspace) {
+  if (session.missedCheckoutCutoffAt || session.lastActivityAt) return session;
+  const { workspaceId, user, workDateKey } = session;
+  const timezone = getWorkspaceTimezone(workspace);
+  const policyVersion = (session.policyVersion && await AttendancePolicyVersion.findById(session.policyVersion).lean())
+    || await AttendancePolicyVersion.findOne({ workspaceId, status: { $in: ['active', 'published'] } }).lean() || {};
+  const shift = session.shift ? await AttendanceShift.findById(session.shift).lean() : null;
+  const membership = await WorkspaceMembership.findOne({ workspace: workspaceId, user }).lean();
+  const officeHours = await resolveEffectiveOfficeHours({
+    workspaceId, userId: user, membership, date: dateOnlyToInstant(workDateKey, timezone), policyVersion, shift
+  });
+  const deadlines = calculateMissedCheckoutCutoff({ ...session, timezone, policyVersion, shift, officeHours });
+  return AttendanceSession.findOneAndUpdate({
+    _id: session._id, workspaceId, status: 'ACTIVE', missedCheckoutCutoffAt: null, lastActivityAt: null
+  }, { $set: { ...deadlines, autoCheckoutDueAt: deadlines.effectiveShiftEndAt } }, { new: true }).lean();
 }
 
-/**
- * Reconciles any overdue active sessions for a specific user in a workspace.
- * Invoked on-demand before authoritative operations (GET /me/today, POST /check-in, POST /check-out)
- * to guarantee resilience even if background jobs are delayed.
- *
- * @param {Object} params
- * @param {string|ObjectId} params.workspaceId
- * @param {string|ObjectId} params.userId
- * @param {Object} [params.workspace]
- * @returns {Promise<Array<Object>>} List of reconciled sessions
- */
+export async function reconcileOverdueSession({ session, workspace = null, now = new Date() }) {
+  if (!session || session.status !== 'ACTIVE') return null;
+  const { workspaceId, user } = session;
+  const execute = async () => {
+    const workspaceDoc = workspace || await Workspace.findById(workspaceId).select('attendanceModuleEnabled timezone').lean();
+    const candidate = await restoreLegacyDeadline(session, workspaceDoc);
+    if (!candidate || !attendanceClosureCandidate(candidate, now)) return null;
+
+    const dbSession = await mongoose.startSession();
+    let result;
+    try {
+      await dbSession.withTransaction(async () => {
+        result = null;
+        const current = await AttendanceSession.findOne({
+          _id: session._id, workspaceId, user, status: 'ACTIVE'
+        }).session(dbSession).lean();
+        if (!current) return;
+        const closure = attendanceClosureCandidate(current, now);
+        if (!closure) return;
+
+        const auto = closure.reason === 'POST_SHIFT_INACTIVITY';
+        const processedAt = new Date();
+        const updated = await AttendanceSession.findOneAndUpdate({
+          _id: current._id, workspaceId, user, status: 'ACTIVE', lastActivityAt: current.lastActivityAt || null
+        }, { $set: {
+          status: auto ? 'AUTO_CHECKOUT' : 'MISSED_CHECKOUT',
+          closureReason: closure.reason,
+          systemGeneratedCheckout: true,
+          reconciledAt: processedAt,
+          ...(auto ? { checkOutAt: closure.at, autoCheckoutProcessedAt: processedAt }
+            : { checkOutAt: null, missedCheckoutDetectedAt: processedAt, missedCheckoutCutoffAt: closure.at })
+        } }, { session: dbSession, new: true, runValidators: true });
+        if (!updated) return;
+
+        const timezone = getWorkspaceTimezone(workspaceDoc);
+        const membership = await WorkspaceMembership.findOne({ workspace: workspaceId, user }).session(dbSession).lean();
+        let day = null;
+        if (membership) {
+          await AttendanceDay.updateOne({ _id: current.attendanceDay, workspaceId, user },
+            { $inc: { evaluationRevision: 1 } }, { session: dbSession });
+          try {
+            ({ day } = await recomputeAttendanceDayForDate({
+              workspaceId, userId: user, membership, workspace: workspaceDoc, workDateKey: current.workDateKey, dbSession
+            }));
+          } catch (error) {
+            if (auto || error.code !== 'POLICY_NOT_CONFIGURED') throw error;
+            logger.warn('[AttendanceLifecycle] No policy for legacy attendance recomputation', { workspaceId, sessionId: current._id });
+          }
+        }
+
+        const key = auto ? `checkout-${updated._id}` : null;
+        let work;
+        if (auto) {
+          updated.checkoutSummary = {
+            attendanceSeconds: Math.max(0, (+closure.at - +current.checkInAt) / 1000),
+            outcome: { presenceState: day?.presenceState, leaveState: day?.leaveState }
+          };
+          const settlement = await settleCheckoutWork(updated, timezone, dbSession, { allowUnmarked: true });
+          updated.checkoutSummary = settlement.summary;
+          await enqueueAttendanceReport({ action: 'checkout', attendance: updated, at: closure.at, day, dbSession });
+          await enqueueAttendanceEvent({
+            workspaceId, user, key, kind: 'CHECKED_OUT', attendanceSession: updated._id, workDateKey: current.workDateKey
+          }, dbSession);
+        } else {
+          work = await finalizeAttendanceWork(updated, dbSession);
+        }
+        result = { updated, day, key, work };
+      });
+    } finally {
+      await dbSession.endSession();
+    }
+    if (!result) return null;
+
+    if (result.key) {
+      requestPriorityAttendanceReportDelivery(workspaceId, result.updated._id);
+      void processAttendanceEvents(workspaceId, { key: result.key }).catch(error => {
+        logger.warn('[AttendanceLifecycle] Checkout event will retry', { error: error.message });
+      });
+    } else {
+      try {
+        if (result.work) await emitChanged(result.work);
+        attendanceHooks.onMissedCheckoutDetected(result.updated, result.day);
+      } catch (error) {
+        logger.warn('[AttendanceLifecycle] Missed checkout notification failed', { error: error.message });
+      }
+    }
+    return result.updated;
+  };
+  return String(getActiveWorkspaceId()) === String(workspaceId) ? execute() : workspaceContext.run({ workspaceId }, execute);
+}
+
+function overdueFilter(now) {
+  return {
+    status: 'ACTIVE',
+    $or: [
+      { lastActivityAt: { $type: 'date' }, autoCheckoutDueAt: { $type: 'date', $lte: now }, effectiveShiftEndAt: { $lte: now } },
+      { lastActivityAt: null, missedCheckoutCutoffAt: { $type: 'date', $lte: now }, effectiveShiftEndAt: { $not: { $gt: now } } },
+      { lastActivityAt: null, missedCheckoutCutoffAt: null }
+    ]
+  };
+}
+
 export async function reconcileOverdueSessionsForUser({ workspaceId, userId, workspace = null }) {
   const execute = async () => {
-    const activeSessions = await AttendanceSession.find({
-      workspaceId,
-      user: userId,
-      status: 'ACTIVE'
-    }).lean();
-
-    if (!activeSessions.length) return [];
-
-    const workspaceDoc = workspace || await Workspace.findById(workspaceId).select('attendanceModuleEnabled timezone').lean();
-    const timezone = getWorkspaceTimezone(workspaceDoc);
     const now = new Date();
-
-    const membership = await WorkspaceMembership.findOne({ workspace: workspaceId, user: userId }).lean();
-    const defaultPolicyVersion = await AttendancePolicyVersion.findOne({
-      workspaceId,
-      status: { $in: ['active', 'published'] }
-    }).lean();
-
-    const reconciled = [];
-    for (const session of activeSessions) {
-      let cutoff = session.missedCheckoutCutoffAt;
-      let effectiveShiftEndAt = session.effectiveShiftEndAt;
-
-      // Backfill cutoff if missing on legacy active sessions
-      if (!cutoff) {
-        const policyVersion = session.policyVersion
-          ? await AttendancePolicyVersion.findById(session.policyVersion).lean() || defaultPolicyVersion
-          : defaultPolicyVersion;
-        const shift = session.shift ? await AttendanceShift.findById(session.shift).lean() : null;
-        const dayInstant = dateOnlyToInstant(session.workDateKey, timezone);
-        const officeHours = await resolveEffectiveOfficeHours({
-          workspaceId,
-          userId,
-          membership,
-          date: dayInstant,
-          policyVersion,
-          shift
-        });
-
-        const resolved = calculateMissedCheckoutCutoff({
-          checkInAt: session.checkInAt,
-          workDateKey: session.workDateKey,
-          timezone,
-          policyVersion,
-          shift,
-          officeHours
-        });
-        cutoff = resolved.missedCheckoutCutoffAt;
-        effectiveShiftEndAt = resolved.effectiveShiftEndAt;
-
-        // If cutoff is in the future, backfill onto active session
-        if (cutoff && now.getTime() < new Date(cutoff).getTime()) {
-          await AttendanceSession.updateOne(
-            { _id: session._id, workspaceId, status: 'ACTIVE', missedCheckoutCutoffAt: null },
-            { $set: { missedCheckoutCutoffAt: cutoff, effectiveShiftEndAt: effectiveShiftEndAt || null } }
-          );
-        }
-      }
-
-      const isCutoffExpired = cutoff && now.getTime() >= new Date(cutoff).getTime();
-
-      if (isCutoffExpired) {
-        const rec = await reconcileOverdueSession({ session, workspace: workspaceDoc });
-        if (rec) reconciled.push(rec);
-      }
-    }
-
-    return reconciled;
+    const session = await AttendanceSession.findOne({ workspaceId, user: userId, ...overdueFilter(now) }).lean();
+    const updated = session && await reconcileOverdueSession({ session, workspace, now });
+    return updated ? [updated] : [];
   };
-
-  if (String(getActiveWorkspaceId()) !== String(workspaceId)) {
-    return await workspaceContext.run({ workspaceId }, async () => await execute());
-  }
-  return await execute();
+  return String(getActiveWorkspaceId()) === String(workspaceId) ? execute() : workspaceContext.run({ workspaceId }, execute);
 }
 
-/**
- * Reconciles overdue sessions for a single workspace, strictly scoped within workspaceContext.run().
- *
- * @param {string|ObjectId} workspaceId
- * @param {Object} [options]
- * @param {number} [options.limit=100]
- * @param {Date} [options.now=new Date()]
- * @returns {Promise<{ scanned: number, reconciled: number }>}
- */
 export async function reconcileWorkspaceOverdueSessions(workspaceId, { limit = 100, now = new Date() } = {}) {
-  return await workspaceContext.run({ workspaceId }, async () => {
-    const workspaceDoc = await Workspace.findById(workspaceId)
-      .select('attendanceModuleEnabled timezone status')
-      .lean();
-
-    const timezone = getWorkspaceTimezone(workspaceDoc);
-
-    const query = {
-      status: 'ACTIVE',
-      $or: [
-        { missedCheckoutCutoffAt: { $lte: now, $ne: null } },
-        // Legacy open sessions with no cutoff populated
-        { missedCheckoutCutoffAt: null }
-      ]
-    };
-
-    const overdueCandidates = await AttendanceSession.find(query)
-      .sort({ checkInAt: 1 })
-      .limit(limit)
-      .lean();
-
-    let reconciledCount = 0;
-    const defaultPolicyVersion = await AttendancePolicyVersion.findOne({
-      workspaceId,
-      status: { $in: ['active', 'published'] }
-    }).lean();
-
-    for (const session of overdueCandidates) {
+  return workspaceContext.run({ workspaceId }, async () => {
+    const candidates = await AttendanceSession.find({ workspaceId, ...overdueFilter(now) })
+      .sort({ checkInAt: 1 }).limit(limit).lean();
+    if (!candidates.length) return { scanned: 0, reconciled: 0 };
+    const workspace = await Workspace.findById(workspaceId).select('attendanceModuleEnabled timezone').lean();
+    let reconciled = 0;
+    for (const session of candidates) {
       try {
-        let cutoff = session.missedCheckoutCutoffAt;
-        let effectiveShiftEndAt = session.effectiveShiftEndAt;
-
-        if (!cutoff) {
-          const policyVersion = session.policyVersion
-            ? await AttendancePolicyVersion.findById(session.policyVersion).lean() || defaultPolicyVersion
-            : defaultPolicyVersion;
-          const shift = session.shift ? await AttendanceShift.findById(session.shift).lean() : null;
-          const membership = await WorkspaceMembership.findOne({ workspace: workspaceId, user: session.user }).lean();
-          const dayInstant = dateOnlyToInstant(session.workDateKey, timezone);
-          const officeHours = await resolveEffectiveOfficeHours({
-            workspaceId,
-            userId: session.user,
-            membership,
-            date: dayInstant,
-            policyVersion,
-            shift
-          });
-
-          const calculated = calculateMissedCheckoutCutoff({
-            checkInAt: session.checkInAt,
-            workDateKey: session.workDateKey,
-            timezone,
-            policyVersion,
-            shift,
-            officeHours
-          });
-          cutoff = calculated.missedCheckoutCutoffAt;
-          effectiveShiftEndAt = calculated.effectiveShiftEndAt;
-
-          if (cutoff && now.getTime() < new Date(cutoff).getTime()) {
-            await AttendanceSession.updateOne(
-              { _id: session._id, workspaceId, status: 'ACTIVE', missedCheckoutCutoffAt: null },
-              { $set: { missedCheckoutCutoffAt: cutoff, effectiveShiftEndAt: effectiveShiftEndAt || null } }
-            );
-          }
-        }
-
-        if (cutoff && now.getTime() >= new Date(cutoff).getTime()) {
-          const result = await reconcileOverdueSession({ session, workspace: workspaceDoc });
-          if (result && result.status === 'MISSED_CHECKOUT') {
-            reconciledCount++;
-          }
-        }
-      } catch (err) {
-        logger.error('[AttendanceLifecycle] Sweep reconciliation error on session:', {
-          sessionId: session._id,
-          workspaceId,
-          error: err.message
+        if (await reconcileOverdueSession({ session, workspace, now })) reconciled++;
+      } catch (error) {
+        logger.error('[AttendanceLifecycle] Sweep reconciliation failed', {
+          error: error.message, workspaceId, sessionId: session._id
         });
       }
     }
-
-    return { scanned: overdueCandidates.length, reconciled: reconciledCount };
+    return { scanned: candidates.length, reconciled };
   });
 }
 
-/**
- * Background worker batch sweep: finds and reconciles all expired active sessions across workspaces.
- * Strictly enforces workspace isolation by executing tenant reconciliation within workspaceContext.run().
- *
- * @param {Object} [options]
- * @param {string|ObjectId} [options.workspaceId] - Scope to a single workspace, or null for global sweep
- * @param {number} [options.batchSize] - Max sessions to process in one execution
- * @returns {Promise<{ scanned: number, reconciled: number, reconciledCount: number, workspacesProcessed: number }>}
- */
 export async function reconcileAllOverdueSessions({ workspaceId = null, batchSize = null } = {}) {
-  const maxBatch = batchSize || config.attendance?.batchSize || 100;
+  const limit = batchSize || config.attendance?.batchSize || 100;
   const now = new Date();
-
-  // 1. If a single workspaceId is specified, process it directly in its isolated context
-  if (workspaceId) {
-    const res = await reconcileWorkspaceOverdueSessions(workspaceId, { limit: maxBatch, now });
-    return {
-      scanned: res.scanned,
-      reconciled: res.reconciled,
-      reconciledCount: res.reconciled,
-      workspacesProcessed: 1
-    };
-  }
-
-  // 2. Global periodic sweep: narrowly authorized unscoped discovery of candidate workspaces
-  // Strictly read-only discovery: finds distinct workspaceIds with candidate active sessions.
-  // Uses indexed scan: { status: 1, missedCheckoutCutoffAt: 1, workspaceId: 1 }
-  const candidateWorkspaceIds = await workspaceContext.runUnscoped(async () => {
-    return await AttendanceSession.distinct('workspaceId', {
-      status: 'ACTIVE',
-      $or: [
-        { missedCheckoutCutoffAt: { $lte: now, $ne: null } },
-        { missedCheckoutCutoffAt: null }
-      ]
-    });
-  });
-
-  if (!candidateWorkspaceIds || !candidateWorkspaceIds.length) {
-    return { scanned: 0, reconciled: 0, reconciledCount: 0, workspacesProcessed: 0 };
-  }
-
-  let totalScanned = 0;
-  let totalReconciled = 0;
-  let workspacesProcessed = 0;
-
-  for (const targetWsId of candidateWorkspaceIds) {
-    if (totalScanned >= maxBatch) break;
-
-    const remainingLimit = maxBatch - totalScanned;
+  const workspaceIds = workspaceId ? [workspaceId] : await workspaceContext.runUnscoped(
+    () => AttendanceSession.distinct('workspaceId', overdueFilter(now)).exec()
+  );
+  let scanned = 0, reconciled = 0, workspacesProcessed = 0;
+  for (const id of workspaceIds) {
+    if (scanned >= limit) break;
     try {
-      const res = await reconcileWorkspaceOverdueSessions(targetWsId, { limit: remainingLimit, now });
-      totalScanned += res.scanned;
-      totalReconciled += res.reconciled;
+      const result = await reconcileWorkspaceOverdueSessions(id, { limit: limit - scanned, now });
+      scanned += result.scanned;
+      reconciled += result.reconciled;
       workspacesProcessed++;
-    } catch (err) {
-      logger.error('[AttendanceLifecycle] Error reconciling overdue sessions for workspace:', {
-        workspaceId: targetWsId,
-        error: err.message
-      });
+    } catch (error) {
+      logger.error('[AttendanceLifecycle] Workspace sweep failed', { error: error.message, workspaceId: id });
     }
   }
-
-  return {
-    scanned: totalScanned,
-    reconciled: totalReconciled,
-    reconciledCount: totalReconciled,
-    workspacesProcessed
-  };
+  return { scanned, reconciled, reconciledCount: reconciled, workspacesProcessed };
 }

@@ -3,6 +3,8 @@ import {trackingStore,clearTrackingStates} from './trackingState';
 import {attendanceStore,clearAttendanceStates} from './attendanceState';
 import {retainWorkSelectionPrefetch,invalidateWorkSelections} from './workSelectionState';
 import {sessionIdentity,isCurrentSession} from '../../../shared/sessionTransport.mjs';
+import { retainAttendanceActivity } from '../../../shared/attendanceActivity.mjs';
+import { reportAttendanceActivity } from './attendanceApi';
 const owners=new Map();
 export function retainSessionSynchronization(scope,workspaceId,authorizationKey){
   let entry=owners.get(scope);
@@ -41,7 +43,7 @@ export function retainSessionSynchronization(scope,workspaceId,authorizationKey)
   const boundary=()=>{
     clearTimeout(boundaryTimer);
     const a=attendance.getSnapshot().status,t=tracking.getSnapshot().state,session=a?.activeSession;
-    const cutoff=session?.missedCheckoutCutoffAt||t?.attendance?.cutoffAt;if(!cutoff)return;
+    const cutoff=session?.effectiveShiftEndAt ? null : session?.missedCheckoutCutoffAt||t?.attendance?.cutoffAt;if(!cutoff)return;
     const key=`${session?._id||t?.attendance?._id}:${cutoff}`;if(key===lastBoundary)return;
     const anchor=a?.serverNow?a:t,now=anchor?.serverNow?+new Date(anchor.serverNow)+Math.max(0,performance.now()-anchor.receivedAt):Date.now();
     boundaryTimer=setTimeout(()=>{lastBoundary=key;invalidate();},Math.min(2147483647,Math.max(0,+new Date(cutoff)-now)));
@@ -63,7 +65,7 @@ export function retainSessionSynchronization(scope,workspaceId,authorizationKey)
   const events=[['flowtask:realtime',realtime],['flowtask:tracking-refresh',invalidate],['socket-attendance-updated',invalidate],['flowtask:session-committed',committed],['online',invalidate],['socket-connected',invalidate],['desktop-resume',invalidate],['socket-disconnected',disconnected],['socket-auth-expired',rejected],['socket-workspace-rejected',rejected],['storage',storage]];
   for(const [name,handler]of events)window.addEventListener(name,handler);
   const visibility=()=>{if(document.visibilityState==='visible'&&current()){tracking.ensure();attendance.ensure();}};document.addEventListener('visibilitychange',visibility);
-  const poll=setInterval(()=>{if(current())refresh();},60000),unsubscribers=[tracking.subscribe(boundary),tracking.subscribe(breakBoundary),attendance.subscribe(boundary),retainWorkSelectionPrefetch(scope,workspaceId,tracking)];
+  const poll=setInterval(()=>{if(current())refresh();},60000),unsubscribers=[retainAttendanceActivity({ current, readStatus: () => attendance.getSnapshot().status, send: reportAttendanceActivity }),tracking.subscribe(boundary),tracking.subscribe(breakBoundary),attendance.subscribe(boundary),retainWorkSelectionPrefetch(scope,workspaceId,tracking)];
   entry={count:1,authorizationKey,secureRefresh,ensure(){if(current()){tracking.ensure();attendance.ensure();}},close(){clearTimeout(attendanceRefreshTimer);clearTimeout(refreshTimer);clearTimeout(workRefreshTimer);clearTimeout(boundaryTimer);clearTimeout(breakTimer);clearInterval(poll);channel?.close();for(const unsubscribe of unsubscribers)unsubscribe();for(const [name,handler]of events)window.removeEventListener(name,handler);document.removeEventListener('visibilitychange',visibility);}};
   owners.set(scope,entry);tracking.ensure();attendance.ensure();boundary();breakBoundary();return()=>release(scope,entry);
 }

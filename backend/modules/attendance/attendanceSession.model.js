@@ -35,7 +35,7 @@ const attendanceSessionSchema = new mongoose.Schema({
   attendanceDay: { type: mongoose.Schema.Types.ObjectId, ref: 'AttendanceDay', required: true },
   workDateKey: { type: String, required: true }, // denormalized from AttendanceDay for cheap range queries
 
-  status: { type: String, enum: ['ACTIVE', 'CLOSED', 'COMPLETED', 'MISSED_CHECKOUT'], default: 'ACTIVE' },
+  status: { type: String, enum: ['ACTIVE', 'CLOSED', 'COMPLETED', 'AUTO_CHECKOUT', 'MISSED_CHECKOUT'], default: 'ACTIVE' },
   checkInAt: { type: Date, required: true }, // server timestamp, always
   checkOutAt: { type: Date, default: null },
   trackingReminderAt: {type:Date,default:null},
@@ -51,9 +51,12 @@ const attendanceSessionSchema = new mongoose.Schema({
   // Policy-aware missed checkout lifecycle fields
   missedCheckoutCutoffAt: { type: Date, default: null },
   effectiveShiftEndAt: { type: Date, default: null },
+  lastActivityAt: { type: Date, default: null },
+  autoCheckoutDueAt: { type: Date, default: null },
+  autoCheckoutProcessedAt: { type: Date, default: null },
   closureReason: {
     type: String,
-    enum: ['NORMAL_CHECKOUT', 'MISSED_CHECKOUT_CUTOFF', 'AUTO_CLOSED_BY_POLICY', 'SYSTEM_RECONCILIATION', null],
+    enum: ['NORMAL_CHECKOUT', 'POST_SHIFT_INACTIVITY', 'MISSING_ACTIVITY_TELEMETRY', 'MISSED_CHECKOUT_CUTOFF', 'AUTO_CLOSED_BY_POLICY', 'SYSTEM_RECONCILIATION', null],
     default: null
   },
   reconciledAt: { type: Date, default: null },
@@ -95,6 +98,12 @@ attendanceSessionSchema.index({ workspaceId: 1, user: 1, workDateKey: 1 });
 attendanceSessionSchema.index({ workspaceId: 1, attendanceDay: 1 });
 attendanceSessionSchema.index({ workspaceId: 1, status: 1, missedCheckoutCutoffAt: 1 });
 attendanceSessionSchema.index({ status: 1, missedCheckoutCutoffAt: 1, workspaceId: 1 });
+export const activityCheckoutIndex = { status: 1, autoCheckoutDueAt: 1, workspaceId: 1 };
+export const activityCheckoutIndexOptions = {
+  name: 'attendance_activity_checkout_due',
+  partialFilterExpression: { status: 'ACTIVE', lastActivityAt: { $type: 'date' }, autoCheckoutDueAt: { $type: 'date' } }
+};
+attendanceSessionSchema.index(activityCheckoutIndex, activityCheckoutIndexOptions);
 attendanceSessionSchema.index({ workspaceId: 1, user: 1, status: 1 });
 attendanceSessionSchema.index({workspaceId:1,user:1,status:1,'regularizationResolution.appliedAt':1,checkInAt:-1});
 // `partialFilterExpression`, NOT `sparse` — a well-known Mongo gotcha: a
@@ -122,6 +131,7 @@ attendanceSessionSchema.plugin(workspaceScopePlugin);
 const MUTABLE_AFTER_CREATE_PATHS = new Set([
   'checkoutOperationId', 'checkoutSummary', 'status', 'checkOutAt', 'checkOut', 'systemGeneratedCheckout', 'updatedAt', 'trackingReminderAt',
   'missedCheckoutCutoffAt', 'effectiveShiftEndAt', 'closureReason',
+  'lastActivityAt', 'autoCheckoutDueAt', 'autoCheckoutProcessedAt',
   'reconciledAt', 'missedCheckoutDetectedAt', 'regularizationStatus', 'regularizationResolution', 'provisionalMinutes'
 ]);
 attendanceSessionSchema.pre('save', function guardImmutableEvidence(next) {

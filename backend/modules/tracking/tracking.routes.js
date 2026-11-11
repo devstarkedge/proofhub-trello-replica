@@ -126,7 +126,8 @@ router.post('/devices/:deviceId/revoke', asyncHandler(async (req,res) => {
   await releaseDevice({...actor(req),deviceId:req.params.deviceId,revoke:true});
   await audit(req, 'TRACKING_DEVICE_REVOKED', 'TrackingDevice', req.params.deviceId); send(res, { revoked: true });
 }));
-router.post('/devices/:deviceId/heartbeat', asyncHandler(async (req,res) => send(res, await heartbeat({ ...actor(req), deviceId: req.params.deviceId, sessionId: req.body?.sessionId, state: req.body?.state, resolveCurrentSession:req.body?.resolveCurrentSession===true, includeEvidenceCursor:req.body?.includeEvidenceCursor===true }))));
+router.post('/devices/:deviceId/heartbeat', asyncHandler(async (req,res) => send(res, await heartbeat({ ...actor(req), deviceId: req.params.deviceId, sessionId: req.body?.sessionId, state: req.body?.state, resolveCurrentSession:req.body?.resolveCurrentSession===true, includeEvidenceCursor:req.body?.includeEvidenceCursor===true,
+  activityAt:req.get('origin') ? undefined : req.body?.activityAt, noticeAuthorization:req.get('x-desktop-notice-authorization') }))));
 router.post('/devices/:deviceId/activity/:action',asyncHandler(async(req,res)=>{
   if(req.get('origin'))fail('Automatic work changes require the FlowTask desktop app',403,'DESKTOP_DEVICE_REQUIRED');
   send(res,await changeWorkOnActivity({...actor(req),deviceId:req.params.deviceId,action:req.params.action,sessionId:req.body?.sessionId,operationId:req.body?.operationId,expectedRevision:req.body?.expectedRevision,idleSeconds:req.body?.idleSeconds,noticeAuthorization:req.get('x-desktop-notice-authorization')}));

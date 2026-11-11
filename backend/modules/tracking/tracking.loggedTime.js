@@ -132,7 +132,7 @@ export function checkoutTasks({ rows, savedEntries }) {
 // Checkout commits the card rows and the receipt in one transaction.
 export async function finalizeLoggedTime(attendance, timezone, dbSession, { allowUnmarked = false, taskReasons } = {}) {
   const { workspaceId, user } = attendance;
-  if (attendance.closureReason !== 'NORMAL_CHECKOUT' || !attendance.checkOutAt) return;
+  if (!['NORMAL_CHECKOUT', 'POST_SHIFT_INACTIVITY'].includes(attendance.closureReason) || !attendance.checkOutAt) return;
   const work = await WorkSession.findOne({ workspaceId, user, attendanceSession: attendance._id,
     status: 'CLOSED', autoLogEligible: allowUnmarked ? { $ne: false } : true, loggedTimeFinalizedAt: null })
     .select('workspaceId user segments includePreAssignment').session(dbSession).lean();

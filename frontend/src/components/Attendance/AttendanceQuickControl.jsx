@@ -233,11 +233,11 @@ const AttendanceQuickControl = () => {
     {status.activeSession?.checkInAt && <AttendanceElapsed status={status}/>}
     {status.completed && typeof status.workedMinutes === 'number' && <p>Worked {formatHours(status.workedMinutes)} today</p>}
     {!isDesktop && !status.completed && (status.activeSession || status.canCheckIn) && <p>Use the FlowTask desktop app to check in and check out.</p>}
-    {status.unresolvedMissedCheckout && <p>Missed checkout on {status.unresolvedMissedCheckout.workDateKey} · Regularize in Attendance</p>}
+    {status.unresolvedMissedCheckout && <p>Missed checkout on {status.unresolvedMissedCheckout.workDateKey} {status.unresolvedMissedCheckout.closureReason === 'MISSING_ACTIVITY_TELEMETRY' && ' · Activity data unavailable'} · Regularize in Attendance</p>}
   </div> : null;
   let content;
   if (attendancePending && isDesktop) content = <button type="button" disabled aria-busy="true" className="welcome-action"><Loader2 size={15} className="animate-spin" aria-hidden="true" />{busyLabel}</button>;
-  else if (status.completed) content = <span className="welcome-attendance-label"><CheckCircle2 size={15} />Attendance Completed</span>;
+  else if (status.completed) content = <span className="welcome-attendance-label"><CheckCircle2 size={15} />{status.autoCheckout ? 'Auto Check-Out' : 'Attendance Completed'}</span>;
   else if (status.activeSession) content = isDesktop ? <button type="button" disabled={isBusy} onPointerEnter={()=>{if(!isBusy)readCheckoutPreview(scope,status.activeSession._id).catch(()=>{});}} onFocus={()=>{if(!isBusy)readCheckoutPreview(scope,status.activeSession._id).catch(()=>{});}} onClick={handleCheckOut} className="welcome-action"><LogOut size={15} />Check Out</button> : null;
   else if (status.canCheckIn) content = isDesktop ? <button type="button" disabled={isBusy} onClick={handleCheckIn} className="welcome-action"><LogIn size={15} />Check In</button> : null;
   else content = <span className="welcome-attendance-label"><MapPin size={15} />{friendlyBlockingLabel(status.blockingReason)}</span>;

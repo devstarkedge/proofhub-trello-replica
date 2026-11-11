@@ -1,3 +1,4 @@
+import { publicAttendanceSession } from './attendanceActivity.service.js';
 import { getCheckoutPreview } from './attendanceCheckout.service.js';
 import asyncHandler from '../../middleware/asyncHandler.js';
 import Workspace from '../../models/Workspace.js';
@@ -70,7 +71,7 @@ export const postCheckIn = asyncHandler(async (req, res) => {
       trackingReceipt={workspaceId:req.workspaceId,userId:String(req.user.id),session:publicWorkSession(work),serverNow:new Date()};
     }catch(error){trackingStartup={state:'FAILED',message:error.message,retryable:true};}
   }
-  res.status(result.replay ? 200 : 201).json({ success: true, data: result.session, replay: result.replay,trackingStartup,trackingReceipt,serverNow:new Date() });
+  res.status(result.replay ? 200 : 201).json({ success: true, data: publicAttendanceSession(result.session), replay: result.replay,trackingStartup,trackingReceipt,serverNow:new Date() });
 });
 
 export const previewCheckOut = asyncHandler(async (req,res) => {

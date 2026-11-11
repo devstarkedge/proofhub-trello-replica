@@ -57,6 +57,9 @@ export function transitionSnapshot({ action, attendance, work, before, at, day, 
     workSeconds: work ? summarize(work, at).workSeconds : 0,
     trackingStarted: !!work,
     ...(action === 'checkout' ? {
+      ...(attendance.closureReason === 'POST_SHIFT_INACTIVITY' ? {
+        checkoutReason: attendance.closureReason, lastActivityAt: attendance.lastActivityAt,
+      } : {}),
       summary: dailyWorkSummary(sessions || [], attendanceRows || [attendance], at),
       attendanceSeconds: attendance.checkoutSummary?.attendanceSeconds ?? (day?.workedMinutes || 0) * 60,
       outcome: attendance.checkoutSummary?.outcome || { presenceState: day?.presenceState, leaveState: day?.leaveState },

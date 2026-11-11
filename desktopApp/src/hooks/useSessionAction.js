@@ -19,7 +19,7 @@ export default function useSessionAction(){
       attendanceStore(scope,workspaceId).applyReceipt(result);
       if(result.trackingReceipt)trackingStore(scope,workspaceId).apply(result.trackingReceipt);
       const session=result.data?.checkInAt?result.data:result.session;
-      if(session&&['CLOSED','COMPLETED','MISSED_CHECKOUT'].includes(session.status))trackingStore(scope,workspaceId).closeAttendance(session);
+      if(session&&['CLOSED','COMPLETED','AUTO_CHECKOUT','MISSED_CHECKOUT'].includes(session.status))trackingStore(scope,workspaceId).closeAttendance(session);
       else if(session?.status==='ACTIVE')trackingStore(scope,workspaceId).openAttendance(session);
     }
     window.dispatchEvent(new CustomEvent('flowtask:session-committed',{detail:{scope,kind:entry.kind,trackingReceipt:Boolean(result.trackingReceipt)}}));

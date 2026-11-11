@@ -7,6 +7,8 @@ import { contextFor, policyFor, fail, digest, objectId, reconcileSession, author
 import { can } from './tracking.authorization.js';
 import { overlapSeconds } from './tracking.timeline.js';
 import { signedUpload, verifyPrivateUpload, screenshotKey, privateStorage, storageLabels,SCREENSHOT_MAX_BYTES,SCREENSHOT_TARGET_BYTES,screenshotUploadLimits,privateScreenshotExists,missingStorageObject } from './tracking.storage.js';
+import AttendanceSession from '../attendance/attendanceSession.model.js';
+import { recordAttendanceActivity } from '../attendance/attendanceActivity.service.js';
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import { departmentsOf } from './tracking.visibility.js';
 import { emitToUser } from '../../realtime/emitters.js';
@@ -42,8 +44,10 @@ export async function registerDevice({ workspaceId, userId, installationId, name
   delete device.noticeAuthorizationHash;
   await persistAnchor(device,anchor);return device;
 }
-export async function ownedDevice(workspaceId, userId, deviceId) {
-  const d = await TrackingDevice.findOne({ _id: objectId(deviceId), workspaceId, user: userId, revokedAt: null }).lean();
+export async function ownedDevice(workspaceId, userId, deviceId, includeAuthorization = false) {
+  const query = TrackingDevice.findOne({ _id: objectId(deviceId), workspaceId, user: userId, revokedAt: null });
+  if (includeAuthorization) query.select('+noticeAuthorizationHash');
+  const d = await query.lean();
   if (!d) fail('Desktop device not found', 404);
   return d;
 }
@@ -93,24 +97,32 @@ async function releaseDeviceUnlocked({workspaceId,userId,deviceId,revoke=false})
 export function heartbeat(args) {
   return serializeTrackingWrite(args.workspaceId,args.userId,()=>heartbeatUnlocked(args),{maxWaitMs:15000});
 }
-async function heartbeatUnlocked({ workspaceId, userId, deviceId, sessionId, state, takeover=false, noticeAuthorization, resolveCurrentSession=false, includeEvidenceCursor=false }) {
+async function heartbeatUnlocked({ workspaceId, userId, deviceId, sessionId, state, takeover=false, noticeAuthorization, resolveCurrentSession=false, includeEvidenceCursor=false, activityAt }) {
   const ctx = await contextFor(workspaceId,userId,{includeProjects:false,batchReads:true});
-  const [device,policy] = await Promise.all([ownedDevice(workspaceId,userId,deviceId),policyFor(workspaceId)]);
+  const [device,policy] = await Promise.all([ownedDevice(workspaceId,userId,deviceId,Number.isSafeInteger(activityAt)),policyFor(workspaceId)]);
   const now = new Date();
   let session = resolveCurrentSession === true && !takeover
     ? await WorkSession.findOne({workspaceId,user:userId,endedAt:null,status:{$in:['RUNNING','PAUSED']}}).sort({startedAt:-1}).lean()
     : sessionId ? await WorkSession.findOne({ _id: objectId(sessionId), workspaceId, user: userId }).lean() : null;
+  const attendance = session ? await AttendanceSession.findOne({ _id: session.attendanceSession, workspaceId, user: userId }).lean() : null;
+  const permitted = policy.enabled && policy.monitoringEnabled && hasMonitoringNotice(device) && can(ctx, 'tracking.log', { workspaceId, user: userId });
+  const activityAllowed = Boolean(permitted && attendance?.status === 'ACTIVE' && attendance.effectiveShiftEndAt
+    && !session.endedAt && !device.monitoringDisplacedAt);
+  if (activityAllowed && Number.isSafeInteger(activityAt) && String(session._id) === sessionId &&
+      /^[a-f\d]{64}$/.test(noticeAuthorization || '') && /^[a-f\d]{64}$/.test(device.noticeAuthorizationHash || '') &&
+      timingSafeEqual(Buffer.from(device.noticeAuthorizationHash, 'hex'), createHash('sha256').update(noticeAuthorization).digest())) {
+    await recordAttendanceActivity({ workspaceId, userId, attendanceSessionId: String(session.attendanceSession), activityAt, now });
+  }
   const workBreak = session && session.status !== 'CLOSED' ? await readWorkBreak(workspaceId, session.startedAt) : null;
   if (session) {
     // Agenda-only work needs no project directory or assignment scan. Reuse
     // this request's freshly authorized actor rather than rebuilding the full
     // workspace context a second time on every 15-second heartbeat.
     const agendaOnly=session.segments?.every(segment=>segment.agenda&&!segment.task&&!segment.candidateTask);
-    session = await reconcileSession(session._id,{session,policy,workBreak,...(agendaOnly?{ownerContext:ctx}:{})});
+    session = await reconcileSession(session._id,{session,attendance,policy,workBreak,...(agendaOnly?{ownerContext:ctx}:{})});
   }
   const scheduledBreak = workBreakState(workBreak, now);
   const breakActive = scheduledBreak && +scheduledBreak.startsAt <= +now;
-  const permitted = policy.enabled && policy.monitoringEnabled && hasMonitoringNotice(device) && can(ctx, 'tracking.log', { workspaceId, user: userId });
   const canCapture = Boolean(permitted && !breakActive && session?.status === 'RUNNING');
   const canAutoResume=Boolean(permitted&&!breakActive&&canResumeOnActivity(device,session));
   if(takeover){
@@ -173,7 +185,7 @@ async function heartbeatUnlocked({ workspaceId, userId, deviceId, sessionId, sta
   const cursor=includeEvidenceCursor===true&&session?await ActivityInterval.findOne({workspaceId,user:userId,session:session._id,device:device._id}).sort({endedAt:-1}).select('endedAt').lean():null;
   return { serverNow: now, serverSentAt:new Date(), currentSessionResolved:resolveCurrentSession===true&&!takeover,
     ...(includeEvidenceCursor===true?{evidenceCursor:cursor?{sessionId:String(session._id),endedAt:cursor.endedAt}:null}:{}),
-    device: saved, policy, session, canCapture,canAutoResume,activityWatchUntil:canAutoResume?new Date(+now+300000):null,transferredFrom,
+    device: saved, policy, session, canCapture,activityAllowed:activityAllowed&&session?.status!=='CLOSED',canAutoResume,activityWatchUntil:canAutoResume?new Date(+now+300000):null,transferredFrom,
     noticeVersion:MONITORING_NOTICE_VERSION,uploadLimits:screenshotUploadLimits(),needsNotice:policy.enabled&&policy.monitoringEnabled&&!hasMonitoringNotice(device),
     reason: !policy.enabled ? 'Time Tracking disabled by workspace' : !policy.monitoringEnabled ? 'Monitoring disabled by workspace' : !session || session.status !== 'RUNNING' ? 'Work is not running' : !hasMonitoringNotice(device) ? 'Monitoring notice required' : !permitted?'Tracking permission required':null };
 }

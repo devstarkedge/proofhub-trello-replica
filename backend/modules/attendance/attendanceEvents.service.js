@@ -72,7 +72,7 @@ export async function processAttendanceEvents(workspaceId,{limit=20,key=null}={}
           if (attendance.closureReason === 'NORMAL_CHECKOUT' && !attendance.checkoutSummary?.loggedTime) {
             const {settleCheckoutWork}=await import('./attendance.service.js');
             await settleCheckoutWork(attendance, getWorkspaceTimezone(workspace));
-          } else {
+          } else if (attendance.status !== 'AUTO_CHECKOUT') {
             await finalizeAttendanceWork(attendance);
           }
           await publishCheckoutLoggedTime(attendance);

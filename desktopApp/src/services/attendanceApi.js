@@ -33,6 +33,10 @@ api.interceptors.response.use(
   }
 );
 
+export const reportAttendanceActivity = (sample, keepalive) => api.post('/me/activity', sample, {
+  silent: true, timeout: 10000, ...(keepalive ? { adapter: 'fetch', fetchOptions: { keepalive: true } } : {})
+});
+
 // ─── Setup ──────────────────────────────────────────────────────────────────
 export const getTeamAttendance = async (params, signal) => (await api.get('/team', { params, signal })).data;
 export const getTeamAttendanceMonth = async (userId, month, params, signal) => (await api.get(`/team/users/${userId}/months/${month}`, { params, signal })).data;

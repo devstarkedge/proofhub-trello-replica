@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { DateTime } from 'luxon';
+import { attendanceFallbackCutoffExpression, confirmedCheckoutStatuses, legacyHardCutoff } from './attendanceActivity.service.js';
 import AttendanceDay from './attendanceDay.model.js';
 import AttendanceSession from './attendanceSession.model.js';
 import AttendanceMemberProfile from './attendanceMemberProfile.model.js';
@@ -147,13 +148,13 @@ function sessionFactsStages(ctx) {
       { $project: { status: 1, checkInAt: 1, checkOutAt: 1, effectiveShiftEndAt: 1, missedCheckoutCutoffAt: 1, regularizationResolution: 1 } },
       { $set: { _intervalStart: { $cond: [corrected, '$regularizationResolution.checkInAt', '$checkInAt'] },
         _intervalEnd: { $cond: [corrected, '$regularizationResolution.checkOutAt', { $switch: { branches: [
-          { case: { $in: ['$status', ['CLOSED', 'COMPLETED']] }, then: '$checkOutAt' },
-          { case: { $eq: ['$status', 'ACTIVE'] }, then: { $min: [now, { $ifNull: ['$missedCheckoutCutoffAt', now] }] } }
+          { case: { $in: ['$status', confirmedCheckoutStatuses] }, then: '$checkOutAt' },
+          { case: { $eq: ['$status', 'ACTIVE'] }, then: { $min: [now, { $ifNull: [attendanceFallbackCutoffExpression(), now] }] } }
         ], default: null } }] } } }, { $sort: { _intervalStart: 1 } }
     ], as: '_sessions' } },
     { $set: { _live: { $anyElementTrue: { $map: { input: '$_sessions', as: 's', in: { $and: [
       { $eq: ['$$s.status', 'ACTIVE'] }, { $eq: [{ $ifNull: ['$$s.regularizationResolution.appliedAt', null] }, null] },
-      { $gt: [{ $ifNull: ['$$s.missedCheckoutCutoffAt', new Date(8640000000000000)] }, now] }
+      { $gt: [{ $ifNull: [attendanceFallbackCutoffExpression('$$s.'), new Date(8640000000000000)] }, now] }
     ] } } } } } },
     { $set: { workedMinutes: { $cond: ['$_live', { $floor: { $add: [{ $divide: [attendanceIntervalMillisecondsExpression('$_sessions'), 60000] }, 0.5] } }, '$workedMinutes'] } } }
   ];
@@ -163,7 +164,7 @@ function summarizedPipeline(ctx) {
   const { q, today, now } = ctx;
   const matches = { $and: [q.status ? { $eq: ['$displayStatus', q.status] } : true, q.workMode ? { $eq: ['$workMode', q.workMode] } : true] };
   const ended = { $or: ['$isFinalized', { $and: [{ $gt: [{ $size: '$_sessions' }, 0] }, { $allElementsTrue: { $map: { input: '$_sessions', as: 's', in: { $or: [
-    { $ne: [{ $ifNull: ['$$s.regularizationResolution.appliedAt', null] }, null] }, { $in: ['$$s.status', ['CLOSED', 'COMPLETED']] }
+    { $ne: [{ $ifNull: ['$$s.regularizationResolution.appliedAt', null] }, null] }, { $in: ['$$s.status', confirmedCheckoutStatuses] }
   ] } } } }] }] };
   const required = { $and: [{ $eq: ['$isCalendarWorkingDay', true] }, { $lt: ['$leaveFraction', 1] }] };
   const completedWorkday = { $and: ['$_elapsed', '$_required', { $not: ['$_ongoing'] }, { $not: ['$_unresolved'] }] };
@@ -281,12 +282,12 @@ export async function getTeamAttendanceMonth(args) {
       days.push(missingCalendarDay(ctx, workDateKey, workDateKey >= ctx.today ? calendar : null));
     }
   }
-  const sessions = await AttendanceSession.find({ workspaceId: args.workspaceId, user: args.userId, workDateKey: { $gte: startDate, $lte: endDate } }).select('workDateKey status checkInAt checkOutAt missedCheckoutCutoffAt regularizationResolution').lean();
+  const sessions = await AttendanceSession.find({ workspaceId: args.workspaceId, user: args.userId, workDateKey: { $gte: startDate, $lte: endDate } }).select('workDateKey status checkInAt checkOutAt effectiveShiftEndAt missedCheckoutCutoffAt regularizationResolution').lean();
   const sessionsByDay = new Map();
   for (const session of sessions) { const list = sessionsByDay.get(session.workDateKey) || []; list.push(effectiveAttendanceSession(session)); sessionsByDay.set(session.workDateKey, list); }
   for (const day of days) {
     const daySessions = sessionsByDay.get(day.workDateKey) || [];
-    day.activeSession = daySessions.some(s => s.status === 'ACTIVE' && (!s.missedCheckoutCutoffAt || +s.missedCheckoutCutoffAt > +ctx.now));
+    day.activeSession = daySessions.some(s => s.status === 'ACTIVE' && (!legacyHardCutoff(s) || +legacyHardCutoff(s) > +ctx.now));
     if (day.hasAttendance && day.activeSession) { day.workedMinutes = Math.round(intervalMinutes(attendanceIntervals(daySessions, ctx.now))); day.durationIsLive = true; }
   }
   const work = await readAttendanceWork({ ...ctx, userIds: [args.userId], startDate, endDate });
@@ -318,7 +319,7 @@ export async function getTeamAttendanceDay(args) {
   ]);
   const calendar = !records.length && args.workDateKey >= ctx.today ? await buildCalendarContext({ timezone: ctx.timezone, departmentIds: [ctx.subjects[0].primaryDepartmentId].filter(Boolean), startDate: args.workDateKey, endDate: args.workDateKey }) : null;
   const { leaveTypes: _, policyVersion, ...day } = records[0] || missingCalendarDay(ctx, args.workDateKey, calendar);
-  day.activeSession = effective.some(s => s.status === 'ACTIVE' && (!s.missedCheckoutCutoffAt || +s.missedCheckoutCutoffAt > +ctx.now));
+  day.activeSession = effective.some(s => s.status === 'ACTIVE' && (!legacyHardCutoff(s) || +legacyHardCutoff(s) > +ctx.now));
   if (day.hasAttendance && day.activeSession) { day.workedMinutes = Math.round(intervalMinutes(attendanceIntervals(effective, ctx.now))); day.durationIsLive = true; }
   const policy = policyVersion ? await AttendancePolicyVersion.findOne({ workspaceId: args.workspaceId, _id: policyVersion }).select('name versionNumber').lean() : null;
   return { user: ctx.subjects[0].user, timezone: ctx.timezone, asOf: ctx.now, day,

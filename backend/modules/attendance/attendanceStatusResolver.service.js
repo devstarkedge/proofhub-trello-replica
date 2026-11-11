@@ -1,4 +1,5 @@
 import { DateTime } from 'luxon';
+import { confirmedCheckoutStatuses } from './attendanceActivity.service.js';
 import { attendanceIntervals, intervalMinutes, subtractIntervals, scheduleForDay, resolveLeaveCoverage } from './attendanceIntervals.js';
 
 /**
@@ -67,7 +68,7 @@ export function resolveAttendanceStatus({
   const effectiveMinFullDayMinutes = officeHours?.minimumFullDayMinutes ?? shift?.minimumFullDayMinutes ?? policyVersion.minimumFullDayMinutes;
   const effectiveMinHalfDayMinutes = officeHours?.minimumHalfDayMinutes ?? shift?.minimumHalfDayMinutes ?? policyVersion.minimumHalfDayMinutes;
 
-  const closedSessions = sessions.filter((s) => ['CLOSED', 'COMPLETED'].includes(s.status));
+  const closedSessions = sessions.filter((s) => confirmedCheckoutStatuses.includes(s.status));
   const activeSessions = sessions.filter((s) => s.status === 'ACTIVE');
   const missedCheckoutSessions = sessions.filter((s) => s.status === 'MISSED_CHECKOUT');
   const hasActiveSession = activeSessions.length > 0;

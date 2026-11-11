@@ -1,5 +1,6 @@
 import { DateTime } from 'luxon';
 import { shortLeaveWindowMinutes } from '../leave/leaveRequest.validation.js';
+import { confirmedCheckoutStatuses, legacyHardCutoff } from './attendanceActivity.service.js';
 
 // Half-open UTC intervals. These helpers never persist or infer attendance status.
 export function unionIntervals(intervals) {
@@ -20,7 +21,8 @@ export const intervalMinutes = intervals => unionIntervals(intervals).reduce((su
 
 export function attendanceIntervals(sessions, at) {
   return unionIntervals(sessions.flatMap(s => {
-    const end = ['CLOSED','COMPLETED'].includes(s.status) ? +new Date(s.checkOutAt) : s.status === 'ACTIVE' ? Math.min(+at,s.missedCheckoutCutoffAt ? +new Date(s.missedCheckoutCutoffAt) : Infinity) : NaN;
+    const cutoff = legacyHardCutoff(s);
+    const end = confirmedCheckoutStatuses.includes(s.status) ? +new Date(s.checkOutAt) : s.status === 'ACTIVE' ? Math.min(+at, cutoff ? +new Date(cutoff) : Infinity) : NaN;
     return s.checkInAt && end ? [[+new Date(s.checkInAt),Math.min(end,+at)]] : [];
   }));
 }

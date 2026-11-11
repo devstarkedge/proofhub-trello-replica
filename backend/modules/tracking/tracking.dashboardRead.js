@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import {WorkSession,ActivityInterval} from './tracking.models.js';
 import AttendanceSession from '../attendance/attendanceSession.model.js';
 import {can} from './tracking.authorization.js';
+import { attendanceFallbackCutoffExpression } from '../attendance/attendanceActivity.service.js';
 const id=v=>String(v?._id||v||'');
 const oid=v=>new mongoose.Types.ObjectId(id(v));
 const literal=value=>String(value).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
@@ -31,9 +32,9 @@ export const projectedTrackingStatus = {
 // stale open segments at the same authoritative boundary in both projections.
 export function trackingSessionCutoffStages({workspaceId,now,policy,attendanceDetails=false,workBreakWindows=[]}) {
   const tenant=oid(workspaceId);
-  const stages = [{$lookup:{from:AttendanceSession.collection.name,let:{attendance:'$attendanceSession',owner:'$user'},pipeline:[{$match:{workspaceId:tenant,$expr:{$and:[{$eq:['$_id','$$attendance']},{$eq:['$user','$$owner']}]}}},{$project:{status:1,checkOutAt:1,missedCheckoutCutoffAt:1,reconciledAt:1,...(attendanceDetails?{attendanceDay:1,checkInAt:1,regularizationResolution:1}:{})}}],as:'_attendance'}},
+  const stages = [{$lookup:{from:AttendanceSession.collection.name,let:{attendance:'$attendanceSession',owner:'$user'},pipeline:[{$match:{workspaceId:tenant,$expr:{$and:[{$eq:['$_id','$$attendance']},{$eq:['$user','$$owner']}]}}},{$project:{status:1,checkOutAt:1,effectiveShiftEndAt:1,missedCheckoutCutoffAt:1,reconciledAt:1,...(attendanceDetails?{attendanceDay:1,checkInAt:1,regularizationResolution:1}:{})}}],as:'_attendance'}},
     {$set:{_attendance:{$first:'$_attendance'}}},
-    {$set:{_cutoff:{$min:[{$ifNull:['$endedAt',now]},{$ifNull:['$_attendance.checkOutAt',{$ifNull:['$_attendance.missedCheckoutCutoffAt',{$ifNull:['$_attendance.reconciledAt',now]}]}]},...(policy.enabled?[]:[{$literal:policy.disabledAt||now}])]}}} ];
+    {$set:{_cutoff:{$min:[{$ifNull:['$endedAt',now]},{$ifNull:['$_attendance.checkOutAt',{$ifNull:[attendanceFallbackCutoffExpression('$_attendance.'),{$ifNull:['$_attendance.reconciledAt',now]}]}]},...(policy.enabled?[]:[{$literal:policy.disabledAt||now}])]}}} ];
   if (workBreakWindows.length) stages.push({
     $set: { segments: { $map: { input: { $ifNull: ['$segments', []] }, as: 'segment', in: {
       $cond: [
@@ -100,7 +101,7 @@ export async function readOfficeGroups(workspaceId,owners,dates,now){
   const resolved={$and:[{$ne:[{$ifNull:['$regularizationResolution.appliedAt',null]},null]},{$ne:[{$ifNull:['$regularizationResolution.checkInAt',null]},null]},{$ne:[{$ifNull:['$regularizationResolution.checkOutAt',null]},null]}]};
   return AttendanceSession.aggregate([
     {$match:{workspaceId:oid(workspaceId),user:{$in:owners.map(oid)},workDateKey:{$gte:dates.fromDate,$lte:dates.toDate}}},
-    {$set:{_start:{$cond:[resolved,'$regularizationResolution.checkInAt','$checkInAt']},_end:{$cond:[resolved,'$regularizationResolution.checkOutAt',{$ifNull:['$checkOutAt',{$min:[now,{$ifNull:['$missedCheckoutCutoffAt',now]}]}]}]},_active:{$and:[{$eq:['$status','ACTIVE']},{$not:[resolved]},{$gt:[{$ifNull:['$missedCheckoutCutoffAt',new Date(8640000000000000)]},now]}]}}},
+    {$set:{_start:{$cond:[resolved,'$regularizationResolution.checkInAt','$checkInAt']},_end:{$cond:[resolved,'$regularizationResolution.checkOutAt',{$ifNull:['$checkOutAt',{$min:[now,{$ifNull:[attendanceFallbackCutoffExpression(),now]}]}]}]},_active:{$and:[{$eq:['$status','ACTIVE']},{$not:[resolved]},{$gt:[{$ifNull:[attendanceFallbackCutoffExpression(),new Date(8640000000000000)]},now]}]}}},
     {$group:{_id:'$user',officeSeconds:{$sum:{$max:[0,{$divide:[{$subtract:['$_end','$_start']},1000]}]}},checkedIn:{$max:{$cond:['$_active',1,0]}},sessions:{$sum:1}}}
   ]).option({maxTimeMS:10000});
 }
