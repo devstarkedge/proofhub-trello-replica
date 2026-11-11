@@ -5,7 +5,7 @@ const RESTART_RETRY_MS = 15000;
 // No Electron globals: the lifecycle and safety contract can be verified without
 // downloading/installing a release or touching a real person's tracking state.
 function createUpdateManager({ updater, version, enabled, readiness = async () => ({ safe: true }), safety, install, publish = () => {}, log = () => {}, timers = globalThis }) {
-  let state = { enabled, phase: enabled ? 'idle' : 'disabled', currentVersion: version, version: null, progress: 0, dismissed: false, message: '', manual: false, restartPending: false, restartMode: null, revision: 0 };
+  let state = { enabled, phase: enabled ? 'idle' : 'disabled', currentVersion: version, version: null, progress: 0, dismissed: false, message: '', manual: false, restartPending: false, restartMode: null, restartStage: null, restartOnExit: false, revision: 0 };
   let checking = null, downloading = null, installing = null, interval, startup, retryTimer, restartTimer, disposed = false, failures = 0;
   let restartRequest = 0;
   const listeners = [];
@@ -40,7 +40,7 @@ function createUpdateManager({ updater, version, enabled, readiness = async () =
     return checking;
   }
   function deferRestart(result) {
-    change({ phase: 'downloaded', message: result.reason || 'Finish active work and pending operations before restarting.' });
+    change({ phase: 'downloaded', restartStage: state.restartPending ? 'waiting' : null, restartOnExit: false, message: result.reason || 'Finish active work and pending operations before restarting.' });
     return false;
   }
   async function restart(normalExit = false, scheduled = false) {
@@ -48,7 +48,10 @@ function createUpdateManager({ updater, version, enabled, readiness = async () =
     if (disposed || !enabled || state.phase !== 'downloaded') return false;
     if (scheduled && !state.restartPending) return false;
     timers.clearTimeout(restartTimer); restartTimer = null;
-    if (!normalExit && !scheduled && (!state.restartPending || state.restartMode !== 'now')) { restartRequest++; change({ restartPending: true, restartMode: 'now', dismissed: false, message: '' }); }
+    if (!normalExit && !scheduled && (!state.restartPending || state.restartMode !== 'now')) {
+      restartRequest++;
+      change({ restartPending: true, restartMode: 'now', restartStage: 'requested', dismissed: false, message: '' });
+    }
     if (installing) return installing;
     const request = restartRequest;
     const options = { allowActive: !normalExit && state.restartMode === 'now' };
@@ -56,18 +59,20 @@ function createUpdateManager({ updater, version, enabled, readiness = async () =
     installing = Promise.resolve().then(async () => {
       try {
         // While work is active, poll without freezing UI or blocking requests.
+        if (request === restartRequest && state.restartStage === 'requested') change({ restartStage: 'waiting' });
         const ready = await readiness(options);
         if (disposed || request !== restartRequest || !normalExit && !state.restartPending) return false;
         if (!ready.safe) return deferRestart(ready);
-        change({ phase: 'installing', message: '', dismissed: false });
+        change({ phase: 'installing', restartStage: 'preparing', restartOnExit: normalExit, message: '', dismissed: false });
         const result = await safety(options);
         if (disposed) return false;
         if (!result.safe) return deferRestart(result);
         await install(normalExit);
+        change({ restartStage: 'restarting' });
         return true;
       } catch {
         // The verified cached installer remains available for another attempt.
-        change({ phase: 'downloaded', restartPending: false, message: 'FlowTask could not safely restart. Your update is saved; please retry.' });
+        change({ phase: 'downloaded', restartPending: false, restartStage: 'failed', restartOnExit: false, message: 'FlowTask could not safely restart. The update is still downloaded. Try restarting again.' });
         return false;
       } finally {
         installing = null;
@@ -114,12 +119,12 @@ function createUpdateManager({ updater, version, enabled, readiness = async () =
   return { snapshot, check, restart, later: () => {
     if (state.phase === 'downloaded') {
       restartRequest++;
-      change({ dismissed: false, restartPending: true, restartMode: 'idle', message: 'Update scheduled after attendance, work and pending uploads finish.' });
+      change({ dismissed: false, restartPending: true, restartMode: 'idle', restartStage: 'requested', message: '' });
       void restart(false, true);
     } else if (state.phase !== 'installing') change({ dismissed: true });
     return snapshot();
   }, cancel: () => {
-    if (state.phase !== 'installing') { restartRequest++; timers.clearTimeout(restartTimer); restartTimer = null; change({ dismissed: false, restartPending: false, restartMode: null, message: '' }); }
+    if (state.phase !== 'installing') { restartRequest++; timers.clearTimeout(restartTimer); restartTimer = null; change({ dismissed: false, restartPending: false, restartMode: null, restartStage: null, message: '' }); }
     return snapshot();
   },
     dispose() { disposed = true; timers.clearTimeout(startup); timers.clearTimeout(retryTimer); timers.clearTimeout(restartTimer); timers.clearInterval(interval); for (const [event, callback] of listeners) updater.removeListener(event, callback); }
