@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { AlertTriangle, ArrowRight, Ban, Check, ShieldCheck, ShieldOff, ShieldQuestion, X } from 'lucide-react';
+import { AlertTriangle, Ban, Check, ShieldCheck, ShieldOff, ShieldQuestion, X } from 'lucide-react';
 import useConfirmModalStore from '../../store/confirmModalStore';
 import useModalFocus from '../../hooks/useModalFocus';
 
@@ -33,13 +33,6 @@ const buildDefaultMessage = (details) => {
  * checklists. No module renders its own confirmation dialog; every one of
  * them calls useConfirmPermissionChange() and awaits this component's
  * verdict. Mounted once, in App.jsx.
- *
- * Responsiveness approach:
- *  - Modal is full-width on xs, capped at max-w-lg on sm+
- *  - Change rows wrap label onto its own line on very narrow screens
- *  - Before→After value pair stays on one line (shrink-0 on the value group)
- *  - Long labels truncate with ellipsis on single-line but wrap on two-column layout
- *  - Footer buttons stack to column on xs viewports (flex-col sm:flex-row)
  */
 const PermissionConfirmModal = () => {
   const isOpen  = useConfirmModalStore((state) => state.isOpen);
@@ -102,14 +95,14 @@ const PermissionConfirmModal = () => {
             </h3>
             <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
               <span
-                className="text-sm font-medium break-words"
+                className="min-w-0 text-sm font-medium [overflow-wrap:anywhere]"
                 style={{ color: 'var(--color-text-secondary)' }}
               >
                 {targetUserName}
               </span>
               {targetUserRole && (
                 <span
-                  className="px-1.5 py-0.5 rounded text-xs font-medium shrink-0"
+                  className="max-w-full rounded px-1.5 py-0.5 text-xs font-medium [overflow-wrap:anywhere]"
                   style={{ backgroundColor: 'var(--color-bg-muted)', color: 'var(--color-text-secondary)' }}
                 >
                   {targetUserRole}
@@ -129,35 +122,32 @@ const PermissionConfirmModal = () => {
         </div>
 
         {/* ── Body — scrollable when many changes ── */}
-        <div className="px-4 sm:px-5 py-4 space-y-2.5 overflow-y-auto">
+        <div className="min-h-0 space-y-2.5 overflow-y-auto px-4 py-4 sm:px-5">
           {changes.map((change, idx) => (
             <div
               key={idx}
               className="rounded-lg border px-3 py-2.5"
               style={{ borderColor: 'var(--color-border-default)', backgroundColor: 'var(--color-bg-subtle)' }}
             >
-              {/*
-                Two-row layout on very narrow screens, single-row on wider:
-                  Row 1: label (breaks naturally)
-                  Row 2: before → after value (always on same line, shrink-0)
-                On sm+: flex-row with label growing and value shrinking.
-              */}
-              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
-                <span
-                  className="text-sm font-medium flex-1 min-w-0"
-                  style={{ color: 'var(--color-text-primary)', wordBreak: 'break-word' }}
-                >
-                  {change.label}
-                </span>
-
-                {change.previous !== undefined && (
-                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold shrink-0">
-                    <span style={{ color: 'var(--color-text-muted)' }}>{formatValue(change.previous)}</span>
-                    <ArrowRight className="w-3 h-3 shrink-0" style={{ color: 'var(--color-text-muted)' }} />
-                    <span style={{ color: config.color }}>{formatValue(change.next)}</span>
-                  </span>
-                )}
-              </div>
+              <p className="text-sm font-medium [overflow-wrap:anywhere]" style={{ color: 'var(--color-text-primary)' }}>
+                {change.label}
+              </p>
+              {change.previous !== undefined && (
+                <dl className="mt-2 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2 sm:gap-4">
+                  <div className="min-w-0">
+                    <dt className="font-medium" style={{ color: 'var(--color-text-secondary)' }}>Current</dt>
+                    <dd className="mt-0.5 [overflow-wrap:anywhere]" style={{ color: 'var(--color-text-muted)' }}>
+                      {formatValue(change.previous)}
+                    </dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="font-medium" style={{ color: 'var(--color-text-secondary)' }}>New</dt>
+                    <dd className="mt-0.5 font-semibold [overflow-wrap:anywhere]" style={{ color: config.color }}>
+                      {formatValue(change.next)}
+                    </dd>
+                  </div>
+                </dl>
+              )}
             </div>
           ))}
 
@@ -167,7 +157,7 @@ const PermissionConfirmModal = () => {
             style={{ backgroundColor: config.bg, color: config.color }}
           >
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-            <span className="break-words">{finalMessage}</span>
+            <span className="min-w-0 [overflow-wrap:anywhere]">{finalMessage}</span>
           </div>
         </div>
 
