@@ -57,10 +57,12 @@ export async function updateMemberAccess({ workspaceId, userId, actor, patch, re
     }
     // Compare both assignment fields and the old selection so a stale write
     // cannot override a concurrent member edit or check-in default.
+    // Document.save() forwards $where directly to MongoDB. Use the stored
+    // ObjectId rather than the workspace string from the request.
     member.$where = {
-      workspace: workspaceId, status: member.status,
+      workspace: member.workspace, status: member.status,
       department: member.$isDefault('department') ? { $exists: false } : before.department,
-      departments: member.departments ?? { $exists: false },
+      departments: member.departments ?? null,
       attendanceReportingDepartmentId: before.attendanceReportingDepartmentId ?? null,
     };
     if (updatesDepartments && member.departments !== undefined) member.departments = patch.department;
