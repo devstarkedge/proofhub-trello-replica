@@ -17,7 +17,7 @@ import { TrackingPolicy, WorkSession, TrackingDevice, TrackingCaptureLease, Task
 import { assertTimeline, closeTimeline, linkAssignment, endAssignment, summarize } from './tracking.timeline.js';
 import { trackingVisibility, departmentsOf, historicalDepartmentScope,trackingRole } from './tracking.visibility.js';
 import {enqueueAttendanceEvent} from '../attendance/attendanceEvents.service.js';
-import { readWorkBreak, firstWorkBreak, workBreakState, pauseForWorkBreak, refreshWorkBreakPause } from '../attendance/attendanceWorkBreak.js';
+import { readWorkBreak, firstWorkBreak, workBreakState, pauseForWorkBreak, refreshWorkBreakPause, SCHEDULED_WORK_BREAK } from '../attendance/attendanceWorkBreak.js';
 
 export function fail(message, statusCode = 400, code = 'TRACKING_INVALID') {
   const error = new Error(message); Object.assign(error, { statusCode, code }); throw error;
@@ -322,6 +322,20 @@ export async function currentState(workspaceId, userId) {
 export function changeWork(args) {
   return serializeTrackingWrite(args.workspaceId, args.userId, () => changeWorkUnlocked(args));
 }
+
+export async function scheduledResumeAt(session, deviceId, through, dbSession = null) {
+  const pause = session?.pauses?.at(-1);
+  if (session?.status !== 'PAUSED' || session.endedAt || pause?.reason !== SCHEDULED_WORK_BREAK
+      || !pause.endedAt || +pause.endedAt > +through) return null;
+  // Capture ownership is released during the break. The lease at the
+  // pause boundary identifies the desktop that was authorized before it.
+  const lease = await TrackingCaptureLease.exists({
+    workspaceId: session.workspaceId, user: session.user, device: deviceId, session: session._id,
+    startedAt: { $lte: pause.startedAt }, endedAt: { $gte: pause.startedAt }
+  }).session(dbSession);
+  return lease ? pause.endedAt : null;
+}
+
 async function changeWorkUnlocked({ workspaceId, userId, action, selection, operationId, expectedRevision, expectedSessionId, activityChange=null }) {
   if (typeof operationId !== 'string' || !/^[\w-]{8,128}$/.test(operationId)) fail('An operation ID is required');
   if (!['start', 'switch', 'pause', 'resume', 'link'].includes(action)) fail('Unknown work action');
@@ -390,7 +404,10 @@ async function changeWorkUnlocked({ workspaceId, userId, action, selection, oper
         Object.assign(filter,{activeSession:session?._id,leaseUntil:{$gt:at}});
       }else{
         const pause=session?.pauses?.find(p=>!p.endedAt);
-        if(!pause||!['PERSONAL_PAUSE','INACTIVITY'].includes(pause.reason)||id(pause.resumeDevice)!==id(activityChange.deviceId))fail('This desktop cannot automatically resume this pause',403,'AUTO_RESUME_UNAVAILABLE');
+        const personalResume = pause && ['PERSONAL_PAUSE','INACTIVITY'].includes(pause.reason)
+          && id(pause.resumeDevice) === id(activityChange.deviceId);
+        const scheduledResume = !pause && await scheduledResumeAt(session, activityChange.deviceId, at, dbSession);
+        if (!personalResume && !scheduledResume) fail('This desktop cannot automatically resume this pause',403,'AUTO_RESUME_UNAVAILABLE');
         filter.$or=[{activeSession:null},{activeSession:session._id}];
       }
       const authorized=await TrackingDevice.updateOne(filter,{$set:{lastSeenAt:at}},{session:dbSession});

@@ -24,14 +24,14 @@ class ActivityWork {
     // OS idle time has whole-second precision. Use its lower bound so the
     // click that initiated a manual break cannot itself resume that break.
     const inputAt=this.now()-seconds*1000-1000;
-    if(inputAt>this.lastInputAt){this.lastInputAt=inputAt;this.inputVersion++;if(this.state.status==='PAUSED'&&inputAt>this.state.observedAt)this.resumeRequested=true;}
+    if(inputAt>this.lastInputAt){this.lastInputAt=inputAt;this.inputVersion++;if(this.state.status==='PAUSED'&&inputAt>this.state.observedAt&&inputAt>=(this.state.resumeFrom??-Infinity))this.resumeRequested=true;}
   }
   tick(){
     const state=this.state;if(!state||this.running||this.now()<this.retryAt)return;
     if(this.pending){
       if(this.pending.action==='pause'&&!state.canPause||this.pending.action==='resume'&&!state.canResume)return;
     }else{
-      const action=state.status==='RUNNING'&&state.canPause&&this.now()-this.lastInputAt>=INACTIVITY_MS?'pause':state.status==='PAUSED'&&state.canResume&&this.resumeRequested?'resume':null;
+      const action=state.status==='RUNNING'&&state.canPause&&this.now()-this.lastInputAt>=INACTIVITY_MS?'pause':state.status==='PAUSED'&&state.canResume&&this.resumeRequested&&this.lastInputAt>=(state.resumeFrom??-Infinity)?'resume':null;
       if(!action)return;
       this.pending={action,operationId:randomUUID(),sessionId:state.sessionId,expectedRevision:state.revision,...(action==='pause'?{idleSeconds:Math.floor((this.now()-this.lastInputAt)/1000)}:{})};
       this.resumeRequested=false;

@@ -46,7 +46,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
   const counters = new ActivityCounters();
   const captureSchedule = new CaptureSchedule({now:()=>performance.now()});
   let checkpointPending = false;
-  let activityWatchUntil=0,lastWorkTransition=null,activityObservedAt=0;
+  let activityWatchUntil=0,lastWorkTransition=null,activityObservedAt=0,scheduledActivityResumeFrom=null;
   const activityWork=new ActivityWork({
     now:()=>performance.now(),
     perform:async operation=>{
@@ -67,9 +67,12 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
   function updateActivityState(){
     const now=performance.now(),open=work?.pauses?.find(p=>!p.endedAt);
     const enabled=Boolean(credentials&&policy?.enabled&&policy?.monitoringEnabled&&work&&!work.endedAt&&work.status!=='CLOSED'&&!quitting&&!updateHold&&!device?.revokedAt&&!device?.monitoringDisplacedAt&&!noticeRequired);
-    const canResume=enabled&&!locked&&!suspended&&activityWatchUntil>now&&work.status==='PAUSED'&&['PERSONAL_PAUSE','INACTIVITY'].includes(open?.reason)&&String(open?.resumeDevice)===String(device?._id);
-    activityWork.update({enabled,workspaceId:credentials?.workspaceId,userId:credentials?.userId,sessionId:work?._id,revision:work?.revision,status:work?.status,canPause:enabled&&work.status==='RUNNING'&&leaseDeadlineMono>now,canResume,observedAt:activityObservedAt});
-    return canResume;
+    const scheduled = !open && work?.pauses?.at(-1)?.reason === 'SCHEDULED_WORK_BREAK' ? scheduledActivityResumeFrom : null;
+    const personal = ['PERSONAL_PAUSE','INACTIVITY'].includes(open?.reason) && String(open?.resumeDevice) === String(device?._id);
+    const watching = enabled && !locked && !suspended && activityWatchUntil > now && work.status === 'PAUSED' && (personal || scheduled !== null);
+    const canResume = watching && (scheduled === null || now >= scheduled);
+    activityWork.update({enabled,workspaceId:credentials?.workspaceId,userId:credentials?.userId,sessionId:work?._id,revision:work?.revision,status:work?.status,canPause:enabled&&work.status==='RUNNING'&&leaseDeadlineMono>now,canResume,observedAt:activityObservedAt,resumeFrom:scheduled});
+    return watching;
   }
   const trusted = event => { const window=getWindow();
     return window && event.sender===window.webContents && event.senderFrame===window.webContents.mainFrame && new URL(event.senderFrame.url).origin===getOrigin(); };
@@ -79,7 +82,8 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
       policy:policy?{revision:policy.revision,enabled:policy.enabled,monitoringEnabled:policy.monitoringEnabled,intervalSeconds:policy.intervalSeconds,retentionDays:policy.retentionDays,monitors:policy.monitors,blur:policy.blur,format:'webp',personalPauseEnabled:policy.personalPauseEnabled}:null};
     value.protectedCopies+=pendingCheckpoints.length;
     value.automaticWorkPending=activityWork.running?activityWork.pending?.action||null:null;
-    value.autoResumeArmed=activityWatchUntil>performance.now()&&work?.status==='PAUSED'&&!locked&&!suspended;
+    value.autoResumeArmed=activityWatchUntil>performance.now()&&work?.status==='PAUSED'&&!locked&&!suspended
+      && (scheduledActivityResumeFrom === null || performance.now() >= scheduledActivityResumeFrom);
     const window=getWindow(); if(window&&!window.isDestroyed())window.webContents.send('desktop-tracking:status',value);
     if(window&&!window.isDestroyed())window.setTitle(state==='monitoring'?'FlowTask · Monitoring active':state==='offline'?'FlowTask · Monitoring offline':'FlowTask');
     return value;
@@ -109,14 +113,14 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
   function haltPolicy(value){
     if(value?.enabled!==false)return;
     resumeScreenshotAt=null;captureResumeAt=0;
-    activityWork.clear();activityWatchUntil=0;attendanceActivityAllowed=false;
+    activityWork.clear();activityWatchUntil=0;scheduledActivityResumeFrom=null;attendanceActivityAllowed=false;
     dismissPreview();
     haltRevision=Math.max(haltRevision,Number(value.revision)||0);captureEpoch++;
     capturing=false;lastCaptureAllowed=false;leaseDeadlineMono=0;noticeRequired=false;stopInput();counters.reset();
     publish('unavailable','Time Tracking disabled by workspace Admin');
   }
   function haltCapture(message='Desktop monitoring stopped',state='unavailable'){
-    if(state!=='paused'){activityWork.clear();activityWatchUntil=0;attendanceActivityAllowed=false;}
+    if(state!=='paused'){activityWork.clear();activityWatchUntil=0;scheduledActivityResumeFrom=null;attendanceActivityAllowed=false;}
     dismissPreview();
     captureEpoch++;capturing=false;lastCaptureAllowed=false;leaseDeadlineMono=0;noticeRequired=false;stopInput();counters.reset();publish(state,message);
   }
@@ -178,6 +182,10 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
               lastAttendanceInputMono = observedAt;
               if (resumedAfterIdle) void sync(true);
             }
+          }
+          if (scheduledActivityResumeFrom !== null && !activityWork.state?.canResume) {
+            const now = performance.now();
+            if (now >= scheduledActivityResumeFrom && now < activityWatchUntil) updateActivityState();
           }
           activityWork.input();if(capturing){captureInput();if(kind==='keyboard')counters.keyDown();else if(kind==='mouse')counters.mouseDown();else counters.input();}else if(activityWatchUntil>performance.now())captureSchedule.input();};
         hook.on('keydown',()=>activity('keyboard'));
@@ -412,7 +420,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
         evidenceEnd=Math.max(evidenceEnd||0,+new Date(next.evidenceCursor.endedAt));
       }
       stateChangeRetried=false;
-      if(next.policy.revision<haltRevision)next.canCapture=false;
+      if(next.policy.revision<haltRevision){next.canCapture=false;next.canAutoResume=false;next.scheduledActivityResumeAt=null;}
       if(next.session&&(closedSessions.has(String(next.session._id))||closedAttendance.has(String(next.session.attendanceSession)))){next.canCapture=false;next.session={...next.session,status:'CLOSED'};}
       // A heartbeat started before Pause/Resume can finish after its committed
       // transition. Discard it without authorizing capture or publishing a
@@ -444,7 +452,11 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
       work=next.session;policy=next.policy;device=next.device;
       attendanceActivityAllowed=next.activityAllowed===true;
       clearReconnect();reconnectFailures=0;
-      activityWatchUntil=next.canAutoResume?beforeHeartbeat+Math.max(0,+new Date(next.activityWatchUntil)-+new Date(next.serverNow)):0;
+      const resumeAt = next.scheduledActivityResumeAt && Date.parse(next.scheduledActivityResumeAt);
+      scheduledActivityResumeFrom = work?.status === 'PAUSED' && Number.isFinite(resumeAt)
+        ? performance.now() + resumeAt - +new Date(next.serverSentAt || next.serverNow) : null;
+      activityWatchUntil = next.canAutoResume || scheduledActivityResumeFrom !== null
+        ? beforeHeartbeat + Math.max(0, +new Date(next.activityWatchUntil) - +new Date(next.serverNow)) : 0;
       noticeVersion=next.noticeVersion||1;noticeRequired=Boolean(next.needsNotice&&work?.status==='RUNNING');
       leaseDeadlineMono=next.canCapture?beforeHeartbeat+Math.max(0,+new Date(device.leaseUntil)-+new Date(next.serverNow)):0;
       if(device.revokedAt){haltCapture('This desktop device was revoked');return;}
@@ -453,7 +465,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
           haltCapture('Screen Recording permission is required in macOS System Settings');publish('permission-required',lastError);
         }else{lastCaptureAllowed=true;begin();if(capturing)publish('monitoring',hookStarted?'':'System input counters unavailable');}
       }
-      else{await stopCapture('partial', attendanceActivityAllowed);const state=!policy.enabled||!policy.monitoringEnabled?'disabled':work?.status==='PAUSED'?'paused':!work||work.status!=='RUNNING'?'ready':'unavailable';publish(noticeRequired?'notice-required':state,['paused','ready','disabled'].includes(state)?'':next.reason||'Monitoring unavailable');}
+      else{await stopCapture('partial', attendanceActivityAllowed || scheduledActivityResumeFrom !== null);const state=!policy.enabled||!policy.monitoringEnabled?'disabled':work?.status==='PAUSED'?'paused':!work||work.status!=='RUNNING'?'ready':'unavailable';publish(noticeRequired?'notice-required':state,['paused','ready','disabled'].includes(state)?'':next.reason||'Monitoring unavailable');}
       if((updateActivityState()||attendanceActivityAllowed)&&!locked&&!suspended)startInput();
       flush().catch(()=>{});
     }catch(error){

@@ -3,7 +3,7 @@ import { serializeTrackingWrite, withTrackingTransaction } from './tracking.writ
 import { invalidateTrackingReads } from './tracking.readCache.js';
 import { randomUUID,createHash,timingSafeEqual } from 'node:crypto';
 import { TrackingDevice, WorkSession, ActivityInterval, TrackingScreenshot,TrackingCaptureLease,TrackingCaptureAnchor,TrackingPolicy } from './tracking.models.js';
-import { contextFor, policyFor, fail, digest, objectId, reconcileSession, authorizeRecord, changeWork, publicWorkSession } from './tracking.service.js';
+import { contextFor, policyFor, fail, digest, objectId, reconcileSession, authorizeRecord, changeWork, publicWorkSession, scheduledResumeAt } from './tracking.service.js';
 import { can } from './tracking.authorization.js';
 import { overlapSeconds } from './tracking.timeline.js';
 import { signedUpload, verifyPrivateUpload, screenshotKey, privateStorage, storageLabels,SCREENSHOT_MAX_BYTES,SCREENSHOT_TARGET_BYTES,screenshotUploadLimits,privateScreenshotExists,missingStorageObject } from './tracking.storage.js';
@@ -124,7 +124,13 @@ async function heartbeatUnlocked({ workspaceId, userId, deviceId, sessionId, sta
   const scheduledBreak = workBreakState(workBreak, now);
   const breakActive = scheduledBreak && +scheduledBreak.startsAt <= +now;
   const canCapture = Boolean(permitted && !breakActive && session?.status === 'RUNNING');
-  const canAutoResume=Boolean(permitted&&!breakActive&&canResumeOnActivity(device,session));
+  const activityWatchDeadline = new Date(+now + 300000);
+  const pauseEnd = permitted && attendance?.status === 'ACTIVE' && !device.monitoringDisplacedAt
+    ? await scheduledResumeAt(session, device._id, activityWatchDeadline) : null;
+  const resumeAt = pauseEnd && breakActive && +scheduledBreak.endsAt > +pauseEnd ? scheduledBreak.endsAt : pauseEnd;
+  const scheduledActivityResumeAt = resumeAt && +resumeAt < +activityWatchDeadline ? resumeAt : null;
+  const canAutoResume = Boolean(permitted && !breakActive && (canResumeOnActivity(device, session)
+    || scheduledActivityResumeAt && +scheduledActivityResumeAt <= +now));
   if(takeover){
     const secret=await TrackingDevice.findOne({_id:device._id,workspaceId,user:userId,revokedAt:null}).select('+noticeAuthorizationHash').lean();
     if(!/^[a-f\d]{64}$/.test(noticeAuthorization||'')||!/^[a-f\d]{64}$/.test(secret?.noticeAuthorizationHash||'')||!timingSafeEqual(Buffer.from(secret.noticeAuthorizationHash,'hex'),createHash('sha256').update(noticeAuthorization).digest()))fail('Switch monitoring from the authorized FlowTask desktop app.',403,'DESKTOP_DEVICE_REQUIRED');
@@ -185,7 +191,8 @@ async function heartbeatUnlocked({ workspaceId, userId, deviceId, sessionId, sta
   const cursor=includeEvidenceCursor===true&&session?await ActivityInterval.findOne({workspaceId,user:userId,session:session._id,device:device._id}).sort({endedAt:-1}).select('endedAt').lean():null;
   return { serverNow: now, serverSentAt:new Date(), currentSessionResolved:resolveCurrentSession===true&&!takeover,
     ...(includeEvidenceCursor===true?{evidenceCursor:cursor?{sessionId:String(session._id),endedAt:cursor.endedAt}:null}:{}),
-    device: saved, policy, session, canCapture,activityAllowed:activityAllowed&&session?.status!=='CLOSED',canAutoResume,activityWatchUntil:canAutoResume?new Date(+now+300000):null,transferredFrom,
+    device: saved, policy, session, canCapture,activityAllowed:activityAllowed&&session?.status!=='CLOSED',canAutoResume,
+    scheduledActivityResumeAt, activityWatchUntil: canAutoResume || scheduledActivityResumeAt ? activityWatchDeadline : null, transferredFrom,
     noticeVersion:MONITORING_NOTICE_VERSION,uploadLimits:screenshotUploadLimits(),needsNotice:policy.enabled&&policy.monitoringEnabled&&!hasMonitoringNotice(device),
     reason: !policy.enabled ? 'Time Tracking disabled by workspace' : !policy.monitoringEnabled ? 'Monitoring disabled by workspace' : !session || session.status !== 'RUNNING' ? 'Work is not running' : !hasMonitoringNotice(device) ? 'Monitoring notice required' : !permitted?'Tracking permission required':null };
 }
