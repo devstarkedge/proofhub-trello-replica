@@ -1,7 +1,7 @@
 import useProjectManagers from '../hooks/useProjectManagers';
 "use client";
 
-import React, { useState, useEffect, useCallback, useContext, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useContext, useId, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -63,9 +63,15 @@ const EnterpriseEditProjectModal = React.memo(({
 }) => {
   const { user } = useContext(AuthContext);
   const [activeTab, setActiveTab] = useState('details');
+  const [teamOpened, setTeamOpened] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [loadedProject, setLoadedProject] = useState(null);
+  const [loadError, setLoadError] = useState('');
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const titleId = useId();
+  const projectId = project?.id || project?._id;
+  const ready = loadedProject?.canEdit === true;
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [priorityDropdownOpen, setPriorityDropdownOpen] = useState(false);
   const statusDropdownRef = useRef(null);
@@ -101,7 +107,7 @@ const EnterpriseEditProjectModal = React.memo(({
     projectType: 'Hired Client'
   });
 
-  const managerChoices = useProjectManagers((loadedProject || project)?.department?._id || (loadedProject || project)?.department, isOpen, (loadedProject || project)?._id);
+  const managerChoices = useProjectManagers(loadedProject?.department?._id || loadedProject?.department, isOpen && ready && teamOpened, projectId);
   const managers = managerChoices.users;
   const selectedEmployees = useMemo(() =>
     formData.assignees.map(id => managers.find(m => m._id === id)).filter(Boolean),
@@ -248,20 +254,18 @@ const EnterpriseEditProjectModal = React.memo(({
 
   // Load project data
   useEffect(() => {
-    let cancelled = false;
-    if (isOpen && project) {
+    const controller = new AbortController();
+    if (isOpen && projectId) {
       const fetchFullProject = async () => {
         try {
-          const response = await Database.getProject(project.id || project._id);
-          if (cancelled) return;
+          const response = await Database.getProject(projectId, { signal: controller.signal });
+          if (controller.signal.aborted) return;
           const fullProject = response.data;
           if (!fullProject?.canEdit) {
             toast.error('You do not have permission to edit this project');
             onClose();
             return;
           }
-          setLoadedProject(fullProject);
-          
           setFormData({
             title: fullProject.name || '',
             description: fullProject.description || '',
@@ -305,18 +309,19 @@ const EnterpriseEditProjectModal = React.memo(({
           
           setCoverImage(fullProject.coverImage || null);
           setCoverImageHistory(fullProject.coverImageHistory || []);
+          setLoadedProject(fullProject);
           
           // Attachments and activity are now fetched lazily when their tabs are selected
         } catch (error) {
-          if (cancelled) return;
+          if (controller.signal.aborted) return;
           console.error('Error fetching full project:', error);
-          toast.error('Failed to load project details');
+          setLoadError('Project details could not be loaded.');
         }
       };
       fetchFullProject();
     }
-    return () => { cancelled = true; };
-  }, [isOpen, project, draftKey]);
+    return () => controller.abort();
+  }, [isOpen, projectId, draftKey, loadAttempt]);
 
   // Track which tabs have had their data fetched
   const fetchedTabsRef = useRef({});
@@ -583,7 +588,7 @@ const EnterpriseEditProjectModal = React.memo(({
     onClose();
   };
 
-  if (!isOpen || !project || !loadedProject?.canEdit) return null;
+  if (!isOpen || !projectId) return null;
 
   const drawerWidth = isFullScreen ? 'w-full' : 'w-full max-w-5xl';
 
@@ -604,7 +609,10 @@ const EnterpriseEditProjectModal = React.memo(({
           {/* Drawer */}
           <motion.div
             variants={drawerVariants}
-            initial="hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            initial={false}
             animate="visible"
             exit="exit"
             className={`fixed right-0 top-0 h-full ${drawerWidth} bg-[#f4f5f7] shadow-2xl z-[61] flex flex-col`}
@@ -623,10 +631,10 @@ const EnterpriseEditProjectModal = React.memo(({
                   </button>
                   <div>
                     <div className="flex items-center gap-3">
-                      <h2 className="text-xl font-bold text-white truncate max-w-md">
-                        {formData.title || 'Edit Project'}
+                      <h2 id={titleId} className="text-xl font-bold text-white truncate max-w-md">
+                        {ready ? formData.title || 'Edit Project' : 'Edit Project'}
                       </h2>
-                      {canEditStatusAndPriority ? (
+                      {ready && (canEditStatusAndPriority ? (
                         <div className="flex items-center gap-2">
                           {/* Status Dropdown */}
                           <div className="relative" ref={statusDropdownRef}>
@@ -709,7 +717,7 @@ const EnterpriseEditProjectModal = React.memo(({
                           <StatusBadge status={formData.status} />
                           <PriorityBadge priority={formData.priority} />
                         </div>
-                      )}
+                      ))}
                     </div>
                     <p className="text-indigo-200 text-sm mt-1">
                       Last updated: {project.updatedAt ? new Date(project.updatedAt).toLocaleDateString() : 'Never'}
@@ -725,7 +733,7 @@ const EnterpriseEditProjectModal = React.memo(({
                   )}
 
                   {/* Project Type Dropdown */}
-                  <div className="relative" ref={projectTypeDropdownRef}>
+                  {ready && <div className="relative" ref={projectTypeDropdownRef}>
                     <button
                       type="button"
                       onClick={() => setProjectTypeDropdownOpen(!projectTypeDropdownOpen)}
@@ -762,7 +770,7 @@ const EnterpriseEditProjectModal = React.memo(({
                         </div>
                       </div>
                     )}
-                  </div>
+                  </div>}
 
                   <button
                     type="button"
@@ -774,6 +782,8 @@ const EnterpriseEditProjectModal = React.memo(({
                   <button
                     type="button"
                     onClick={handleClose}
+                    aria-label="Close edit project"
+                    autoFocus
                     className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-xl transition-all active:scale-95 hover:rotate-90 duration-200"
                   >
                     <X size={24} />
@@ -782,17 +792,61 @@ const EnterpriseEditProjectModal = React.memo(({
               </div>
               
               {/* Tab Navigation */}
-              <div className="mt-4">
-                <TabNavigation tabs={tabs} activeTab={activeTab} onTabChange={setActiveTab} />
-              </div>
+              {ready && <div className="mt-4">
+                <TabNavigation tabs={tabs} activeTab={activeTab} onTabChange={tab => {
+                  if (tab === 'team') setTeamOpened(true);
+                  setActiveTab(tab);
+                }} />
+              </div>}
             </div>
 
             {/* Content Area */}
             <div className="flex-1 overflow-hidden">
               <div className="h-full overflow-y-auto">
                 <div className="p-6">
+                  {!ready && (loadError ? (
+                    <div className="flex flex-wrap items-center gap-3 text-sm">
+                      <p role="alert" className="text-red-700">{loadError}</p>
+                      <button type="button" className="cursor-pointer font-semibold text-blue-700 underline"
+                        onClick={() => {
+                          setLoadError('');
+                          setLoadAttempt(attempt => attempt + 1);
+                        }}>
+                        Retry
+                      </button>
+                    </div>
+                  ) : (
+                    <div role="status">
+                      <span className="sr-only">Loading project details…</span>
+                      <div aria-hidden="true" className="space-y-6 motion-safe:animate-pulse">
+                        <div className="space-y-4 rounded-2xl border border-gray-200 bg-gray-50 p-5">
+                          <div className="h-4 w-28 rounded bg-gray-200" />
+                          <div className="h-28 rounded-xl bg-gray-200" />
+                        </div>
+                        <div className="space-y-5 rounded-2xl border border-gray-200 bg-gray-50 p-5">
+                          <div className="h-4 w-32 rounded bg-gray-200" />
+                          <div className="space-y-2">
+                            <div className="h-3 w-24 rounded bg-gray-200" />
+                            <div className="h-10 rounded-lg bg-gray-200" />
+                          </div>
+                          <div className="space-y-2">
+                            <div className="h-3 w-28 rounded bg-gray-200" />
+                            <div className="h-24 rounded-lg bg-gray-200" />
+                          </div>
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            {[1, 2].map(field => (
+                              <div key={field} className="space-y-2">
+                                <div className="h-3 w-20 rounded bg-gray-200" />
+                                <div className="h-10 rounded-lg bg-gray-200" />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                   {/* Details Tab */}
-                  {activeTab === 'details' && (
+                  {ready && activeTab === 'details' && (
                     <form onSubmit={handleSubmit} className="space-y-6">
                       {/* Cover Image */}
                       <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200">
@@ -1004,7 +1058,7 @@ const EnterpriseEditProjectModal = React.memo(({
                   )}
 
                   {/* Files Tab */}
-                  {activeTab === 'files' && (
+                  {ready && activeTab === 'files' && (
                     <FilesTab
                       pendingFiles={pendingFiles}
                       existingFiles={projectFiles}
@@ -1017,7 +1071,7 @@ const EnterpriseEditProjectModal = React.memo(({
                   )}
 
                   {/* Team Tab */}
-                  {activeTab === 'team' && (
+                  {ready && activeTab === 'team' && (
                     <TeamTab managersLoading={managerChoices.loading} managersError={managerChoices.error}
                       managers={managers}
                       assignees={formData.assignees}
@@ -1028,7 +1082,7 @@ const EnterpriseEditProjectModal = React.memo(({
                   )}
 
                   {/* Activity Tab */}
-                  {activeTab === 'activity' && (
+                  {ready && activeTab === 'activity' && (
                     <div className="space-y-6">
                       <ActivityTimeline
                         activities={activityLog}
@@ -1057,7 +1111,7 @@ const EnterpriseEditProjectModal = React.memo(({
                 <button
                   type="button"
                   onClick={handleSubmit}
-                  disabled={loading}
+                  disabled={!ready || loading}
                   className="flex items-center gap-2 px-8 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 font-semibold transition-all active:scale-[0.98] shadow-lg shadow-indigo-500/30"
                 >
                   {loading ? (

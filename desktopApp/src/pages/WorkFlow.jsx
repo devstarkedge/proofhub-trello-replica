@@ -83,7 +83,6 @@ const WorkFlow = memo(() => {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
-  const [fullProjectData, setFullProjectData] = useState(null);
   const [shareAutoOpened, setShareAutoOpened] = useState(false);
   const [showRecurringPage, setShowRecurringPage] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
@@ -144,7 +143,6 @@ const WorkFlow = memo(() => {
        setDebouncedSearch('');
        setEditModalOpen(false);
        setSelectedProject(null);
-       setFullProjectData(null);
        setShareAutoOpened(false);
        setShowRecurringPage(false);
        setShowArchived(false);
@@ -626,21 +624,11 @@ useEffect(() => {
     }
   }, [moveList]);
 
-  const handleOpenEditModal = useCallback(async () => {
-    if (user && (user.role === 'admin' || user.role === 'manager')) {
-      try {
-        // Fetch full project data to ensure team members are loaded
-        const response = await Database.getProject(projectId);
-        if (response.success) {
-          setFullProjectData(response.data);
-          setSelectedProject(response.data);
-          setEditModalOpen(true);
-        }
-      } catch (error) {
-        console.error('Error fetching full project data:', error);
-      }
-    }
-  }, [user, projectId]);
+  const handleOpenEditModal = useCallback(() => {
+    if (!['admin', 'manager'].includes(user?.role) || String(board?._id) !== projectId) return;
+    setSelectedProject(board);
+    setEditModalOpen(true);
+  }, [user?.role, board, projectId]);
 
   const handleProjectUpdated = useCallback((updatedProject) => {
     updateBoard({
