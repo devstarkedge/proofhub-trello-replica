@@ -10,6 +10,7 @@ import { recordAuditLog } from '../modules/permissions/auditLogService.js';
 import { emitToUser, getIO } from '../realtime/emitters.js';
 import { ROOM } from '../realtime/events.js';
 import { syncUserDepartmentRoster } from '../modules/workspaces/departmentRosterSync.js';
+import { activeReportingDepartments, assignedDepartmentIds } from '../modules/attendance/attendanceReportingDepartment.service.js';
 
 // Transitional single writer. V2 grants and ceiling validation are added below
 // as the catalog lands; legacy controllers already stop touching User mirrors.
@@ -19,7 +20,7 @@ export async function updateMemberAccess({ workspaceId, userId, actor, patch, re
   const member = await WorkspaceMembership.findOne({ workspace: workspaceId, user: userId, status: { $ne: 'removed' } });
   if (!workspace || !member) throw new ErrorResponse('Member not found', 404);
   if (String(workspace.owner) === String(userId)) throw new ErrorResponse('Workspace owner access is locked', 403);
-  const allowed = ['role', 'roleId', 'department', 'team', 'accessType', 'allowedProjects', 'status'];
+  const allowed = ['role', 'roleId', 'department', 'team', 'accessType', 'allowedProjects', 'status', 'attendanceReportingDepartmentId'];
   if (Object.keys(patch).some(key => !allowed.includes(key))) throw new ErrorResponse('Invalid access field', 400);
   if (member.role === 'admin' && (patch.status && patch.status !== 'active' || patch.role && patch.role !== 'admin')) {
     if (await WorkspaceMembership.countDocuments({ workspace: workspaceId, role: 'admin', status: 'active' }) <= 1) throw new ErrorResponse('Cannot remove the last active admin', 409);
@@ -39,12 +40,44 @@ export async function updateMemberAccess({ workspaceId, userId, actor, patch, re
   }
   if (patch.team && !await Team.exists({ _id: patch.team, workspaceId })) throw new ErrorResponse('Team not found', 404);
   const before = Object.fromEntries(allowed.map(key => [key, member.toObject()[key]]));
-  Object.assign(member, patch);
-  await member.save();
+  const setsPrimary = Object.hasOwn(patch, 'attendanceReportingDepartmentId');
+  const updatesDepartments = patch.department !== undefined;
+  if (setsPrimary || updatesDepartments) {
+    const configured = patch.attendanceReportingDepartmentId;
+    if (setsPrimary && (member.status !== 'active' || typeof configured !== 'string' || !/^[a-f\d]{24}$/i.test(configured))) {
+      throw new ErrorResponse('Select an active assigned department for attendance reporting', 400);
+    }
+    const ids = updatesDepartments ? patch.department.map(String) : assignedDepartmentIds(member);
+    if (setsPrimary || (!member.attendanceReportingDepartmentId && member.status === 'active')) {
+      const candidates = setsPrimary ? ids.filter(id => id === configured.toLowerCase()) : ids;
+      const active = new Set((await activeReportingDepartments(workspaceId, candidates)).map(row => String(row._id)));
+      const primary = candidates.find(id => active.has(id));
+      if (setsPrimary && !primary) throw new ErrorResponse('Select an active assigned department for attendance reporting', 400);
+      if (primary) member.attendanceReportingDepartmentId = primary;
+    }
+    // Compare both assignment fields and the old selection so a stale write
+    // cannot override a concurrent member edit or check-in default.
+    member.$where = {
+      workspace: workspaceId, status: member.status,
+      department: member.$isDefault('department') ? { $exists: false } : before.department,
+      departments: member.departments ?? { $exists: false },
+      attendanceReportingDepartmentId: before.attendanceReportingDepartmentId ?? null,
+    };
+    if (updatesDepartments && member.departments !== undefined) member.departments = patch.department;
+  }
+  const { attendanceReportingDepartmentId: _primary, ...accessPatch } = patch;
+  Object.assign(member, accessPatch);
+  try {
+    await member.save();
+  } catch (error) {
+    if (error.name === 'DocumentNotFoundError' || error.name === 'VersionError') throw new ErrorResponse('Member assignments changed. Reload the profile and try again.', 409);
+    throw error;
+  }
   if (patch.department !== undefined || patch.role !== undefined || patch.status !== undefined) {
     await syncUserDepartmentRoster({ workspaceId, userId, departmentIds: member.status === 'active' ? member.department : [], roleSlug: member.role, previousRole: before.role });
   }
   await recordAuditLog({ actor, target: { _id: userId }, action: 'MEMBER_ACCESS_CHANGED', targetType: 'WorkspaceMembership', targetId: member._id, resourceKey: 'membership', resourceLabel: 'Workspace membership', summary: reason, before, after: Object.fromEntries(allowed.map(key => [key, member.toObject()[key]])), meta: { ...meta, workspaceId } });
+  if (!Object.keys(accessPatch).length) return member;
   invalidateAuthCache(userId);
   try {
     emitToUser(userId, 'authz:changed', { workspaceId, userId }, workspaceId);

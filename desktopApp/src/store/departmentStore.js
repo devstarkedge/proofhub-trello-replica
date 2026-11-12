@@ -2,6 +2,9 @@ import { create } from "zustand";
 import api from "../services/api";
 import Database from "../services/database";
 import { registerResettable } from "./resetRegistry";
+import { captureRequestScope, requestScopeKey } from "../../../shared/requestScope.mjs";
+
+const readScope = () => requestScopeKey(captureRequestScope(localStorage));
 
 const useDepartmentStore = create((set, get) => ({
   // State
@@ -24,13 +27,16 @@ const useDepartmentStore = create((set, get) => ({
 
   // Load all departments
   loadDepartments: async () => {
+    const scope = readScope();
     try {
       set({ loading: true, error: null });
       const response = await Database.getDepartments();
+      if (scope !== readScope()) return [];
       const departments = response.data || [];
       set({ departments, loading: false });
       return departments;
     } catch (error) {
+      if (scope !== readScope()) return [];
       console.error("Error loading departments:", error);
       set({ error: error.message, loading: false });
       throw error;

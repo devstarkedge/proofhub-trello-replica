@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { enqueueAttendanceReport, requestPriorityAttendanceReportDelivery } from '../../services/chat/attendanceReporting.service.js';
+import { captureReportingDepartment } from './attendanceReportingDepartment.service.js';
 import AuditLog from '../../models/AuditLog.js';
 import { evaluateCheckout, assertCheckoutConfirmation, checkoutPreview, readCheckoutTasks } from './attendanceCheckout.service.js';
 import { LOGGED_TIME_REASON_MAX_LENGTH, normalizeCheckoutTaskReason } from '../../../shared/checkoutTaskReasons.mjs';
@@ -378,12 +379,14 @@ export async function checkIn({ workspaceId, userId, membership, workspace, gps 
         { upsert: true, new: true, session: dbSession }
       );
 
+      const reportingDepartment = await captureReportingDepartment({ workspaceId, userId, dbSession });
       let created;
       try {
         [created] = await AttendanceSession.create([{
           workspaceId, user: userId, attendanceDay: dayShell._id, workDateKey: ctx.workDateKey,
           status: 'ACTIVE', checkInAt: ctx.serverNow, checkIn: evidence,
           policyVersion: ctx.policyVersion._id, shift: ctx.shift?._id || null,
+          reportingDepartmentId: reportingDepartment?._id ?? null,
           missedCheckoutCutoffAt,
           effectiveShiftEndAt,
           autoCheckoutDueAt: effectiveShiftEndAt,
@@ -427,7 +430,7 @@ export async function checkIn({ workspaceId, userId, membership, workspace, gps 
         shift: ctx.shift, officeHours: ctx.officeHours, sessions: [...ctx.sessions, created.toObject()], serverNow: ctx.serverNow, dbSession
       });
       const work = await startWithAttendance({ attendance: created, selection: selectedWork, dbSession });
-      await enqueueAttendanceReport({ action: 'checkin', attendance: created, work, at: created.checkInAt, day, dbSession });
+      await enqueueAttendanceReport({ action: 'checkin', attendance: created, work, at: created.checkInAt, day, dbSession, reportingDepartment });
       await enqueueAttendanceEvent({workspaceId,user:userId,key:`checkin-${created._id}`,kind:'CHECKED_IN',attendanceSession:created._id,workDateKey:created.workDateKey},dbSession);
       result = { session: created, replay: false, attendanceDay: day };
     }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });

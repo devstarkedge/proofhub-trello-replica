@@ -8,6 +8,7 @@ import AttendanceEvent from '../../modules/attendance/attendanceEvent.model.js';
 import { WorkSession, TrackingScreenshot } from '../../modules/tracking/tracking.models.js';
 import AttendanceSession from '../../modules/attendance/attendanceSession.model.js';
 import AttendanceDay from '../../modules/attendance/attendanceDay.model.js';
+import { activeReportingDepartments, assignedDepartmentIds, reportingMembership } from '../../modules/attendance/attendanceReportingDepartment.service.js';
 import { transitionSnapshot, dailyWorkSummary } from './attendanceReporting.payload.js';
 import { resolveFlowTaskAccessSnapshot } from './flowTaskAccessService.js';
 import { resolveWorkspaceChatSettings } from './webhookDispatcher.js';
@@ -28,8 +29,9 @@ import { resolveLeaveAccessScope } from '../../modules/leave/leaveAuthorization.
 import { reportingRetry, isWorkspaceMappingUnavailable } from './reportingRetry.js';
 import { shouldRebuildReportingDirectory, reportingAccessClock } from './reportingDirectorySchedule.js';
 
-async function reportingWorkSessions(workspaceId, userId, workDateKey, dbSession = null) {
-  const sessions = await WorkSession.find({ workspaceId, user: userId, workDateKey }).session(dbSession).lean();
+async function reportingWorkSessions(workspaceId, userId, workDateKey, dbSession = null, attendanceIds = null) {
+  const sessions = await WorkSession.find({ workspaceId, user: userId, workDateKey,
+    ...(attendanceIds && { attendanceSession: { $in: attendanceIds } }) }).session(dbSession).lean();
   const ids = [...new Set(sessions.filter(s => s.includePreAssignment).flatMap(s => s.segments.map(v => v.linkedTask)).filter(Boolean).map(String))];
   if (!ids.length) return sessions;
   const tasks = await Card.find({ workspaceId, _id: { $in: ids } }).select('_id title').session(dbSession).lean();
@@ -42,25 +44,53 @@ async function reportingWorkSessions(workspaceId, userId, workDateKey, dbSession
   return sessions;
 }
 
-export async function enqueueAttendanceReport({ action, attendance, work = null, before = null, at, day = null, dbSession }) {
+async function sessionReportingDepartment(attendance, initial, dbSession) {
+  if (attendance.reportingDepartmentId === null) return null;
+  const { workspaceId, user: userId, reportingDepartmentId } = attendance;
+  const member = await reportingMembership(workspaceId, userId, dbSession);
+  const assigned = new Set(assignedDepartmentIds(member));
+  const legacy = reportingDepartmentId === undefined;
+  // A session opened before rollout may only continue in a department that
+  // received its original check-in. Never create a root in a newly added one.
+  const original = initial?.reportPayload?.departments;
+  const originalIds = Array.isArray(original) ? original.map(row => row?.id) : [];
+  const candidates = (legacy ? originalIds :
+    [String(reportingDepartmentId)]).filter(id => assigned.has(id));
+  const active = await activeReportingDepartments(workspaceId, candidates, dbSession);
+  const byId = new Map(active.map(row => [String(row._id), row]));
+  const department = byId.get(String(member?.attendanceReportingDepartmentId)) ?? byId.get(candidates.find(id => byId.has(id)));
+  if (legacy) {
+    await AttendanceSession.updateOne({ _id: attendance._id, workspaceId, user: userId, reportingDepartmentId: { $exists: false } },
+      { $set: { reportingDepartmentId: department?._id ?? null } }, { session: dbSession, timestamps: false });
+  }
+  if (!department && (!legacy || originalIds.length)) {
+    logger.warn('Attendance session reporting department is unavailable', { workspaceId: String(workspaceId), attendanceSessionId: String(attendance._id) });
+  }
+  return department;
+}
+
+export async function enqueueAttendanceReport({ action, attendance, work = null, before = null, at, day = null, dbSession, reportingDepartment = null }) {
   // Historical attribution alone is not a new running-work transition.
   if (action === 'link' && (work?.status !== 'RUNNING' || +new Date(work.segments.at(-1)?.startedAt) !== +new Date(at))) return;
   const workspaceId = attendance.workspaceId, userId = attendance.user;
-  const member = await WorkspaceMembership.findOne({ workspace: workspaceId, user: userId, status: 'active' }).session(dbSession).lean();
-  if (!member) return;
-  const departments = await Department.find({ workspaceId, _id: { $in: member.departments ?? member.department ?? [] }, isActive: true }).select('_id name').session(dbSession).lean();
+  if (attendance.reportingDepartmentId === null) return;
+  const initial = action === 'checkin' ? null : await AttendanceEvent.findOne({ workspaceId, key: `report-checkin-${attendance._id}` }).session(dbSession).select('reportPayload').lean();
+  const department = action === 'checkin' ? reportingDepartment : await sessionReportingDepartment(attendance, initial, dbSession);
+  if (!department) return;
   const user = await User.findById(userId).select('name').session(dbSession).lean();
   const workspace = await Workspace.findById(workspaceId).select('timezone').session(dbSession).lean();
   const key = action === 'checkout' || action === 'checkin' ? `report-${action}-${attendance._id}` : `report-work-${work._id}-${work.revision}`;
-  const sessions = action === 'checkout' ? await reportingWorkSessions(workspaceId, userId, attendance.workDateKey, dbSession) : [];
-  const attendanceRows = action === 'checkout' ? await AttendanceSession.find({ workspaceId, user: userId, workDateKey: attendance.workDateKey }).session(dbSession).lean() : [];
-  const initial = action === 'checkin' ? null : await AttendanceEvent.findOne({ key: `report-checkin-${attendance._id}` }).session(dbSession).select('reportPayload').lean();
+  // A second session on the same day can have a different primary. Keep its
+  // task names and work descriptions out of this department's summary.
+  const attendanceRows = action === 'checkout' ? await AttendanceSession.find({ workspaceId, user: userId,
+    workDateKey: attendance.workDateKey, reportingDepartmentId: department._id }).session(dbSession).lean() : [];
+  const sessions = action === 'checkout' ? await reportingWorkSessions(workspaceId, userId, attendance.workDateKey, dbSession, attendanceRows.map(row => row._id)) : [];
   const payload = { ...transitionSnapshot({ action, attendance, work, before, at, day, sessions, attendanceRows }),
-    presentationVersion: 2, eventSequence: action === 'checkin' ? 0 : action === 'checkout' ? 1e9 : work.revision + 1,
+    presentationVersion: 2, routingVersion: 1, eventSequence: action === 'checkin' ? 0 : action === 'checkout' ? 1e9 : work.revision + 1,
     ...(initial ? { initialCheckIn: initial.reportPayload } : {}),
     eventId: key, workspaceId: String(workspaceId), timezone: getWorkspaceTimezone(workspace),
     employee: { flowTaskUserId: String(userId), name: user?.name || 'Employee' },
-    departments: departments.map(d => ({ id: String(d._id), name: d.name })) };
+    departments: [{ id: String(department._id), name: department.name }] };
   // workspaceScopePlugin supplies the tenant predicate. Repeating it in an
   // upsert filter makes MongoDB's insert inference reject the operation.
   await AttendanceEvent.findOneAndUpdate({ key }, { $setOnInsert: {
@@ -304,8 +334,11 @@ export async function reconcileCheckoutReports(workspaceId) {
     processedAt: { $ne: null }, createdAt: { $gte: new Date(Date.now() - 30 * 86400000) } }).sort({ _id: 1 }).limit(100).lean();
   for (const event of events) {
     const original = event.reportPayload;
-    const work = await reportingWorkSessions(workspaceId, event.user, event.workDateKey);
-    const attendance = await AttendanceSession.find({ workspaceId, user: event.user, workDateKey: event.workDateKey }).lean();
+    const reportingDepartmentId = original.routingVersion === 1 ? original.departments?.[0]?.id : null;
+    const attendance = await AttendanceSession.find({ workspaceId, user: event.user, workDateKey: event.workDateKey,
+      ...(reportingDepartmentId && { reportingDepartmentId }) }).lean();
+    const work = await reportingWorkSessions(workspaceId, event.user, event.workDateKey, null,
+      reportingDepartmentId ? attendance.map(row => row._id) : null);
     const day = await AttendanceDay.findOne({ workspaceId, user: event.user, workDateKey: event.workDateKey }).lean();
     if (!day) continue;
     const pending = await TrackingScreenshot.countDocuments({ workspaceId, user: event.user, session: { $in: work.map(w => w._id) }, status: 'PENDING' });

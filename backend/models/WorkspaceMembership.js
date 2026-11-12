@@ -23,6 +23,7 @@ const workspaceMembershipSchema = new mongoose.Schema({
   kind: { type: String, enum: ['member', 'guest'], default: 'member' },
   roleKey: String,
   departments: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Department' }], default: undefined },
+  attendanceReportingDepartmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
   restriction: { type: new mongoose.Schema({ type: { type: String, enum: ['none', 'selected_projects', 'assigned_only'], default: 'none' }, projectIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Board' }] }, { _id: false }), default: undefined },
   permVersion: { type: Number, default: 1 },
   guest: { expiresAt: Date, invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, sponsorUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' } },

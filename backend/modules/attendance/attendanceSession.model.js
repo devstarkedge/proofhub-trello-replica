@@ -47,6 +47,9 @@ const attendanceSessionSchema = new mongoose.Schema({
   // trap an already-active session or reinterpret it (spec §37, §74, §80-82).
   policyVersion: { type: mongoose.Schema.Types.ObjectId, ref: 'AttendancePolicyVersion', default: null },
   shift: { type: mongoose.Schema.Types.ObjectId, ref: 'AttendanceShift', default: null },
+  // Null means check-in resolved no safe destination. An absent field marks a
+  // pre-rollout session whose route can be recovered from its check-in report.
+  reportingDepartmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },
 
   // Policy-aware missed checkout lifecycle fields
   missedCheckoutCutoffAt: { type: Date, default: null },

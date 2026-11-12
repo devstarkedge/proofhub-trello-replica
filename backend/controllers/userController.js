@@ -44,12 +44,16 @@ const buildPermissionUserPayload = (user) => ({
 });
 
 async function workspaceUserProfile(userId, workspaceId, self = false) {
+  const departmentPopulation = { select: 'name isActive', match: { workspaceId } };
   const membership = await WorkspaceMembership.findOne({ user: userId, workspace: workspaceId, status: 'active' })
-    .populate('department', 'name').populate('team', 'name').lean();
+    .populate({ path: 'department', ...departmentPopulation }).populate({ path: 'departments', ...departmentPopulation }).populate('team', 'name').lean();
   if (!membership) throw new ErrorResponse('Member not found', 404);
   const user = await User.findById(userId).select(self ? 'name email avatar title isVerified isActive settings forcePasswordChange isSuperAdmin createdAt' : 'name email avatar title isVerified').lean();
   if (!user) throw new ErrorResponse('Member not found', 404);
-  return { ...user, workspaceId, role: membership.role, roleId: membership.roleId, department: membership.department || [], team: membership.team || null, accessType: membership.accessType, allowedProjects: membership.allowedProjects || [] };
+  return { ...user, workspaceId, role: membership.role, roleId: membership.roleId, department: membership.department || [],
+    ...(membership.departments !== undefined && { reportingDepartments: membership.departments }),
+    attendanceReportingDepartmentId: membership.attendanceReportingDepartmentId ?? null,
+    team: membership.team || null, accessType: membership.accessType, allowedProjects: membership.allowedProjects || [] };
 }
 
 // @desc    Get all users belonging to the active workspace
@@ -403,7 +407,7 @@ export const declineUser = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/users/:id/assign
 // @access  Private/Admin
 export const assignUser = asyncHandler(async (req, res, next) => {
-  strictUpdate(req.body, ['departments', 'team', 'accessType', 'allowedProjects']);
+  strictUpdate(req.body, ['departments', 'team', 'accessType', 'allowedProjects', 'attendanceReportingDepartmentId']);
   const patch = Object.fromEntries(Object.entries(req.body).map(([key, value]) => [key === 'departments' ? 'department' : key, value]));
   await updateMemberAccess({ workspaceId: req.workspaceId, userId: req.params.id, actor: req.user, patch });
   const user = await workspaceUserProfile(req.params.id, req.workspaceId);

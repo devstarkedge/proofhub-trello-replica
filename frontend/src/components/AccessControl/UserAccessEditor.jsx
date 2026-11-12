@@ -38,6 +38,7 @@ export default function UserAccessEditor({ userId, currentUserId, onUserUpdated,
   const [resourceSavingKey, setResourceSavingKey] = useState(null);
   const [selectedRole, setSelectedRole] = useState('');
   const [selectedDepartments, setSelectedDepartments] = useState([]);
+  const [primaryDepartment, setPrimaryDepartment] = useState('');
   const [departmentSearch, setDepartmentSearch] = useState('');
   const [accessType, setAccessType] = useState('full_department');
   const [allowedProjects, setAllowedProjects] = useState([]);
@@ -49,7 +50,17 @@ export default function UserAccessEditor({ userId, currentUserId, onUserUpdated,
   const canAssign = !isSelf && (isAdmin || canManageAccessControl || ['manager', 'hr'].includes(myPermissions?.role));
   const isOwner = String(currentWorkspace?.owner?._id || currentWorkspace?.owner) === String(userId);
   const profileLocked = busy || !canAssign || isOwner || (!isAdmin && targetUser?.role === 'admin');
-  const departments = departmentStore.departments || [];
+  const departments = (departmentStore.departments || []).filter(department => String(department.workspaceId) === String(currentWorkspace?._id));
+  const savedDepartments = targetUser?.reportingDepartments ?? targetUser?.department ?? [];
+  const configuredPrimary = targetUser?.attendanceReportingDepartmentId || '';
+  const knownDepartments = new Map([...departments, ...savedDepartments].map(department => [String(department._id), department]));
+  const primaryOptions = selectedDepartments.map(id => knownDepartments.get(id)).filter(department => department && department.isActive !== false);
+  const preferredPrimary = primaryDepartment || configuredPrimary;
+  const effectivePrimary = preferredPrimary
+    ? primaryOptions.find(department => String(department._id) === preferredPrimary)
+    : primaryOptions[0];
+  const primaryChanged = Boolean(primaryDepartment && primaryDepartment !== configuredPrimary &&
+    String(effectivePrimary?._id) === primaryDepartment);
   const roles = roleCatalog.filter((role) => role.isActive !== false && (isAdmin || role.slug !== 'admin') && (currentWorkspace?.type !== 'team' || role.isSystem));
   const visibleDepartments = departments.filter((department) => department.name?.toLowerCase().includes(departmentSearch.toLowerCase()));
 
@@ -79,7 +90,8 @@ export default function UserAccessEditor({ userId, currentUserId, onUserUpdated,
         const user = profile.value.data.data;
         setTargetUser(user);
         setSelectedRole(user.role || 'employee');
-        setSelectedDepartments(idsOf(user.department));
+        setSelectedDepartments(idsOf(user.reportingDepartments ?? user.department));
+        setPrimaryDepartment('');
         setAccessType(user.accessType || 'full_department');
         setAllowedProjects(idsOf(user.allowedProjects));
         if (permissions.status === 'fulfilled' && permissions.value?.resources) {
@@ -107,8 +119,10 @@ export default function UserAccessEditor({ userId, currentUserId, onUserUpdated,
     return () => onBusyChange?.(false);
   }, [busy, onBusyChange]);
 
-  const profileDirty = targetUser && (selectedRole !== targetUser.role || accessType !== (targetUser.accessType || 'full_department') ||
-    !sameIds(selectedDepartments, idsOf(targetUser.department)) || !sameIds(allowedProjects, idsOf(targetUser.allowedProjects)));
+  const departmentsChanged = !sameIds(selectedDepartments, idsOf(savedDepartments));
+  const projectAccessChanged = targetUser && (accessType !== (targetUser.accessType || 'full_department') ||
+    !sameIds(allowedProjects, idsOf(targetUser.allowedProjects)));
+  const profileDirty = targetUser && (selectedRole !== targetUser.role || departmentsChanged || projectAccessChanged || primaryChanged);
 
   const begin = () => {
     if (operation.current) return false;
@@ -126,9 +140,12 @@ export default function UserAccessEditor({ userId, currentUserId, onUserUpdated,
       const changes = [];
       if (selectedRole !== targetUser.role) changes.push({ label: 'Role', previous: targetUser.role, next: selectedRole });
       if (accessType !== (targetUser.accessType || 'full_department')) changes.push({ label: 'Project access', previous: SCOPE_LABELS[targetUser.accessType], next: SCOPE_LABELS[accessType] });
-      if (!sameIds(selectedDepartments, idsOf(targetUser.department))) changes.push({ label: 'Departments',
-        previous: (targetUser.department || []).map((department) => department.name || String(department)),
+      if (departmentsChanged) changes.push({ label: 'Departments',
+        previous: savedDepartments.map((department) => department.name || String(department)),
         next: departments.filter((department) => selectedDepartments.includes(String(department._id))).map((department) => department.name) });
+      if (primaryChanged) changes.push({ label: 'Primary attendance department',
+        previous: (configuredPrimary ? knownDepartments.get(configuredPrimary) : savedDepartments.find(department => department.isActive !== false))?.name || 'None available',
+        next: effectivePrimary.name });
       if (!sameIds(allowedProjects, idsOf(targetUser.allowedProjects))) changes.push({ label: 'Selected projects', previous: `${(targetUser.allowedProjects || []).length} selected`, next: `${allowedProjects.length} selected` });
       const confirmed = await confirmChange({ targetUserName: targetUser.name, targetUserRole: targetUser.role, actionVerb: 'update', changes });
       if (!confirmed || activeContext.current !== requestContext) return;
@@ -137,11 +154,14 @@ export default function UserAccessEditor({ userId, currentUserId, onUserUpdated,
         roleSaved = true;
         if (activeContext.current !== requestContext) return;
       }
-      const response = await api.put(`/api/users/${userId}/assign`, {
-        departments: selectedDepartments, accessType,
-        allowedProjects: accessType === 'selected_projects' ? allowedProjects : []
-      }, { skipOfflineQueue: true });
-      if (!response.data?.success) throw new Error('The profile was not saved. Please try again.');
+      if (departmentsChanged || projectAccessChanged || primaryChanged) {
+        const response = await api.put(`/api/users/${userId}/assign`, {
+          ...(departmentsChanged && { departments: selectedDepartments }),
+          ...(projectAccessChanged && { accessType, allowedProjects: accessType === 'selected_projects' ? allowedProjects : [] }),
+          ...(primaryChanged && { attendanceReportingDepartmentId: primaryDepartment })
+        }, { skipOfflineQueue: true });
+        if (!response.data?.success) throw new Error('The profile was not saved. Please try again.');
+      }
       if (activeContext.current !== requestContext) return;
       toast.success('Member access profile saved');
       setRetry((value) => value + 1);
@@ -149,7 +169,7 @@ export default function UserAccessEditor({ userId, currentUserId, onUserUpdated,
     } catch (error) {
       if (activeContext.current !== requestContext) return;
       toast.error(roleSaved ? 'The role was saved, but the access profile failed. Reloading the current profile.' : error.response?.data?.message || error.message || 'Failed to save member access');
-      if (roleSaved) { setRetry((value) => value + 1); onUserUpdated?.(); }
+      if (roleSaved || error.response?.status === 409) { setRetry((value) => value + 1); onUserUpdated?.(); }
     } finally { end(); }
   };
 
@@ -204,15 +224,39 @@ export default function UserAccessEditor({ userId, currentUserId, onUserUpdated,
         <input type="search" aria-label="Search departments" placeholder="Search departments…" value={departmentSearch} onChange={(event) => setDepartmentSearch(event.target.value)}
           className="w-full rounded-lg border px-3 py-2 mb-2 text-sm" style={{ ...cardStyle, backgroundColor: 'var(--color-bg-base)' }} />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-52 overflow-y-auto p-1">
-          {visibleDepartments.map((department) => <PermissionCheckbox key={department._id} label={department.name} checked={selectedDepartments.includes(String(department._id))} disabled={profileLocked}
-            onChange={(checked) => setSelectedDepartments((previous) => checked ? [...previous, String(department._id)] : previous.filter((id) => id !== String(department._id)))} />)}
+          {visibleDepartments.map((department) => <PermissionCheckbox key={department._id} label={department.name}
+            description={String(department._id) === String(effectivePrimary?._id) ? 'Primary for attendance reporting' : undefined}
+            checked={selectedDepartments.includes(String(department._id))} disabled={profileLocked}
+            onChange={(checked) => {
+              const id = String(department._id);
+              setSelectedDepartments(previous => checked ? [...previous, id] : previous.filter(value => value !== id));
+              if (!checked && id === primaryDepartment) setPrimaryDepartment('');
+            }} />)}
         </div>
         {visibleDepartments.length === 0 && <p className="text-xs py-2" style={{ color: 'var(--color-text-secondary)' }}>{departmentStore.loading ? 'Loading departments…' : departmentStore.error ? 'Departments could not be loaded. Close and reopen to retry.' : 'No matching departments.'}</p>}
       </fieldset>
+      <div>
+        <label htmlFor={`${roleId}-primary-department`} className="block text-sm font-semibold mb-1">Primary attendance department</label>
+        <select id={`${roleId}-primary-department`} value={String(effectivePrimary?._id || '')}
+          aria-describedby={`${roleId}-primary-department-help`} disabled={profileLocked || !primaryOptions.length}
+          onChange={event => setPrimaryDepartment(event.target.value)}
+          className="w-full rounded-lg border px-3 py-2.5 text-sm focus:ring-2 focus:ring-purple-500 disabled:opacity-60"
+          style={{ ...cardStyle, backgroundColor: 'var(--color-bg-base)' }}>
+          {!effectivePrimary && <option value="" disabled>{primaryOptions.length ? 'Select a department' : 'No active assigned departments'}</option>}
+          {primaryOptions.map(department => <option key={department._id} value={String(department._id)}>
+            {department.name}{!preferredPrimary && department === effectivePrimary ? ' (automatic)' : ''}
+          </option>)}
+        </select>
+        <p id={`${roleId}-primary-department-help`} className="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+          {preferredPrimary && !effectivePrimary
+            ? 'The saved department is unavailable. Choose an active assigned department to resume reporting from the next check-in.'
+            : 'ChatApp receives attendance and tracking updates in this department’s channel. Changes apply from the next check-in.'}
+        </p>
+      </div>
       <AccessScopePicker role={selectedRole} departmentIds={selectedDepartments} accessType={accessType} onAccessTypeChange={setAccessType} allowedProjects={allowedProjects} onAllowedProjectsChange={setAllowedProjects} disabled={profileLocked} />
       <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4" style={{ borderColor: 'var(--color-border-default)' }}>
         <p role="status" className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{profileDirty ? 'Unsaved profile changes' : 'Profile is up to date'}</p>
-        <button type="button" onClick={handleSaveProfile} disabled={profileLocked || !profileDirty || Boolean(departmentStore.error)} className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed">
+        <button type="button" onClick={handleSaveProfile} disabled={profileLocked || !profileDirty || (departmentsChanged && Boolean(departmentStore.error))} className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed">
           {busy && !resourceSavingKey ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}Save profile
         </button>
       </div>
