@@ -19,11 +19,13 @@ export function redisConfig(env) {
       throw new Error('REDIS_URL must be a valid redis:// or rediss:// connection URL');
     }
   }
+  const commandTimeoutMs = integer('REDIS_COMMAND_TIMEOUT_MS', 5000);
   return {
     enabled, cacheEnabled, url,
     socketAdapterEnabled: enabled && env.SOCKET_REDIS_ADAPTER !== 'false',
     connectTimeoutMs: integer('REDIS_CONNECT_TIMEOUT_MS', 5000),
-    commandTimeoutMs: integer('REDIS_COMMAND_TIMEOUT_MS', 5000),
+    commandTimeoutMs,
+    rateLimitTimeoutMs: Math.min(integer('REDIS_RATE_LIMIT_TIMEOUT_MS', 500), commandTimeoutMs),
     shutdownTimeoutMs: integer('REDIS_SHUTDOWN_TIMEOUT_MS', 5000),
     errorLogIntervalMs: integer('REDIS_ERROR_LOG_INTERVAL_MS', 60000),
   };

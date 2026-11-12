@@ -7,6 +7,7 @@ let connecting = null;
 let closing = false;
 const clients = new Set();
 const errors = new Map();
+const deadlineTiming = Symbol('redisDeadline');
 
 export function serviceUnavailable(service = 'Redis') {
   const error = new Error(`${service} service is unavailable; retry later`);
@@ -16,22 +17,34 @@ export function serviceUnavailable(service = 'Redis') {
 }
 
 // Driver messages/stacks may contain credentials. Log only fixed labels and safe codes.
-export function reportRedisError(role, error) {
+export function reportRedisError(role, error, details = {}) {
   if (!config.redis.enabled && !config.redis.cacheEnabled) return;
   const code = /^[A-Z0-9_]{1,40}$/.test(error?.code || '') ? error.code : 'REDIS_UNAVAILABLE';
-  if (errors.has(role) && Date.now() - errors.get(role) < config.redis.errorLogIntervalMs) return;
-  errors.set(role, Date.now());
+  const logKey = details.outcome ? `${role}:${details.outcome}` : role;
+  if (errors.has(logKey) && Date.now() - errors.get(logKey) < config.redis.errorLogIntervalMs) return;
+  errors.set(logKey, Date.now());
   const status = ['wait', 'connecting', 'connect', 'ready', 'close', 'reconnecting', 'end'].includes(shared?.status)
     ? shared.status : 'unavailable';
-  logger.error('Redis service unavailable', { role, code, connectionStatus: status });
+  const deadline = error?.[deadlineTiming];
+  logger.error('Redis service unavailable', {
+    ...details, role, code, connectionStatus: status,
+    ...(deadline ? { failure: 'deadline', ...deadline } : {})
+  });
 }
 
 export async function withTimeout(operation, timeoutMs, service = 'Redis') {
+  const startedAt = performance.now();
   let timer;
   try {
     return await Promise.race([
       operation,
-      new Promise((_, reject) => { timer = setTimeout(() => reject(serviceUnavailable(service)), timeoutMs); }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const error = serviceUnavailable(service);
+          error[deadlineTiming] = { timeoutMs, elapsedMs: Math.round(performance.now() - startedAt) };
+          reject(error);
+        }, timeoutMs);
+      }),
     ]);
   } finally { clearTimeout(timer); }
 }

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import config from '../config/index.js';
 import { getReadyConnection, reportRedisError, workspaceKey, withTimeout } from '../queues/connection.js';
+import { requestRouteLabel } from './requestMetrics.js';
 
 const hash = value => createHash('sha256').update(String(value)).digest('hex');
 const INCREMENT_WINDOW = `
@@ -32,16 +33,22 @@ export const rateLimiter = (options = {}) => {
     const identity = keyFn(req) ?? req.ip ?? 'unknown';
     const workspace = workspaceFn(req);
     const route = [req.baseUrl || '', req.route ? `${req.method}:${req.route.path}` : 'router'].join(':');
-    let count, remaining;
+    let count, remaining, redisFailure;
     if (config.redis.enabled) {
       const key = workspaceKey(workspace, 'rate-limit', hash([policy, route, identity].join('|')));
+      const timeoutMs = allowReadFallback ? config.redis.rateLimitTimeoutMs : config.redis.commandTimeoutMs;
+      const startedAt = performance.now();
       try {
         const operation = getReadyConnection().eval(INCREMENT_WINDOW, 1, key, windowMs);
-        [count, remaining] = await (allowReadFallback ? withTimeout(operation, 250, 'Tracking read limiter') : operation);
+        [count, remaining] = await (allowReadFallback ? withTimeout(operation, timeoutMs, 'Redis rate limiter') : operation);
+        req.recordRedisRateLimit?.(performance.now() - startedAt, true);
       } catch (error) {
-        reportRedisError('rate-limit', error);
-        const fallback=allowReadFallback&&req.user&&req.workspaceId&&(['GET','HEAD'].includes(req.method)||allowWriteFallback(req));
+        const elapsedMs = Math.round(performance.now() - startedAt);
+        req.recordRedisRateLimit?.(elapsedMs, false);
+        redisFailure = { error, details: { method: req.method, route: requestRouteLabel(req), timeoutMs, elapsedMs } };
+        const fallback = allowReadFallback && req.user && req.workspaceId && (['GET', 'HEAD'].includes(req.method) || allowWriteFallback(req));
         if (!fallback) {
+          reportRedisError('rate-limit', error, { ...redisFailure.details, outcome: 'rejected-503' });
           res.setHeader('Retry-After', '5');
           return res.status(503).json({ success: false, message: 'Request limiting is temporarily unavailable; retry later' });
         }
@@ -52,6 +59,7 @@ export const rateLimiter = (options = {}) => {
       let entry = store.get(key);
       if (!entry || Date.now() >= entry.resetTime) {
         if (allowReadFallback && store.size >= 10000 && !store.has(key)) {
+          if (redisFailure) reportRedisError('rate-limit', redisFailure.error, { ...redisFailure.details, outcome: 'rejected-503' });
           res.setHeader('Retry-After', '5');
           return res.status(503).json({ success: false, message: 'Request limiting is temporarily unavailable; retry later' });
         }
@@ -60,6 +68,9 @@ export const rateLimiter = (options = {}) => {
       }
       count = ++entry.count;
       remaining = entry.resetTime - Date.now();
+      if (redisFailure) reportRedisError('rate-limit', redisFailure.error, {
+        ...redisFailure.details, outcome: count > maxRequests ? 'local-429' : 'local-fallback'
+      });
     }
     if (count > maxRequests) {
       res.setHeader('Retry-After', String(Math.max(1, Math.ceil(remaining / 1000))));
