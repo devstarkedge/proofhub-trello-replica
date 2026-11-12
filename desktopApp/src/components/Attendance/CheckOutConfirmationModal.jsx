@@ -117,7 +117,9 @@ export default function CheckOutConfirmationModal({attendanceSessionId,onClose,o
               </div>
               <span className="shrink-0 text-sm tabular-nums">{formatTrackingClock(task.durationMs / 1000)}</span>
             </div>
-            <label className="mt-3 block text-xs font-medium" htmlFor={`checkout-reason-${task.taskId}`}>Work reason / Description (required)</label>
+            <label className="mt-3 block text-xs font-medium" htmlFor={`checkout-reason-${task.taskId}`}>
+              task description (auto time add in task)<span aria-hidden="true" className="ml-0.5 text-red-600 dark:text-red-400">*</span>
+            </label>
             <textarea id={`checkout-reason-${task.taskId}`} aria-describedby={`checkout-task-${task.taskId}`}
               className="checkout-work-reason mt-1 w-full rounded-lg border bg-transparent px-3 py-2 text-sm" style={{ borderColor: surface.borderColor }}
               rows={2} maxLength={LOGGED_TIME_REASON_MAX_LENGTH} required value={reasons[task.taskId] || ''}

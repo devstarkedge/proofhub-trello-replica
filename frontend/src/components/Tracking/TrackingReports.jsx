@@ -1,4 +1,5 @@
 import {getWorkspaceDateRange,trackingReportOptions} from '../../../../shared/trackingReportQuery.mjs';
+import { formatPersonalPause } from '../../../../shared/personalPauseDuration.mjs';
 import {prefetchScreenshotDetails} from '../../services/trackingReadPrefetch';
 import { memo, useContext, useEffect, useMemo, useState, lazy, Suspense } from 'react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -324,7 +325,7 @@ export default function TrackingReports({ team = false, initialFilters = {} }) {
                 </p>
                 <p className="text-[11px] opacity-85">
                   Attendance <strong className="text-gray-700 dark:text-gray-200 font-semibold">{s.attendance?.day?.attendanceStatus || s.attendance?.day?.presenceState || s.attendance?.status || 'N/A'}</strong> · 
-                  Personal Pause {duration(s.totals?.personalPauseSeconds || 0)} · 
+                  Personal Pause {formatPersonalPause(s.totals?.personalPauseSeconds)} ·
                   Agenda attribution follows the recorded Yes/No decision
                 </p>
               </div>

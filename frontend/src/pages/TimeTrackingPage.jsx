@@ -1,5 +1,6 @@
 import GeneratedTrackingReports from '../components/Tracking/GeneratedTrackingReports';
 import { filterTrackingRows } from '../../../shared/trackingFilterState.mjs';
+import { formatPersonalPause } from '../../../shared/personalPauseDuration.mjs';
 import {prefetchTrackingReport} from '../services/trackingReadPrefetch';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -50,7 +51,48 @@ const initial = {
 
 const initialDetailFilters = { type: '', projectId: '', taskId: '', agendaId: '' };
 
-function TrackingOverview({ totals, role, loading, error, onRetry }) {
+function PauseBreakdown({ scope, filters, onClose }) {
+  const query = useInfiniteQuery({
+    queryKey: ['tracking-private', scope, 'pause-breakdown', filters],
+    initialPageParam: null,
+    queryFn: ({ pageParam, signal }) => getTrackingDashboard({
+      ...filters, pauseBreakdown: true, cursor: pageParam || undefined
+    }, signal),
+    getNextPageParam: page => page.nextCursor || undefined,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false
+  });
+  const users = query.data?.pages.flatMap(page => page.users) || [];
+
+  return (
+    <TrackingDialog title="Personal pause by user" onClose={onClose}>
+      {query.isPending && <p role="status" className="text-sm">Loading personal pause totals…</p>}
+      {query.isError ? (
+        <p role="alert" className="text-sm">
+          {errorMessage(query.error)}{' '}
+          <button type="button" className="cursor-pointer underline" onClick={() => query.refetch()}>Retry</button>
+        </p>
+      ) : users.length ? (
+        <ul className="divide-y divide-gray-200 dark:divide-gray-800">
+          {users.map(user => (
+            <li key={user.userId} className="flex justify-between gap-4 py-2.5 text-sm">
+              <span>{user.name}</span>
+              <span className="shrink-0 font-semibold tabular-nums">{formatPersonalPause(user.personalPauseSeconds)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : !query.isPending && <p className="text-sm">No personal pauses in this selection.</p>}
+      {!query.isError && query.hasNextPage && (
+        <Button variant="outline" className="mt-4" disabled={query.isFetching} onClick={() => query.fetchNextPage()}>
+          {query.isFetchingNextPage ? 'Loading…' : 'Load more users'}
+        </Button>
+      )}
+    </TrackingDialog>
+  );
+}
+
+function TrackingOverview({ totals, role, loading, error, onRetry, onOpenPauseBreakdown }) {
   const effectiveRole = totals?.viewerRole || role || 'employee';
   const isAdmin = effectiveRole === 'admin';
   const isManager = effectiveRole === 'manager';
@@ -120,9 +162,19 @@ function TrackingOverview({ totals, role, loading, error, onRetry }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Total Work Time */}
         <div className="p-4 rounded-xl border border-blue-100 dark:border-blue-950/80 bg-blue-50/40 dark:bg-blue-950/20">
-          <div className="flex items-center justify-between text-blue-600 dark:text-blue-400 mb-1">
-            <span className="text-[11px] font-bold uppercase tracking-wider">Total Work Time</span>
-            <Clock3 size={15} />
+          <div className="mb-1 flex items-center justify-between gap-2 text-blue-600 dark:text-blue-400">
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider">Total Work Time</span>
+              {totals?.personalPauseSeconds != null && (totals.canViewPauseBreakdown ? (
+                <button type="button" aria-haspopup="dialog" onClick={onOpenPauseBreakdown}
+                  className="cursor-pointer rounded-sm text-[11px] tabular-nums hover:underline focus-visible:outline-2">
+                  (Personal pause: {formatPersonalPause(totals.personalPauseSeconds)})
+                </button>
+              ) : (
+                <span className="text-[11px] tabular-nums">(Personal pause: {formatPersonalPause(totals.personalPauseSeconds)})</span>
+              ))}
+            </div>
+            <Clock3 size={15} className="shrink-0" />
           </div>
           <div className="text-2xl sm:text-3xl font-extrabold font-mono tracking-tight text-gray-900 dark:text-white tabular-nums">
             {totals ? duration(totals.workSeconds) : '\u2014'}
@@ -220,6 +272,8 @@ export default function TimeTrackingPage() {
   const [filters, setFilters] = useState(initial);
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [selected, setSelected] = useState(null);
+  const [pauseBreakdownOpen, setPauseBreakdownOpen] = useState(false);
+  const closePauseBreakdown = useCallback(() => setPauseBreakdownOpen(false), []);
 
 
   const [agendas, setAgendas] = useState([]);
@@ -254,7 +308,7 @@ export default function TimeTrackingPage() {
       if (e && !/^(tracking:|attendance:|card|task|board|assigned|authz|access)/.test(e.detail?.type || '')) return;
       clearTimeout(timer);
       timer = setTimeout(() => {
-        for(const section of ['dashboard','dashboard-activity','dashboard-overview','filter-options'])client.invalidateQueries({queryKey:['tracking-private',scope,section]},{cancelRefetch:false});
+        for(const section of ['dashboard','dashboard-activity','dashboard-overview','filter-options','pause-breakdown'])client.invalidateQueries({queryKey:['tracking-private',scope,section]},{cancelRefetch:false});
       }, 750);
     };
     window.addEventListener('flowtask:realtime', refresh);
@@ -284,6 +338,7 @@ export default function TimeTrackingPage() {
 
   useEffect(() => {
     setSelected(null);
+    setPauseBreakdownOpen(false);
     setDetailFilters(initialDetailFilters);
 
   }, [scope]);
@@ -447,7 +502,10 @@ export default function TimeTrackingPage() {
       <GeneratedTrackingReports />
 
       {/* Role-authorized Compact Read-only Tracking Overview */}
-      <TrackingOverview totals={totals} role={data?.viewerRole||authUser?.role} loading={overview.isPending} error={overview.error?readError(overview.error):''} onRetry={()=>overview.refetch()} />
+      <TrackingOverview totals={totals} role={data?.viewerRole||authUser?.role} loading={overview.isPending} error={overview.error?readError(overview.error):''} onRetry={()=>overview.refetch()} onOpenPauseBreakdown={() => setPauseBreakdownOpen(true)} />
+      {pauseBreakdownOpen && totals?.canViewPauseBreakdown && (
+        <PauseBreakdown scope={scope} filters={debounced} onClose={closePauseBreakdown} />
+      )}
 
       {/* Workspace Tracking Activity Section */}
       <section className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm overflow-hidden transition-all">
@@ -841,7 +899,14 @@ export default function TimeTrackingPage() {
                 <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{selectedUser.name}</p>
                 <p className="text-xs text-gray-500 dark:text-gray-400">{selectedUser.title || 'No active agenda'}</p>
               </div>
-              <div className="flex items-center gap-4 text-xs">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+                <div>
+                  <span className="text-gray-500 dark:text-gray-400 block">Personal Pause</span>
+                  <span className="font-semibold text-gray-900 dark:text-gray-100 text-sm tabular-nums">
+                    {selectedUser.personalPauseSeconds == null ? '—' : formatPersonalPause(selectedUser.personalPauseSeconds)}
+                  </span>
+                </div>
+                <div className="w-px h-7 bg-gray-200 dark:bg-gray-700" />
                 <div>
                   <span className="text-gray-500 dark:text-gray-400 block">Work Time</span>
                   <span className="font-semibold text-gray-900 dark:text-gray-100 text-sm tabular-nums">

@@ -98,11 +98,8 @@ export function workBreakState(schedule, at = new Date()) {
   return window ? { ...window, timezone: schedule.timezone } : null;
 }
 
-export async function readRecentWorkBreakWindows(workspaceId, at) {
-  // An attendance session can authorize up to 24 hours of work. Only
-  // still-open segments need this read-time cutoff; closed ones are durable.
-  let cursor = new Date(+at - 24 * 3600000);
-  const schedule = await readWorkBreak(workspaceId, cursor);
+export function workBreakWindowsInRange(schedule, from, at) {
+  let cursor = from;
   const windows = [];
   while (+cursor <= +at) {
     const window = firstWorkBreak(schedule, cursor, at);
@@ -111,6 +108,12 @@ export async function readRecentWorkBreakWindows(workspaceId, at) {
     cursor = window.endsAt;
   }
   return windows;
+}
+
+export async function readRecentWorkBreakWindows(workspaceId, at) {
+  // Only still-open work segments need a read-time cutoff.
+  const from = new Date(+at - 24 * 3600000);
+  return workBreakWindowsInRange(await readWorkBreak(workspaceId, from), from, at);
 }
 
 export const SCHEDULED_WORK_BREAK = 'SCHEDULED_WORK_BREAK';

@@ -31,12 +31,18 @@ function DayDetails({ day, selectedDate, timezone, pending, error }) {
   if (pending || error) return <section className="rounded-2xl border p-4 shadow-sm sm:p-5" style={cardStyle} aria-label="Selected date attendance details"><h2 className="mb-3 text-sm font-semibold">{attendanceDateLabel(selectedDate)} · Attendance details</h2><p role={error ? 'alert' : 'status'} className="text-xs leading-relaxed" style={mutedStyle}>{error ? 'Selected-day details could not be loaded. Retry the attendance history.' : 'Loading selected-day details…'}</p></section>;
   const schedule = day?.effectiveOfficeHoursStart && day?.effectiveOfficeHoursEnd ? `${day.effectiveOfficeHoursStart} – ${day.effectiveOfficeHoursEnd}` : null;
   return <section className="rounded-2xl border p-4 shadow-sm sm:p-5" style={cardStyle} aria-label="Selected date attendance details">
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><h2 className="text-sm font-semibold">{attendanceDateLabel(selectedDate)} · Attendance details</h2><DayStatus day={day} /></div>
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+      <h2 className="text-sm font-semibold">{attendanceDateLabel(selectedDate)} · Attendance details</h2>
+      <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+        <span className="text-xs" style={mutedStyle}>Workspace office time - {schedule || 'Unavailable'}</span>
+        <DayStatus day={day} />
+      </div>
+    </div>
     <div className="grid gap-2 sm:grid-cols-2">
       <DetailField icon={LogIn} label="Check-in">{attendanceTimeLabel(day?.activeSession?.checkInAt || day?.firstCheckInAt, timezone)}</DetailField>
       <DetailField icon={Monitor} label="Work mode">{workModes[day?.workMode] || 'Unavailable'}</DetailField>
       <DetailField icon={LogOut} label="Check-out">{attendanceTimeLabel(day?.lastCheckOutAt, timezone)}</DetailField>
-      <DetailField icon={Layers} label="Office hours">{schedule || 'Unavailable'}</DetailField>
+      <DetailField icon={Layers} label="Office hours">{day?.firstCheckInAt && day.workedMinutes != null ? formatHours(day.workedMinutes) : 'Unavailable'}</DetailField>
       <DetailField icon={Clock3} label="Work time">{day?.trackedSeconds != null ? formatHours(day.trackedSeconds / 60) : 'Unavailable'}</DetailField>
       <DetailField icon={CalendarCheck} label="Status">{personalDayStyle(day).label}</DetailField>
     </div>

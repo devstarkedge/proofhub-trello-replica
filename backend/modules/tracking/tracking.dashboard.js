@@ -8,7 +8,7 @@ import {readVisibilityScope,departmentsOf} from './tracking.visibility.js';
 import {evidenceByUser} from './tracking.evidenceRead.js';
 import {summarizeEvidence} from './tracking.evidence.js';
 import {readDashboardGroups,readOfficeGroups} from './tracking.dashboardRead.js';
-import {readRecentWorkBreakWindows} from '../attendance/attendanceWorkBreak.js';
+import {readWorkBreak,workBreakWindowsInRange} from '../attendance/attendanceWorkBreak.js';
 const id=v=>String(v?._id||v||'');
 const literal=value=>Array.from(value).map(c=>'\\^$.*+?()[]{}|'.includes(c)?'\\'+c:c).join('');
 export function reportDates(query,timezone){
@@ -44,14 +44,21 @@ export async function dashboard(workspaceId,userId,query){
   const [ctx,policy]=await Promise.all([contextFor(workspaceId,userId,{readOnly:true}),policyFor(workspaceId)]);
   const workspace=ctx.resolvedRecords?.workspace||await Workspace.findById(workspaceId).select('timezone').lean();
   const scope=await readVisibilityScope(ctx),timezone=workspace?.timezone||'UTC',dates=reportDates(query,timezone),sf=segmentFilter(query),now=new Date();
+  const pauseBreakdown = query.pauseBreakdown === 'true';
+  const canViewPauseBreakdown = !ctx.trackingDenied && ['admin', 'manager'].includes(scope.viewerRole);
+  if (pauseBreakdown && !canViewPauseBreakdown) fail('Personal pause breakdown requires Admin or Manager access', 403);
+  if (pauseBreakdown && query.cursor) objectId(query.cursor);
   if(query.status&&!['RUNNING','PAUSED','NOT_TRACKING'].includes(query.status))fail('Invalid tracking status');
   if(query.userId){objectId(query.userId);if(!scope.canOwner(query.userId))fail('User not found',404);}
   if(query.departmentId)objectId(query.departmentId);
   let members=scope.members.filter(m=>scope.roleMap.get(id(m.user))!=='admin'&&scope.canOwner(m.user)&&(!query.userId||id(m.user)===id(query.userId))&&(!query.departmentId||departmentsOf(m).includes(id(query.departmentId)))&&(!query.role||m.role===query.role));
   if(query.search){const search=literal(String(query.search).trim().slice(0,80));const matches=await User.find({_id:{$in:members.map(m=>m.user)},name:{$regex:search,$options:'i'}}).select('_id').lean();const names=new Set(matches.map(id));members=members.filter(m=>names.has(id(m.user)));}
   const bounds={workspaceId,startedAt:{$lte:dates.end},$or:[{endedAt:null},{endedAt:{$gte:dates.start}}]},filtered=Object.keys(sf).length>0;
-  const workBreakWindows=await readRecentWorkBreakWindows(workspaceId,now);
-  const options={workspaceId,ctx,scope,bounds,query,dates,now,policy,filtered,workBreakWindows};
+  const recentStart = new Date(+now - 24 * 3600000);
+  const schedule = await readWorkBreak(workspaceId, new Date(Math.min(+dates.start, +recentStart)));
+  const workBreakWindows = workBreakWindowsInRange(schedule, recentStart, now);
+  const pauseBreakWindows = workBreakWindowsInRange(schedule, dates.start, new Date(Math.min(+now, +dates.end)));
+  const options={workspaceId,ctx,scope,bounds,query,dates,now,policy,filtered,workBreakWindows,pauseBreakWindows};
   let matchingGroups=null;
   if(filtered||query.status){
     matchingGroups=await readDashboardGroups({...options,owners:members.map(m=>m.user)});
@@ -62,10 +69,30 @@ export async function dashboard(workspaceId,userId,query){
   const total=members.length,limit=20,totalsOnly=query.totalsOnly==='true',evidenceOnly=query.evidenceOnly==='true';
   const allOwners=members.map(m=>m.user);
   const metadata={workspaceId,total,pageSize:limit,timezone,viewerRole:scope.viewerRole,dates,serverNow:now};
+  if (pauseBreakdown) {
+    const owners = allOwners.filter(owner => !query.cursor || id(owner) > id(query.cursor));
+    const allowed = new Set(owners.map(id));
+    const contributors = matchingGroups
+      ? matchingGroups.filter(group => allowed.has(id(group)) && group.personalPauseSeconds > 0)
+        .sort((a, b) => id(a).localeCompare(id(b))).slice(0, limit + 1)
+      : await readDashboardGroups({ ...options, owners, pausePage: limit });
+    const page = contributors.slice(0, limit);
+    const names = page.length ? await User.find({ _id: { $in: page.map(group => group._id) } }).select('name').lean() : [];
+    const nameById = new Map(names.map(user => [id(user), user.name]));
+    return {
+      workspaceId,
+      users: page.map(group => ({
+        userId: group._id,
+        name: nameById.get(id(group)) || 'Member',
+        personalPauseSeconds: group.personalPauseSeconds
+      })),
+      nextCursor: contributors.length > limit ? id(page.at(-1)) : null
+    };
+  }
   const computeTotals=async()=>{
     const [groups,office]=await Promise.all([matchingGroups||readDashboardGroups({...options,owners:allOwners}),readOfficeGroups(workspaceId,allOwners,dates,now)]);
     const allowed=new Set(allOwners.map(id)),visible=groups.filter(group=>allowed.has(id(group)));
-    return {workSeconds:visible.reduce((n,g)=>n+g.workSeconds,0),officeSeconds:office.reduce((n,g)=>n+g.officeSeconds,0),activeUsers:visible.filter(g=>trackingStatus(g)==='RUNNING').length,checkedInUsers:office.filter(g=>g.checkedIn).length,totalUsers:total,viewerRole:scope.viewerRole};
+    return {workSeconds:visible.reduce((n,g)=>n+g.workSeconds,0),personalPauseSeconds:visible.reduce((n,g)=>n+g.personalPauseSeconds,0),officeSeconds:office.reduce((n,g)=>n+g.officeSeconds,0),activeUsers:visible.filter(g=>trackingStatus(g)==='RUNNING').length,checkedInUsers:office.filter(g=>g.checkedIn).length,totalUsers:total,viewerRole:scope.viewerRole,canViewPauseBreakdown};
   };
   if(totalsOnly)return {...metadata,users:[],nextCursor:null,totals:await computeTotals()};
   if(query.cursor){objectId(query.cursor);members=members.filter(m=>id(m)>id(query.cursor));}
@@ -87,7 +114,7 @@ export async function dashboard(workspaceId,userId,query){
     const group=byUser.get(id(member.user)),latest=group?.latest.segment,owner=userMap.get(id(member.user)),attendance=attendanceByUser.get(id(member.user));
     return {userId:member.user,name:owner?.name||'Member',avatar:owner?.avatar,role:member.role,departments:departmentsOf(member).map(d=>({_id:d,name:departmentMap.get(d)?.name||'Department'})),trackingStatus:trackingStatus(group),
       attendanceStatus:attendance?.checkedIn?'Checked in':attendance?.sessions?'Checked out':'No attendance',title:latest?.agenda?latest.agendaTitle+' - '+latest.description:latest?(latest.projectName||'Project')+' / '+(latest.taskTitle||'Individual'):'No work selected',
-      workSeconds:group?.workSeconds||0,officeSeconds:attendance?.officeSeconds||0,evidence:(query.summaryOnly==='true'||activityUnavailable)&&group?null:evidenceMap.get(id(member.user))||summarizeEvidence([]),
+      workSeconds:group?.workSeconds||0,personalPauseSeconds:group?.personalPauseSeconds||0,officeSeconds:attendance?.officeSeconds||0,evidence:(query.summaryOnly==='true'||activityUnavailable)&&group?null:evidenceMap.get(id(member.user))||summarizeEvidence([]),
       session:group?{_id:group.latest._id,status:group.latest.status,startedAt:group.latest.startedAt,revision:group.latest.revision}:null,devices:devices.filter(d=>id(d.user)===id(member.user)).map(d=>({...d,connected:+now-+new Date(d.lastSeenAt||0)<45000}))};
   });
   // Older clients still receive overview totals; current clients load them

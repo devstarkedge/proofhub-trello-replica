@@ -86,6 +86,31 @@ export function dashboardReadPipeline({workspaceId,ctx,scope,owners,bounds,query
 export async function readDashboardGroups(options){
   const pipeline=dashboardReadPipeline(options);
   if(options.filtered)pipeline.push({$match:{'_selected.0':{$exists:true}}});
+  // Match summarize() in tracking.timeline.js. Pauses belong to the session,
+  // so task filters select sessions without attributing pauses to a task.
+  const breakWindows = options.pauseBreakWindows || [];
+  const personalPauseSeconds = { $reduce: {
+    input: { $ifNull: ['$pauses', []] }, initialValue: 0,
+    in: { $cond: [
+      { $or: [
+        { $eq: ['$$this.reason', 'SCHEDULED_WORK_BREAK'] },
+        { $eq: [{ $ifNull: ['$$this.startedAt', null] }, null] }
+      ] },
+      '$$value',
+      { $let: {
+        vars: {
+          start: { $max: ['$$this.startedAt', options.dates.start] },
+          end: { $min: [{ $ifNull: ['$$this.endedAt', '$_rangeEnd'] }, '$_rangeEnd'] }
+        },
+        in: { $add: ['$$value', { $divide: [{ $max: [0, { $subtract: [
+          { $subtract: ['$$end', '$$start'] },
+          { $sum: { $map: { input: { $literal: breakWindows }, as: 'window', in: { $max: [0, { $subtract: [
+            { $min: ['$$end', '$$window.endsAt'] }, { $max: ['$$start', '$$window.startsAt'] }
+          ] }] } } } }
+        ] }] }, 1000] }] }
+      } }
+    ] }
+  } };
   const paused = { $or: [
     { $and: [{ $eq: ['$status', 'RUNNING'] }, { $eq: ['$_viewStatus', 'PAUSED'] }] },
     { $anyElementTrue: { $map: { input: { $ifNull: ['$pauses', []] }, as: 'pause', in: { $or: [
@@ -93,7 +118,11 @@ export async function readDashboardGroups(options){
       { $and: [{ $eq: ['$$pause.reason', 'SCHEDULED_WORK_BREAK'] }, { $gt: ['$$pause.endedAt', options.now] }] }
     ] } } } }
   ] };
-  pipeline.push({$sort:{startedAt:-1,_id:-1}},{$group:{_id:'$user',workSeconds:{$sum:'$_workSeconds'},...(options.includeSessionIds?{sessionIds:{$push:'$_id'}}:{}),latest:{$first:{_id:'$_id',startedAt:'$startedAt',revision:'$revision',status:'$_viewStatus',personalPaused:paused,segment:'$_latest'}}}});
+  pipeline.push({$sort:{startedAt:-1,_id:-1}},{$group:{_id:'$user',workSeconds:{$sum:'$_workSeconds'},personalPauseSeconds:{$sum:personalPauseSeconds},...(options.includeSessionIds?{sessionIds:{$push:'$_id'}}:{}),latest:{$first:{_id:'$_id',startedAt:'$startedAt',revision:'$revision',status:'$_viewStatus',personalPaused:paused,segment:'$_latest'}}}});
+  if (options.pausePage) {
+    pipeline.push({ $match: { personalPauseSeconds: { $gt: 0 } } }, { $sort: { _id: 1 } },
+      { $limit: options.pausePage + 1 }, { $project: { personalPauseSeconds: 1 } });
+  }
   return WorkSession.aggregate(pipeline).option({maxTimeMS:10000,allowDiskUse:true});
 }
 

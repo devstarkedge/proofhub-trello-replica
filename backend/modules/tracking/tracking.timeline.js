@@ -47,7 +47,7 @@ export function endAssignment(segments, event, task) {
     && ms(s.startedAt) <= at && (!s.endedAt || ms(s.endedAt) > at)
     ? { ...s, endedAt: new Date(at), reason: 'TASK_UNASSIGNED' } : s);
 }
-export function summarize(session, now = new Date()) {
+export function summarize(session, now = new Date(), breakWindows = []) {
   const end = Math.min(ms(now), session.endedAt ? ms(session.endedAt) : Infinity);
   let workSeconds = 0, individualSeconds = 0, preAssignmentSeconds = 0, assignedSeconds = 0;
   const projects = {}, tasks = {};
@@ -62,7 +62,12 @@ export function summarize(session, now = new Date()) {
   }
   const pauseSeconds = pauses => pauses.reduce((sum,p)=>sum+Math.max(0,(Math.min(ms(p.endedAt||now),end)-ms(p.startedAt))/1000),0);
   const pauses = session.pauses || [];
-  const personalPauseSeconds = pauseSeconds(pauses.filter(p => p.reason !== 'SCHEDULED_WORK_BREAK'));
+  const personalPauseSeconds = pauses.filter(p => p.reason !== 'SCHEDULED_WORK_BREAK').reduce((sum, pause) => {
+    const start = ms(pause.startedAt), finish = Math.min(ms(pause.endedAt || now), end);
+    const scheduled = breakWindows.reduce((total, window) => total + Math.max(0,
+      Math.min(finish, +window.endsAt) - Math.max(start, +window.startsAt)), 0);
+    return sum + Math.max(0, finish - start - scheduled) / 1000;
+  }, 0);
   const scheduledPauseSeconds = pauseSeconds(pauses.filter(p => p.reason === 'SCHEDULED_WORK_BREAK'));
   return { workSeconds, individualSeconds, preAssignmentSeconds, assignedSeconds, personalPauseSeconds, scheduledPauseSeconds, projects, tasks };
 }

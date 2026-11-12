@@ -8,34 +8,34 @@ import {
   Activity, 
   MousePointer, 
   Keyboard, 
-  ShieldCheck, 
   PauseCircle
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { getTimeline, errorMessage } from '../../services/trackingApi';
 import { formatTrackingClock as duration } from '../../utils/duration';
+import { formatPersonalPause } from '../../../../shared/personalPauseDuration.mjs';
 import ScreenshotGallery from './ScreenshotGallery';
 import useTrackingScope from './useTrackingScope';
 
-const formatTime = (value, timezone) => {
+const formatTime = (value, timezone, showSeconds) => {
   if (!value) return '';
   try {
     return new Date(value).toLocaleTimeString(undefined, {
       timeZone: timezone || 'UTC',
       hour: 'numeric',
       minute: '2-digit',
-      second: '2-digit'
+      ...(showSeconds ? { second: '2-digit' } : {})
     });
   } catch {
     return String(value);
   }
 };
 
-const formatTimeRange = (start, end, timezone, fallbackEnd = 'Ongoing') => {
+const formatTimeRange = (start, end, timezone, fallbackEnd = 'Ongoing', showSeconds = true) => {
   if (!start) return '—';
-  const startTime = formatTime(start, timezone);
+  const startTime = formatTime(start, timezone, showSeconds);
   if (!end) return `${startTime} – ${fallbackEnd}`;
-  const endTime = formatTime(end, timezone);
+  const endTime = formatTime(end, timezone, showSeconds);
 
   try {
     const startDateStr = new Date(start).toLocaleDateString(undefined, { timeZone: timezone || 'UTC' });
@@ -82,7 +82,7 @@ export default function DailyTrackingDetailsModal({ session, timezone, filterKey
 
   const timelineQuery = useQuery({
     queryKey: ['tracking-private', scope, 'timeline', session._id, session.revision, filterKey],
-    queryFn: ({ signal }) => getTimeline(session._id, undefined, { ...(filterKey ? JSON.parse(filterKey) : {}), summaryOnly: false }, signal),
+    queryFn: ({ signal }) => getTimeline(session._id, undefined, { ...(filterKey ? JSON.parse(filterKey) : {}), summaryOnly: false, includeDayPause: true }, signal),
     staleTime: 15000,
     retry: false
   });
@@ -101,10 +101,7 @@ export default function DailyTrackingDetailsModal({ session, timezone, filterKey
     }
   })();
 
-  const presenceStatus = session.attendance?.day?.attendanceStatus || 
-    session.attendance?.day?.presenceState || 
-    session.attendance?.status || 
-    'Awaiting Resolution';
+  const dayPause = timelineData?.dayPersonalPauseSeconds;
 
   return createPortal(
     <div 
@@ -180,11 +177,11 @@ export default function DailyTrackingDetailsModal({ session, timezone, filterKey
 
             <div className="p-3.5 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/20">
               <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 mb-1">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-                <span>Attendance</span>
+                <PauseCircle className="w-3.5 h-3.5 text-amber-500" />
+                <span>Personal Pause</span>
               </div>
-              <p className="text-sm font-bold text-gray-900 dark:text-gray-100 truncate mt-1">
-                {presenceStatus}
+              <p className="text-lg font-bold tabular-nums text-gray-900 dark:text-gray-100">
+                {dayPause == null ? '—' : formatPersonalPause(dayPause)}
               </p>
             </div>
 
@@ -258,7 +255,7 @@ export default function DailyTrackingDetailsModal({ session, timezone, filterKey
                 <div key={`pause-${idx}`} className="p-3 bg-amber-50/40 dark:bg-amber-950/10 flex items-center justify-between gap-3 text-amber-800 dark:text-amber-300">
                   <div className="flex items-center gap-2">
                     <PauseCircle className="w-4 h-4 text-amber-500 shrink-0" />
-                    <span>Personal Pause: {formatTimeRange(p.startedAt, p.endedAt, timezone, 'Ongoing')}</span>
+                    <span>{p.reason === 'SCHEDULED_WORK_BREAK' ? 'Scheduled workspace break' : 'Personal Pause'}: {formatTimeRange(p.startedAt, p.endedAt, timezone, 'Ongoing', false)}</span>
                   </div>
                 </div>
               ))}

@@ -5,13 +5,13 @@ import {DateTime} from 'luxon';
 import User from '../../models/User.js';
 import AttendanceDay from '../attendance/attendanceDay.model.js';
 import {effectiveAttendanceSession} from '../attendance/attendanceRegularizationOverlay.js';
-import {readRecentWorkBreakWindows} from '../attendance/attendanceWorkBreak.js';
+import {readWorkBreak,workBreakWindowsInRange} from '../attendance/attendanceWorkBreak.js';
 import {WorkSession,TrackingScreenshot,ActivityInterval} from './tracking.models.js';
 import { legacyHardCutoff } from '../attendance/attendanceActivity.service.js';
 import {contextFor,policyFor,fail,objectId,authorizeRecord} from './tracking.service.js';
 import {can} from './tracking.authorization.js';
 import {readVisibilityScope} from './tracking.visibility.js';
-import {dashboardReadPipeline} from './tracking.dashboardRead.js';
+import {dashboardReadPipeline,readDashboardGroups} from './tracking.dashboardRead.js';
 import {segmentFilter,matchesSegment} from './tracking.dashboard.js';
 import {summarize,coverageGaps} from './tracking.timeline.js';
 import {resolveScreenshotIdentity,SCREENSHOT_IDENTITY_SELECT,timelineScreenshot} from './tracking.screenshotIdentity.js';
@@ -33,7 +33,9 @@ export async function readTrackingReports(workspaceId,viewerId,query){
   return cachedTrackingRead({workspaceId,viewerId,kind:'reports',query,access:trackingAccessFingerprint(ctx,scope),ttlMs:15000},async()=>{
   const owners=team==='true'&&!userId?scope.members.filter(m=>scope.canOwner(m.user)).map(m=>m.user):[userId||viewerId];
   const now=new Date(),bounds={workspaceId:oid(workspaceId),...(fromDate||toDate?{workDateKey:{...(fromDate?{$gte:fromDate}:{}),...(toDate?{$lte:toDate}:{})}}:{}),...(cursor?{_id:{$lt:oid(cursor)}}:{})};
-  const workBreakWindows=await readRecentWorkBreakWindows(workspaceId,now);
+  const recentStart = new Date(+now - 24 * 3600000);
+  const recentSchedule = await readWorkBreak(workspaceId, recentStart);
+  const workBreakWindows=workBreakWindowsInRange(recentSchedule,recentStart,now);
   const pipeline=dashboardReadPipeline({workspaceId,ctx,scope,owners,bounds,query,dates:{start:new Date(0),end:now},now,policy,attendanceDetails:true,workBreakWindows});
   if(Object.keys(sf).length)pipeline.push({$match:{'_selected.0':{$exists:true}}});
   pipeline.push({$sort:{_id:-1}},{$limit:21},{$project:{workspaceId:1,user:1,workDateKey:1,attendanceSession:1,startedAt:1,revision:1,includePreAssignment:1,departmentIdsAtStart:1,_attendance:1,
@@ -46,11 +48,17 @@ export async function readTrackingReports(workspaceId,viewerId,query){
     {$lookup:{from:AttendanceDay.collection.name,let:{day:'$_attendance.attendanceDay'},pipeline:[{$match:{workspaceId:oid(workspaceId),$expr:{$eq:['$_id','$$day']}}},{$project:{presenceState:1,attendanceStatus:1,workedMinutes:1}}],as:'_day'}}
   );
   const candidates=await WorkSession.aggregate(pipeline).option({maxTimeMS:10000,allowDiskUse:true}),sessions=candidates.slice(0,20);
-  const previews=query.summaryOnly==='true'?new Map():await readReportPreviews(workspaceId,sessions,ctx,scope,query,now);
+  const firstPause = sessions.reduce((earliest, session) => (session.pauses || []).reduce((start, pause) =>
+    Math.min(start, +pause.startedAt), earliest), Infinity);
+  const [previews, pauseSchedule] = await Promise.all([
+    query.summaryOnly==='true' ? new Map() : readReportPreviews(workspaceId,sessions,ctx,scope,query,now),
+    firstPause < +recentStart ? readWorkBreak(workspaceId, new Date(firstPause)) : recentSchedule
+  ]);
   return {workspaceId,timezone:ctx.resolvedRecords.workspace?.timezone||'UTC',serverNow:now,nextCursor:candidates.length>20?id(sessions.at(-1)):null,sessions:sessions.map(record=>{
     const {_attendance,_subject,_day,...session}=record,attendance=_attendance?effectiveAttendanceSession(_attendance):null,officeEnd=attendance?.checkOutAt||(attendance?.status==='ACTIVE'?new Date(Math.min(+now,legacyHardCutoff(attendance) ? +legacyHardCutoff(attendance) : Infinity)):null);
     const preview=previews.get(id(session))||{records:[],totalCount:0},previewsLoaded=query.summaryOnly!=='true';
-    return {...session,userName:_subject?.[0]?.name||'Former member',totals:summarize(session,now),attendance:{status:attendance?.status,day:_day?.[0],checkInAt:attendance?.checkInAt,checkOutAt:attendance?.checkOutAt,measuredOfficeSeconds:officeEnd?Math.max(0,(+officeEnd-+attendance.checkInAt)/1000):null},previewsLoaded,latestScreenshots:preview.records,totalScreenshots:previewsLoaded?preview.totalCount:null};
+    const pauseWindows = workBreakWindowsInRange(pauseSchedule, session.startedAt, session.endedAt || now);
+    return {...session,userName:_subject?.[0]?.name||'Former member',totals:summarize(session,now,pauseWindows),attendance:{status:attendance?.status,day:_day?.[0],checkInAt:attendance?.checkInAt,checkOutAt:attendance?.checkOutAt,measuredOfficeSeconds:officeEnd?Math.max(0,(+officeEnd-+attendance.checkInAt)/1000):null},previewsLoaded,latestScreenshots:preview.records,totalScreenshots:previewsLoaded?preview.totalCount:null};
   })};
   });
 }
@@ -106,10 +114,27 @@ export async function readTrackingTimeline(workspaceId,viewerId,sessionId,query)
   return cachedTrackingRead({workspaceId,viewerId,kind:'timeline',query:{...query,sessionId,revision:session.revision},access:trackingAccessFingerprint(ctx,visibility),ttlMs:30000},async()=>{
   const validExpiry={$or:[{expiresAt:null},{expiresAt:{$gt:new Date()}}]};
   const cutoff=new Date(0);
-  const [intervals,allCoverage,evidenceMap] = await Promise.all([
+  const dayPause = query.includeDayPause === 'true' && session.workDateKey && !before
+    ? (async () => {
+      const now = new Date();
+      const day = DateTime.fromISO(session.workDateKey, { zone: ctx.resolvedRecords.workspace?.timezone || 'UTC' }).startOf('day');
+      const [policy, schedule] = await Promise.all([policyFor(workspaceId), readWorkBreak(workspaceId, day.toJSDate())]);
+      const pauseBreakWindows = workBreakWindowsInRange(schedule, day.toJSDate(), new Date(Math.min(+now, +day.plus({ days: 2 }))));
+      // Match the report's attendance date, including overnight sessions.
+      return readDashboardGroups({
+        workspaceId, ctx, scope: visibility, owners: [session.user], bounds: { workDateKey: session.workDateKey },
+        dates: { start: cutoff, end: now }, now, policy, query: {}, pauseBreakWindows
+      });
+    })().then(groups => groups[0]?.personalPauseSeconds ?? 0).catch(error => {
+      console.warn('[tracking-timeline] Daily pause read failed', error.code || error.name);
+      return null;
+    })
+    : Promise.resolve(null);
+  const [intervals,allCoverage,evidenceMap,dayPersonalPauseSeconds] = await Promise.all([
     ActivityInterval.find({ ...history,...segmentBounds,$and:[validExpiry],session: session._id, endedAt: { $gte:cutoff,...(before?{$lt:before}:{}) } }).sort({ endedAt: -1 }).limit(20).select('-digest -capturePolicy').lean(),
     ActivityInterval.find({...history,...segmentBounds,$and:[validExpiry],session:session._id,endedAt:{$gte:cutoff}}).select('_id startedAt endedAt').lean(),
-    evidenceByUser(workspaceId,[session],segments.map(s=>({session:session._id,startedAt:s.startedAt,endedAt:s.endedAt||new Date()})),cutoff,new Date())
+    evidenceByUser(workspaceId,[session],segments.map(s=>({session:session._id,startedAt:s.startedAt,endedAt:s.endedAt||new Date()})),cutoff,new Date()),
+    dayPause
   ]);
   let screenshots = []; 
   try { await authorizeRecord(ctx, session, 'tracking.view_screenshots');
@@ -120,6 +145,6 @@ export async function readTrackingTimeline(workspaceId,viewerId,sessionId,query)
   } catch (e) { if (e.statusCode !== 404) throw e; }
   const contexts=intervals.map(interval=>({...interval,contexts:session.segments.filter(s=>+new Date(s.startedAt)<+new Date(interval.endedAt)&&(!s.endedAt||+new Date(s.endedAt)>+new Date(interval.startedAt))).map(s=>({segmentId:s._id,title:s.attributedTaskTitle?`${s.attributedProjectName} / ${s.attributedTaskTitle}`:s.agenda?`${s.agendaTitle} — ${s.description}`:`${s.projectName} / ${s.taskTitle||'Individual'}`,origin:s.agenda?`${s.agendaTitle} — ${s.description}`:null,task:s.attributedTask||s.task,attributedAt:s.attributedAt}))}));
   const evidence=evidenceMap.get(id(session.user))||summarizeEvidence([]);
-  return { intervals:contexts, screenshots, evidence, coverageGaps:coverageGaps(segments,allCoverage), nextBefore: intervals.length === 20 ? intervals.at(-1).endedAt : null };
+  return { intervals:contexts, screenshots, evidence, ...(query.includeDayPause==='true'?{dayPersonalPauseSeconds}:{}), coverageGaps:coverageGaps(segments,allCoverage), nextBefore: intervals.length === 20 ? intervals.at(-1).endedAt : null };
   });
 }
