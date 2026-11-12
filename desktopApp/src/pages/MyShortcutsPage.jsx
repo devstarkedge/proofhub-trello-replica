@@ -1,3 +1,4 @@
+import { formatLoggedMinutes } from '../../../shared/loggedTimeCell.mjs';
 import React, { useEffect, useCallback, memo, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -228,7 +229,7 @@ const MyShortcutsPage = () => {
             />
             <ShortcutCard
               title="Logged Time"
-              count={loggedTime.formatted || `${loggedTime.hours}h ${loggedTime.minutes}m`}
+              count={formatLoggedMinutes(loggedTime.totalMinutes ?? ((loggedTime.hours || 0) * 60 + (loggedTime.minutes || 0)))}
               icon={Clock}
               color="green"
               loading={loading.summary}

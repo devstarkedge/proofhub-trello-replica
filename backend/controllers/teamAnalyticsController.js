@@ -15,6 +15,7 @@ import { getWorkspaceTimezone, eachCalendarDate, instantToDateOnlyKey, dateOnlyT
 import { loggedTimeMinutes, readAdditionalTeamTime } from '../modules/tracking/tracking.loggedTime.js';
 import { authorizeProjectResource } from '../services/projectAuthorization.js';
 import { validateDateRange } from '../utils/calendarDateRange.js';
+import { formatLoggedMinutes } from '../../shared/loggedTimeCell.mjs';
 
 const savedLoggedMinutes = { $ifNull: [
   { $divide: ['$loggedTime.durationMs', 60000] },
@@ -288,13 +289,13 @@ export const getTeamLoggedTime = asyncHandler(async (req, res, next) => {
         totalMinutes,
         totalHours,
         totalMins,
-        formattedTotal: `${totalHours}h ${totalMins}m`,
+        formattedTotal: formatLoggedMinutes(totalMinutes),
         daysWithLogs,
         totalDays: dateRange.length,
         workingDays: expected.workingDayCount, // calendar-resolved — excludes weekly-off/holiday/recurring-off days
         expectedMinutes: expectedTotalMinutes,
         avgDailyMinutes,
-        avgDailyFormatted: `${Math.floor(avgDailyMinutes / 60)}h ${avgDailyMinutes % 60}m`,
+        avgDailyFormatted: formatLoggedMinutes(avgDailyMinutes),
         productivityScore,
         productivityStatus: getProductivityStatus(productivityScore)
       }
@@ -821,7 +822,7 @@ export const getMyLoggedTimeSummary = asyncHandler(async (req, res, next) => {
         totalMinutes,
         totalHours: Math.floor(totalMinutes / 60),
         totalMins: totalMinutes % 60,
-        formattedTotal: `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`,
+        formattedTotal: formatLoggedMinutes(totalMinutes),
         daysWithLogs,
         totalDays,
         avgDailyMinutes: daysWithLogs > 0 ? Math.round(totalMinutes / daysWithLogs) : 0,
@@ -1383,11 +1384,6 @@ async function getDateProjectTime(req, hover = false) {
     date, totalMinutes, totalFormatted: formatLoggedMinutes(totalMinutes), expectedMinutes,
     isWorkingDay, status, hierarchy
   };
-}
-
-function formatLoggedMinutes(value) {
-  const minutes = Math.round(value);
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
 export default {

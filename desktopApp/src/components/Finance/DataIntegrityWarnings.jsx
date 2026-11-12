@@ -1,3 +1,4 @@
+import { formatLoggedMinutes } from '../../../../shared/loggedTimeCell.mjs';
 import { useState, useMemo } from 'react';
 import { 
   AlertTriangle, 
@@ -48,7 +49,7 @@ const DataIntegrityWarnings = ({
             type: 'warning',
             icon: FileQuestion,
             projectName,
-            detail: `has ${Math.floor(totalLoggedMinutes / 60)}h ${totalLoggedMinutes % 60}m logged but no billing type set`,
+            detail: `has ${formatLoggedMinutes(totalLoggedMinutes)} logged but no billing type set`,
             suggestion: 'Set billing type in project settings',
             projectId,
             departmentId
@@ -92,7 +93,7 @@ const DataIntegrityWarnings = ({
               type: 'critical',
               icon: AlertCircle,
               projectName,
-              detail: `exceeded fixed hours limit by ${Math.floor(excessMinutes / 60)}h ${excessMinutes % 60}m`,
+              detail: `exceeded fixed hours limit by ${formatLoggedMinutes(excessMinutes)}`,
               suggestion: 'Review and adjust time entries or update fixed hours limit',
               projectId,
               departmentId

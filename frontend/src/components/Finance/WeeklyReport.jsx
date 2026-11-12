@@ -1,3 +1,4 @@
+import { formatLoggedMinutes } from '../../../../shared/loggedTimeCell.mjs';
 import { useState, useEffect } from 'react';
 import { Calendar, ChevronDown, ChevronRight, Users, FolderKanban, AlertCircle, RefreshCw } from 'lucide-react';
 import api from '../../services/api';
@@ -81,11 +82,7 @@ const WeeklyReport = ({ viewType = 'users' }) => {
   };
 
   // Format time
-  const formatTime = (minutes) => {
-    const hrs = Math.floor((minutes || 0) / 60);
-    const mins = (minutes || 0) % 60;
-    return `${hrs}h ${mins}m`;
-  };
+  const formatTime = formatLoggedMinutes;
 
   // Format date range
   const formatDateRange = (start, end) => {

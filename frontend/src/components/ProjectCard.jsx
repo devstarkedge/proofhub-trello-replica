@@ -1,3 +1,4 @@
+import { formatLoggedMinutes } from '../../../shared/loggedTimeCell.mjs';
 import { useState, useRef, useEffect, memo, useContext, useMemo } from 'react';
 import useThemeStore from '../store/themeStore';
 import { useNavigate } from 'react-router-dom';
@@ -786,7 +787,7 @@ const ProjectCard = ({
               >
                 <Clock size={14} />
               </motion.div>
-              <span>{projectData.totalLoggedTime.hours}h {projectData.totalLoggedTime.minutes}m</span>
+              <span>{formatLoggedMinutes(projectData.totalLoggedTime.hours * 60 + projectData.totalLoggedTime.minutes)}</span>
             </motion.div>
           )}
 

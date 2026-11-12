@@ -1,3 +1,4 @@
+import { formatLoggedMinutes } from '../../../../shared/loggedTimeCell.mjs';
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { FileText, Loader, Edit2, CheckCircle, Trash2, Tag, Clock, AlertCircle, ArrowRight, PlusCircle, MinusCircle, Flag, Calendar, Link as LinkIcon } from "lucide-react";
@@ -92,7 +93,7 @@ const ActivitySection = ({ activities, loading, teamMembers = [], assigneeDetail
       subtask_completed: `${userName} completed subtask: ${metadata?.subtaskTitle}`,
       subtask_deleted: `${userName} deleted subtask: ${metadata?.subtaskTitle}`,
       estimation_updated: `${userName} updated estimation to ${metadata?.hours}h ${metadata?.minutes}m`,
-      time_logged: `${userName} logged ${metadata?.hours}h ${metadata?.minutes}m of work`,
+      time_logged: `${userName} logged ${formatLoggedMinutes((metadata?.hours || 0) * 60 + (metadata?.minutes || 0))} of work`,
       title_changed: `${userName} changed title to "${metadata?.newTitle}"`,
       description_changed: `${userName} updated the description`,
       labels_changed: `${userName} changed labels from "${metadata?.oldLabels}" to "${metadata?.newLabels}"`,

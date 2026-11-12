@@ -1,3 +1,4 @@
+import { formatLoggedMinutes } from '../../../../shared/loggedTimeCell.mjs';
 import { useState, useEffect, useRef } from 'react';
 import {
   DollarSign,
@@ -71,7 +72,7 @@ const SummaryCards = ({ filters = {}, onCardClick, summaryOverride = null, summa
   // Format time
   const formatTime = (time) => {
     if (!time) return '0h 0m';
-    return `${time.hours || 0}h ${time.minutes || 0}m`;
+    return formatLoggedMinutes(time.totalMinutes ?? ((time.hours || 0) * 60 + (time.minutes || 0)));
   };
 
   // Card configurations

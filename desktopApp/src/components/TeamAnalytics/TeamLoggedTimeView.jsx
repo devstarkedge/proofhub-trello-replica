@@ -279,7 +279,7 @@ const UserRow = memo(({ member, dateRange, isCompact, onUserClick }) => {
                       </div>
                       {day.hasData ? (
                         <>
-                          <div className="text-lg font-bold text-emerald-400">{day.hours}h {day.minutes}m</div>
+                          <div className="text-lg font-bold text-emerald-400">{formatLoggedMinutes(day.totalMinutes)}</div>
                           <div className="text-xs text-gray-400">{day.taskCount} task{day.taskCount !== 1 ? 's' : ''}</div>
                         </>
                       ) : (
@@ -730,7 +730,7 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
 
       dateColumns.forEach(date => {
         const day = getDayData(m, date);
-        row[formatDateLabel(date)] = day?.hasData ? `${day.hours}h ${day.minutes}m` : '0h 0m';
+        row[formatDateLabel(date)] = day?.hasData ? formatLoggedMinutes(day.totalMinutes) : '0h 0m';
       });
 
       return row;
@@ -804,7 +804,7 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
 
         const dayValues = dateColumns.map(date => {
           const day = getDayData(m, date);
-          return day?.hasData ? `${day.hours}h ${day.minutes}m` : '0h 0m';
+          return day?.hasData ? formatLoggedMinutes(day.totalMinutes) : '0h 0m';
         });
 
         return [
@@ -1455,7 +1455,7 @@ const TeamLoggedTimeView = memo(({ onClose }) => {
                             {dateColumns.map((date) => {
                               const day = getDayData(member, date);
                               const status = getDateStatus(day);
-                              const value = day?.hasData ? `${day.hours}h ${day.minutes}m` : '-';
+                              const value = day?.hasData ? formatLoggedMinutes(day.totalMinutes) : '-';
                               const dayStatus = dayStatusMap[member.user._id]?.[date];
                               return (
                                 <EnhancedDateCell

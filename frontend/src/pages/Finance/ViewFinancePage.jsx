@@ -1,3 +1,4 @@
+import { formatLoggedMinutes } from '../../../../shared/loggedTimeCell.mjs';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Users, FolderKanban, Building2, ChevronDown, ChevronRight, RefreshCw, AlertCircle, Edit3, Search as SearchIcon, Calendar } from 'lucide-react';
@@ -166,9 +167,7 @@ const ViewFinancePage = () => {
 
   const formatTime = (time) => {
     if (!time) return '0h 0m';
-    const hours = time.hours || Math.floor((time.totalMinutes || 0) / 60);
-    const minutes = time.minutes || (time.totalMinutes || 0) % 60;
-    return `${hours}h ${minutes}m`;
+    return formatLoggedMinutes(time.totalMinutes ?? ((time.hours || 0) * 60 + (time.minutes || 0)));
   };
 
   // Toggle department expansion

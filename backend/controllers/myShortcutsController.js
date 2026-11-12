@@ -7,6 +7,7 @@ import Board from '../models/Board.js';
 import '../models/Department.js';
 import Announcement from '../models/Announcement.js';
 import '../middleware/errorHandler.js';
+import { formatLoggedMinutes } from '../../shared/loggedTimeCell.mjs';
 
 // Async handler wrapper to avoid try/catch in every controller
 const asyncHandler = (fn) => (req, res, next) =>
@@ -377,7 +378,7 @@ async function getMyTotalLoggedTime(userId) {
     totalMinutes,
     hours: Math.floor(totalMinutes / 60),
     minutes: totalMinutes % 60,
-    formatted: `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`,
+    formatted: formatLoggedMinutes(totalMinutes),
     entryCount: totalEntries
   };
 }

@@ -1,3 +1,4 @@
+import { formatLoggedMinutes } from '../../../shared/loggedTimeCell.mjs';
 import React, { memo, useMemo, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Trash2, Calendar, MessageSquare, Paperclip, CheckSquare, Clock, RefreshCw, RotateCcw, Flag, Hash, UserCircle, BarChart3 } from "lucide-react";
@@ -380,9 +381,7 @@ const Card = memo(({ card, onClick, onDelete, onRestore, isDragging, isArchivedV
                 <Clock size={12} strokeWidth={2.5} />
                 <span>{(() => {
                   const totalMinutes = card.loggedTime?.reduce((acc, log) => acc + (log.hours * 60) + log.minutes, 0) || 0;
-                  const h = Math.floor(totalMinutes / 60);
-                  const m = totalMinutes % 60;
-                  return `${h}h${m > 0 ? ` ${m}m` : ''}`;
+                  return formatLoggedMinutes(totalMinutes);
                 })()}</span>
               </div>
             ) : (
@@ -390,9 +389,7 @@ const Card = memo(({ card, onClick, onDelete, onRestore, isDragging, isArchivedV
                 <Clock size={12} strokeWidth={2.5} />
                 <span>{(() => {
                   const totalMinutes = card.loggedTime?.reduce((acc, log) => acc + (log.hours * 60) + log.minutes, 0) || 0;
-                  const h = Math.floor(totalMinutes / 60);
-                  const m = totalMinutes % 60;
-                  return `${h}h${m > 0 ? ` ${m}m` : ''}`;
+                  return formatLoggedMinutes(totalMinutes);
                 })()}</span>
               </div>
             )}

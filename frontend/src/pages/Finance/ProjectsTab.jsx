@@ -1,3 +1,4 @@
+import { formatLoggedMinutes } from '../../../../shared/loggedTimeCell.mjs';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import useAccessControl from '../../hooks/useAccessControl';
@@ -208,9 +209,7 @@ const ProjectsTab = () => {
   // Format time
   const formatTime = (time) => {
     if (!time) return '0h 0m';
-    const hours = time.hours || Math.floor((time.totalMinutes || 0) / 60);
-    const minutes = time.minutes || (time.totalMinutes || 0) % 60;
-    return `${hours}h ${minutes}m`;
+    return formatLoggedMinutes(time.totalMinutes ?? ((time.hours || 0) * 60 + (time.minutes || 0)));
   };
 
   // Format date

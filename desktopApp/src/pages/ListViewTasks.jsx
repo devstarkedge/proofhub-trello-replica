@@ -1,3 +1,4 @@
+import { formatLoggedMinutes } from '../../../shared/loggedTimeCell.mjs';
 import React, { useState, useEffect, useContext, useMemo, lazy, Suspense, useRef, useCallback, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -371,9 +372,7 @@ const ListViewTasks = () => {
   const calculateTotalLoggedTime = useCallback((loggedTime) => {
     if (!loggedTime || loggedTime.length === 0) return '0h 0m';
     const totalMinutes = loggedTime.reduce((acc, entry) => acc + (entry.hours * 60) + entry.minutes, 0);
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-    return `${hours}h ${minutes}m`;
+    return formatLoggedMinutes(totalMinutes);
   }, []);
 
   const handleExport = useCallback(() => {

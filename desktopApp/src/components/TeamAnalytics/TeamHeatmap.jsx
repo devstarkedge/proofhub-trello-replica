@@ -1,3 +1,4 @@
+import { formatLoggedMinutes } from '../../../../shared/loggedTimeCell.mjs';
 import { memo, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import {
@@ -32,7 +33,6 @@ const HeatmapCell = memo(({ date, minutes, maxMinutes, userName }) => {
   const bgColor = getHeatColor(minutes, maxMinutes);
   const textColor = getTextColor(minutes, maxMinutes);
   const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
   
   const dayName = new Date(date).toLocaleDateString('en-US', { weekday: 'short' });
   const dateStr = new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -58,7 +58,7 @@ const HeatmapCell = memo(({ date, minutes, maxMinutes, userName }) => {
             <div className="text-sm text-gray-300 mb-2">{dayName}, {dateStr}</div>
             {minutes > 0 ? (
               <div className="text-lg font-bold text-emerald-400">
-                {hours}h {mins}m
+                {formatLoggedMinutes(minutes)}
               </div>
             ) : (
               <div className="text-gray-400">No time logged</div>
@@ -160,9 +160,9 @@ const SummaryRow = memo(({ dateRange, teamData }) => {
                 <TooltipContent side="bottom" className="bg-gray-900 text-white p-3 rounded-lg">
                   <div className="text-center">
                     <div className="font-semibold">{new Date(day.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</div>
-                    <div className="text-emerald-400">{hours}h {day.totalMinutes % 60}m total</div>
+                    <div className="text-emerald-400">{formatLoggedMinutes(day.totalMinutes)} total</div>
                     <div className="text-sm text-gray-300">{day.activeMembers} active members</div>
-                    <div className="text-xs text-gray-400">Avg: {Math.floor(day.avgMinutes / 60)}h {day.avgMinutes % 60}m</div>
+                    <div className="text-xs text-gray-400">Avg: {formatLoggedMinutes(day.avgMinutes)}</div>
                   </div>
                 </TooltipContent>
               </Tooltip>

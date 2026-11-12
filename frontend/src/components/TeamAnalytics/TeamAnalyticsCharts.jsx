@@ -1,3 +1,4 @@
+import { formatLoggedMinutes } from '../../../../shared/loggedTimeCell.mjs';
 import { memo, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line, Area, AreaChart, PieChart, Pie, Cell, Legend, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ComposedChart } from 'recharts';
@@ -229,7 +230,7 @@ const WeeklyHeatmap = memo(({ teamData, dateRange }) => {
                     <p className="font-medium text-gray-900">{label}</p>
                     {payload.map((entry, i) => (
                       <p key={i} className="text-sm" style={{ color: entry.fill }}>
-                        {entry.dataKey}: {Math.round(entry.value / 60)}h {entry.value % 60}m
+                        {entry.dataKey}: {formatLoggedMinutes(entry.value)}
                       </p>
                     ))}
                   </div>

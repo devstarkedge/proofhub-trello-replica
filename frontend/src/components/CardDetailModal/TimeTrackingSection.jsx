@@ -271,7 +271,7 @@ const TimeTrackingSection = ({
             <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">Time Tracking</h4>
             <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
               <span className="font-medium text-gray-700 dark:text-gray-300">
-                {formatTime(totalLogged.hours, totalLogged.minutes)}
+                {formatLoggedMinutes(totalLogged.hours * 60 + totalLogged.minutes)}
               </span>{" "}
               logged
               {estimationEntries.length > 0 && (
@@ -633,7 +633,7 @@ const TimeTrackingSection = ({
                             ? "text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-900/50"
                             : "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 border-emerald-100 dark:border-emerald-900/40"
                         }`}>
-                          {formatTime(totalLogged.hours, totalLogged.minutes)}
+                          {formatLoggedMinutes(totalLogged.hours * 60 + totalLogged.minutes)}
                         </span>
                       )}
                     </div>
@@ -866,7 +866,7 @@ const TimeTrackingSection = ({
                     <div className="pt-3 mt-3 border-t border-gray-200 dark:border-gray-800 flex items-center justify-between text-xs">
                       <span className="font-medium text-gray-600 dark:text-gray-400">Total Logged:</span>
                       <span className={`font-bold text-sm font-mono ${isOvertime ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400"}`}>
-                        {formatTime(totalLogged.hours, totalLogged.minutes)}
+                        {formatLoggedMinutes(totalLogged.hours * 60 + totalLogged.minutes)}
                       </span>
                     </div>
                   </div>
@@ -1150,7 +1150,7 @@ const TimeTrackingSection = ({
                     </div>
                     <div className="text-xs text-gray-600 dark:text-gray-300 mt-0.5 font-mono">
                       <span className="font-semibold text-gray-900 dark:text-gray-100">
-                        {formatTime(totalLogged.hours, totalLogged.minutes)}
+                        {formatLoggedMinutes(totalLogged.hours * 60 + totalLogged.minutes)}
                       </span>{" "}
                       logged of{" "}
                       <span className="font-semibold text-gray-900 dark:text-gray-100">
