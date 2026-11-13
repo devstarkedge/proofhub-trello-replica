@@ -74,6 +74,7 @@ const CardDetailModal = React.memo(({
   const [subtasks, setSubtasks] = useState([]);
   const [subtasksLoading, setSubtasksLoading] = useState(false);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
+  const subtaskCreation = useRef(null);
   const [attachments, setAttachments] = useState(initialCard.attachments || []);
   const [coverImage, setCoverImage] = useState(initialCard.coverImage || null);
   const [coverImageOptimistic, setCoverImageOptimistic] = useState(null); // For optimistic UI
@@ -101,7 +102,7 @@ const CardDetailModal = React.memo(({
       const next = { ...prev };
       for (const item of list) {
         if (item && typeof item === 'object' && item._id) {
-          next[item._id] = item;
+          next[item._id] = { ...next[item._id], ...item };
           changed = true;
         }
       }
@@ -554,6 +555,13 @@ const CardDetailModal = React.memo(({
       if (plan.lists) void loadAvailableStatuses();
       if (plan.project) void loadProjectName();
     };
+    const departmentEvents = ['socket-member-departments-updated'];
+    let assignmentRefresh;
+    const refreshAssignments = () => {
+      clearTimeout(assignmentRefresh);
+      assignmentRefresh = setTimeout(() => { void loadFreshCardData(false); void loadTeamMembers(); }, 100);
+    };
+    for (const event of departmentEvents) window.addEventListener(event, refreshAssignments);
     window.addEventListener('flowtask:data-invalidated', recoverDetails);
     window.addEventListener('socket-card-updated', handleCardUpdate);
     window.addEventListener('socket-card-cover-updated', handleCardCoverUpdate);
@@ -562,6 +570,8 @@ const CardDetailModal = React.memo(({
     // Cleanup
     return () => {
       disposed = true; refreshVersion++;
+      clearTimeout(assignmentRefresh);
+      for (const event of departmentEvents) window.removeEventListener(event, refreshAssignments);
       window.removeEventListener('flowtask:data-invalidated', recoverDetails);
       window.removeEventListener('socket-card-updated', handleCardUpdate);
       window.removeEventListener('socket-card-cover-updated', handleCardCoverUpdate);
@@ -667,16 +677,6 @@ const CardDetailModal = React.memo(({
             const match = (departments || []).find(dept => String(dept._id) === String(d));
             if (match?.name) {
               found.push({ _id: String(match._id), name: match.name });
-            }
-          }
-        }
-
-        if (found.length === 0 && departments && departments.length > 0) {
-          for (const dept of departments) {
-            const isMember = dept.members?.some(m => String(m._id || m) === String(member._id));
-            const isManager = dept.managers?.some(m => String(m._id || m) === String(member._id));
-            if (isMember || isManager) {
-              found.push({ _id: String(dept._id), name: dept.name });
             }
           }
         }
@@ -1571,14 +1571,21 @@ const CardDetailModal = React.memo(({
   };
 
   const handleCreateSubtask = async () => {
-    if (!newSubtaskTitle.trim() || !card?._id) return;
+    const title = newSubtaskTitle.trim(), cardId = card?._id;
+    if (!title || !cardId || subtaskCreation.current?.pending) return;
+    const previous = subtaskCreation.current;
+    const operationId = previous?.cardId === cardId && previous.title === title
+      ? previous.operationId
+      : Array.from(crypto.getRandomValues(new Uint8Array(12)), byte => byte.toString(16).padStart(2, '0')).join('');
+    subtaskCreation.current = { cardId, title, operationId, pending: true };
     try {
-      await Database.createSubtask(card._id, { title: newSubtaskTitle.trim() });
-      setNewSubtaskTitle("");
-      fetchSubtasks();
+      const { data: created } = await Database.createSubtask(cardId, { title, operationId });
+      setSubtasks(current => current.some(item => item._id === created._id) ? current : [...current, created]);
+      setNewSubtaskTitle(current => current.trim() === title ? '' : current);
+      subtaskCreation.current = null;
     } catch (error) {
-      console.error("Error creating subtask:", error);
-      toast.error("Failed to create subtask");
+      subtaskCreation.current.pending = false;
+      toast.error(error.message || 'Failed to create subtask');
     }
   };
 

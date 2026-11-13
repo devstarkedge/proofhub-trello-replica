@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('flowtaskDesktop', Object.freeze({
   isDesktop: true,
   platform: process.platform,
+  copyLeaveLink: link => ipcRenderer.invoke('desktop-clipboard:copy-leave-link', link),
   updates: Object.freeze({
     getStatus: () => ipcRenderer.invoke('desktop-updates:status'),
     check: () => ipcRenderer.invoke('desktop-updates:check'),

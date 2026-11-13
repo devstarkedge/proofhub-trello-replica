@@ -1,3 +1,4 @@
+import { officeDurationExpression } from '../attendance/attendanceWorkBreak.js';
 import mongoose from 'mongoose';
 import {WorkSession,ActivityInterval} from './tracking.models.js';
 import AttendanceSession from '../attendance/attendanceSession.model.js';
@@ -126,11 +127,12 @@ export async function readDashboardGroups(options){
   return WorkSession.aggregate(pipeline).option({maxTimeMS:10000,allowDiskUse:true});
 }
 
-export async function readOfficeGroups(workspaceId,owners,dates,now){
+export async function readOfficeGroups(workspaceId,owners,dates,now,breakWindows=[]){
   const resolved={$and:[{$ne:[{$ifNull:['$regularizationResolution.appliedAt',null]},null]},{$ne:[{$ifNull:['$regularizationResolution.checkInAt',null]},null]},{$ne:[{$ifNull:['$regularizationResolution.checkOutAt',null]},null]}]};
   return AttendanceSession.aggregate([
     {$match:{workspaceId:oid(workspaceId),user:{$in:owners.map(oid)},workDateKey:{$gte:dates.fromDate,$lte:dates.toDate}}},
     {$set:{_start:{$cond:[resolved,'$regularizationResolution.checkInAt','$checkInAt']},_end:{$cond:[resolved,'$regularizationResolution.checkOutAt',{$ifNull:['$checkOutAt',{$min:[now,{$ifNull:[attendanceFallbackCutoffExpression(),now]}]}]}]},_active:{$and:[{$eq:['$status','ACTIVE']},{$not:[resolved]},{$gt:[{$ifNull:[attendanceFallbackCutoffExpression(),new Date(8640000000000000)]},now]}]}}},
-    {$group:{_id:'$user',officeSeconds:{$sum:{$max:[0,{$divide:[{$subtract:['$_end','$_start']},1000]}]}},checkedIn:{$max:{$cond:['$_active',1,0]}},sessions:{$sum:1}}}
+    {$set:{_officeMs:officeDurationExpression('$_start','$_end',breakWindows)}},
+    {$group:{_id:'$user',officeSeconds:{$sum:{$divide:['$_officeMs',1000]}},checkedIn:{$max:{$cond:['$_active',1,0]}},sessions:{$sum:1}}}
   ]).option({maxTimeMS:10000});
 }

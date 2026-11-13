@@ -94,7 +94,6 @@ export const getSubtasksForTask = asyncHandler(async (req, res, next) => {
   if (!card) {
     return next(new ErrorResponse('Task not found', 404));
   }
-
   const subtasks = await getOrderedSubtasks(taskId, await resourceReadFilter(req, 'subtask', card.board?._id || card.board));
 
   res.status(200).json({
@@ -133,39 +132,54 @@ export const createSubtask = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse('Task not found', 404));
   }
 
+  const boardId = card.board?._id || card.board;
+  const operationId = req.body.operationId;
+  if (operationId && (typeof operationId !== 'string' || !mongoose.isValidObjectId(operationId))) throw new ErrorResponse('Invalid subtask operation', 400);
+  const operation = operationId ? { _id: operationId, task: taskId, createdBy: req.user.id } : null;
+  const replay = operation && await Subtask.findOne(operation).populate(basePopulate);
+  if (replay) return res.json({ success: true, data: replay });
   const currentCount = await Subtask.countDocuments({ task: taskId });
-  const subtask = await Subtask.create({
-    task: taskId,
-    board: card.board,
-    title: req.body.title,
-    description: req.body.description,
-    status: req.body.status || 'todo',
-    priority: req.body.priority || 'medium',
-    assignees: req.body.assignees || [],
-    watchers: req.body.watchers || [],
-    tags: req.body.tags || [],
-    dueDate: req.body.dueDate,
-    startDate: req.body.startDate,
-    attachments: req.body.attachments || [],
-    colorToken: req.body.colorToken || 'purple',
-    estimationTime: req.body.estimationTime || [],
-    loggedTime: req.body.loggedTime || [],
-    billedTime: req.body.billedTime || [],
-    order: req.body.order ?? currentCount,
-    createdBy: req.user.id,
-    breadcrumbs: buildBreadcrumbs(card)
-  });
+  let subtask;
+  try {
+    subtask = await Subtask.create({
+      ...(operation ? { _id: operationId } : {}),
+      task: taskId,
+      board: boardId,
+      title: req.body.title,
+      description: req.body.description,
+      status: req.body.status || 'todo',
+      priority: req.body.priority || 'medium',
+      assignees: req.body.assignees || [],
+      watchers: req.body.watchers || [],
+      tags: req.body.tags || [],
+      dueDate: req.body.dueDate,
+      startDate: req.body.startDate,
+      attachments: req.body.attachments || [],
+      colorToken: req.body.colorToken || 'purple',
+      estimationTime: req.body.estimationTime || [],
+      loggedTime: req.body.loggedTime || [],
+      billedTime: req.body.billedTime || [],
+      order: req.body.order ?? currentCount,
+      createdBy: req.user.id,
+      breadcrumbs: buildBreadcrumbs(card)
+    });
+  } catch (error) {
+    const committed = operation && error.code === 11000 && await Subtask.findOne(operation).populate(basePopulate);
+    if (committed) return res.json({ success: true, data: committed });
+    throw error;
+  }
 
   const populated = await Subtask.findById(subtask._id).populate(basePopulate);
+  res.status(201).json({ success: true, data: populated });
 
-  // Parallelize secondary operations
-  await Promise.all([
+  // A committed subtask must stay successful if a secondary publication fails.
+  void Promise.allSettled([
     // Log activity
     Activity.create({
       type: 'subtask_created',
       description: `Created subtask "${subtask.title}"`,
       user: req.user.id,
-      board: card.board,
+      board: boardId,
       card: taskId,
       subtask: subtask._id,
       contextType: 'subtask',
@@ -179,7 +193,7 @@ export const createSubtask = asyncHandler(async (req, res, next) => {
     (async () => {
       await refreshCardHierarchyStats(taskId);
       const updatedCard = await Card.findById(taskId).select('subtaskStats').lean();
-      emitToBoard(card.board.toString(), 'hierarchy-subtask-changed', {
+      await emitToBoard(String(boardId), 'hierarchy-subtask-changed', {
         type: 'created',
         taskId,
         subtask: populated,
@@ -188,13 +202,11 @@ export const createSubtask = asyncHandler(async (req, res, next) => {
     })(),
 
     // Chat webhook
-    chatHooks.onSubtaskCreated(subtask, card, card.board, req.user).catch(console.error)
-  ]);
-
-  res.status(201).json({
-    success: true,
-    data: populated
+    Promise.resolve().then(() => chatHooks.onSubtaskCreated(subtask, card, card.board, req.user))
+  ]).then(results => {
+    for (const result of results) if (result.status === 'rejected') console.error('Subtask follow-up failed:', result.reason?.message);
   });
+
 });
 
 export const updateSubtask = asyncHandler(async (req, res, next) => {

@@ -1,3 +1,4 @@
+import attachmentService from '../services/attachmentService';
 import { sessionFetch as fetch } from '../services/sessionFetch';
 import React, { useState, useCallback, useMemo, useRef, useEffect, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -45,6 +46,7 @@ const AttachmentList = ({
   const [expandedMenu, setExpandedMenu] = useState(null);
   const [showAll, setShowAll] = useState(false);
   const listRef = useRef(null);
+  const linkRequests = useRef(new Map());
 
   const store = useAttachmentStore();
   const entityKey = getEntityKey(entityType, entityId);
@@ -63,7 +65,9 @@ const AttachmentList = ({
     deleteSelected,
     isSelected,
     loadMore,
-    uploadProgress
+    uploadProgress,
+    retryUpload,
+    updateAttachment
   } = store;
 
   // Use prop attachments if provided, otherwise use store
@@ -73,10 +77,11 @@ const AttachmentList = ({
 
   // Merge pending uploads with real attachments
   const attachments = useMemo(() => {
-    const pendingUploads = Object.values(uploadProgress)
-      .filter(p => p.entityKey === entityKey && p.status !== 'completed')
-      .map(p => ({
-        _id: `pending-${p.fileName}`,
+    const pendingUploads = Object.entries(uploadProgress)
+      .filter(([, p]) => p.entityKey === entityKey && p.status !== 'completed')
+      .map(([uploadId, p]) => ({
+        _id: `pending-${uploadId}`,
+        uploadId,
         isPending: true,
         originalName: p.fileName,
         fileType: p.fileType,
@@ -111,17 +116,39 @@ const AttachmentList = ({
 
   const hasMore = attachments.length > maxVisible && !showAll;
 
-  const handlePreview = useCallback((attachment, index) => {
-    setSelectedAttachment(attachment);
+  const refreshAttachment = useCallback(attachment => {
+    const key = `${entityKey}:${attachment._id}`;
+    const pending = linkRequests.current.get(key);
+    if (pending) return pending;
+    const request = attachmentService.getAttachment(attachment._id).then(result => {
+      if (!result.data) throw new Error('Attachment unavailable');
+      updateAttachment(entityKey, attachment._id, result.data);
+      return result.data;
+    }).finally(() => linkRequests.current.delete(key));
+    linkRequests.current.set(key, request);
+    return request;
+  }, [entityKey, updateAttachment]);
+  const handlePreview = async (attachment, index) => {
+    if (attachment.isPending) return;
+    try {
+      const fresh = attachmentService.mediaLinkNeedsRefresh(attachment) ? await refreshAttachment(attachment) : attachment;
+      setSelectedAttachment(fresh);
+    } catch {
+      toast.error('Unable to load the attachment. Try again shortly.');
+      return;
+    }
     setSelectedIndex(index);
     setViewerOpen(true);
-  }, []);
+  };
 
   const handleDownload = useCallback(async (attachment, e) => {
     e?.stopPropagation();
+    let url;
     try {
-      const url = attachment.secureUrl || attachment.url;
+      const fresh = attachmentService.mediaLinkNeedsRefresh(attachment) ? await refreshAttachment(attachment) : attachment;
+      url = fresh.secureUrl || fresh.url;
       const response = await fetch(url);
+      if (!response.ok) throw new Error('Attachment download unavailable');
       const blob = await response.blob();
       const blobUrl = window.URL.createObjectURL(blob);
       
@@ -135,9 +162,10 @@ const AttachmentList = ({
     } catch (error) {
       console.error('Download failed:', error);
       // Fallback to opening in new tab
-      window.open(attachment.secureUrl || attachment.url, '_blank');
+      if (url) window.open(url, '_blank', 'noopener');
+      else toast.error('Unable to load the attachment. Try again shortly.');
     }
-  }, []);
+  }, [refreshAttachment]);
 
   const handleDelete = useCallback(async (attachment, e) => {
     e?.stopPropagation();
@@ -345,6 +373,12 @@ const AttachmentList = ({
                       alt={attachment.originalName}
                       className="w-full h-full object-cover"
                       loading="lazy"
+                      onError={event => {
+                        if (attachment.isPending || event.currentTarget.dataset.retried) return;
+                        const image = event.currentTarget;
+                        image.dataset.retried = 'true';
+                        void refreshAttachment(attachment).then(fresh => { image.src = fresh.thumbnailUrl || fresh.secureUrl || fresh.url; }).catch(() => {});
+                      }}
                     />
                   ) : (
                     <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-gray-500">
@@ -369,7 +403,7 @@ const AttachmentList = ({
                       <span className={`text-[10px] font-medium ${
                         attachment.status === 'error' ? 'text-red-500' : 'text-blue-500'
                       }`}>
-                        {attachment.status === 'error' ? 'Upload failed' : `${Math.round(attachment.progress)}% • Uploading...`}
+                        {attachment.status === 'error' ? 'Upload failed' : attachment.status === 'queued' ? 'Waiting to upload' : `${Math.round(attachment.progress)}% • Uploading…`}
                       </span>
                     ) : (
                       attachment.contextType && attachment.contextType !== entityType && attachment.contextType !== 'card' && (
@@ -405,9 +439,10 @@ const AttachmentList = ({
                   {attachment.isPending ? (
                     <div className="p-1.5">
                       {attachment.status === 'error' ? (
-                        <div className="text-red-500 cursor-help" title={attachment.error}>
+                        <button type="button" aria-label={`Retry ${attachment.originalName}`} className="text-red-500" title={attachment.error}
+                          onClick={event => { event.stopPropagation(); retryUpload(attachment.uploadId); }}>
                           <AlertCircle size={16} />
-                        </div>
+                        </button>
                       ) : (
                         <Loader size={16} className="text-blue-500 animate-spin" />
                       )}

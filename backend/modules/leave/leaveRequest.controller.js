@@ -1,3 +1,4 @@
+import config from '../../config/index.js';
 import asyncHandler from '../../middleware/asyncHandler.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import * as leaveRequestService from './leaveRequest.service.js';
@@ -58,5 +59,8 @@ export const getUserRequests = asyncHandler(async (req, res) => {
 
 export const getRequestDetail = asyncHandler(async (req, res) => {
   const detail = await getAuthorizedRequestDetail({ viewer: req.user, workspaceId: req.workspaceId, requestId: req.params.requestId });
-  res.json({ success: true, data: detail });
+  const shareUrl = new URL('/leave', config.frontendUrl);
+  shareUrl.searchParams.set('workspaceId', req.workspaceId);
+  shareUrl.searchParams.set('request', req.params.requestId);
+  res.json({ success: true, data: { ...detail, shareUrl: shareUrl.href } });
 });

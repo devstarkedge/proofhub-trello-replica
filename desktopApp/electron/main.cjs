@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, Menu, shell, nativeTheme, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, Menu, shell, nativeTheme, ipcMain, clipboard } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const { readBackendURL } = require('./config.cjs');
@@ -6,6 +6,17 @@ const { startDesktopServer } = require('./server.cjs');
 const { installDesktopNotifications } = require('./notifications.cjs');
 const { installDesktopTracking } = require('./tracking.cjs');
 const { installDesktopUpdates } = require('./auto-updates.cjs');
+
+ipcMain.handle('desktop-clipboard:copy-leave-link', (event, value) => {
+  if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame ||
+      new URL(event.senderFrame.url).origin !== rendererOrigin || typeof value !== 'string' || value.length > 2048) return false;
+  if (!URL.canParse(value)) return false;
+  const link = new URL(value);
+  if (!['http:', 'https:'].includes(link.protocol) || link.pathname !== '/leave' ||
+      !['workspaceId', 'request'].every(key => /^[a-f\d]{24}$/i.test(link.searchParams.get(key) || ''))) return false;
+  clipboard.writeText(value);
+  return true;
+});
 
 ipcMain.on('desktop-theme:set', (_event, mode) => {
   try {

@@ -18,6 +18,7 @@ import { resolveApplicablePolicyVersion } from './attendancePolicy.service.js';
 import { resolveAttendanceEligibility } from './attendanceEligibility.service.js';
 import { resolveAttendanceAccess, assertCanViewDepartment, assertCanViewUser } from './attendanceAuthorization.service.js';
 import { effectiveAttendanceSession, applyRegularizationOverlay } from './attendanceRegularizationOverlay.js';
+import { readRecentWorkBreakWindows } from './attendanceWorkBreak.js';
 import { intervalMinutes, attendanceIntervals, attendanceIntervalMillisecondsExpression } from './attendanceIntervals.js';
 import { buildCalendarContext, classifyDateWithContext } from '../workCalendar/workCalendarFacade.js';
 import { dateOnlyToInstant } from '../leave/leaveTimezone.util.js';
@@ -129,7 +130,8 @@ async function prepare({ viewer, workspaceId, query = {}, now = new Date(), hist
   })).filter(row => !q.search || [row.user.name, row.user.email].some(value => value?.toLocaleLowerCase().includes(q.search.toLocaleLowerCase())));
   const today = DateTime.fromJSDate(now).setZone(timezone).toISODate(), through = q.endDate < today ? q.endDate : today;
   const expectedDates = q.startDate > through ? 0 : Math.round(DateTime.fromISO(through).diff(DateTime.fromISO(q.startDate), 'days').days) + 1;
-  return { viewer, workspaceId, workspace, access, q, timezone, now, today, expectedDates, subjects, departments };
+  const breakWindows = q.endDate >= today ? await readRecentWorkBreakWindows(workspaceId, now) : [];
+  return { viewer, workspaceId, workspace, access, q, timezone, now, today, expectedDates, subjects, departments, breakWindows };
 }
 
 const countIf = expression => ({ $sum: { $cond: [expression, 1, 0] } });
@@ -156,7 +158,7 @@ function sessionFactsStages(ctx) {
       { $eq: ['$$s.status', 'ACTIVE'] }, { $eq: [{ $ifNull: ['$$s.regularizationResolution.appliedAt', null] }, null] },
       { $gt: [{ $ifNull: [attendanceFallbackCutoffExpression('$$s.'), new Date(8640000000000000)] }, now] }
     ] } } } } } },
-    { $set: { workedMinutes: { $cond: ['$_live', { $floor: { $add: [{ $divide: [attendanceIntervalMillisecondsExpression('$_sessions'), 60000] }, 0.5] } }, '$workedMinutes'] } } }
+    { $set: { workedMinutes: { $cond: ['$_live', { $floor: { $add: [{ $divide: [attendanceIntervalMillisecondsExpression('$_sessions', ctx.breakWindows), 60000] }, 0.5] } }, '$workedMinutes'] } } }
   ];
 }
 
@@ -288,7 +290,7 @@ export async function getTeamAttendanceMonth(args) {
   for (const day of days) {
     const daySessions = sessionsByDay.get(day.workDateKey) || [];
     day.activeSession = daySessions.some(s => s.status === 'ACTIVE' && (!legacyHardCutoff(s) || +legacyHardCutoff(s) > +ctx.now));
-    if (day.hasAttendance && day.activeSession) { day.workedMinutes = Math.round(intervalMinutes(attendanceIntervals(daySessions, ctx.now))); day.durationIsLive = true; }
+    if (day.hasAttendance && day.activeSession) { day.workedMinutes = Math.round(intervalMinutes(attendanceIntervals(daySessions, ctx.now, ctx.breakWindows))); day.durationIsLive = true; }
   }
   const work = await readAttendanceWork({ ...ctx, userIds: [args.userId], startDate, endDate });
   for (const day of days) day.trackedWork = work.get(id(args.userId) + ':' + day.workDateKey) || unavailableWork();
@@ -320,7 +322,7 @@ export async function getTeamAttendanceDay(args) {
   const calendar = !records.length && args.workDateKey >= ctx.today ? await buildCalendarContext({ timezone: ctx.timezone, departmentIds: [ctx.subjects[0].primaryDepartmentId].filter(Boolean), startDate: args.workDateKey, endDate: args.workDateKey }) : null;
   const { leaveTypes: _, policyVersion, ...day } = records[0] || missingCalendarDay(ctx, args.workDateKey, calendar);
   day.activeSession = effective.some(s => s.status === 'ACTIVE' && (!legacyHardCutoff(s) || +legacyHardCutoff(s) > +ctx.now));
-  if (day.hasAttendance && day.activeSession) { day.workedMinutes = Math.round(intervalMinutes(attendanceIntervals(effective, ctx.now))); day.durationIsLive = true; }
+  if (day.hasAttendance && day.activeSession) { day.workedMinutes = Math.round(intervalMinutes(attendanceIntervals(effective, ctx.now, ctx.breakWindows))); day.durationIsLive = true; }
   const policy = policyVersion ? await AttendancePolicyVersion.findOne({ workspaceId: args.workspaceId, _id: policyVersion }).select('name versionNumber').lean() : null;
   return { user: ctx.subjects[0].user, timezone: ctx.timezone, asOf: ctx.now, day,
     schedule: { startLocalTime: day.effectiveOfficeHoursStart || null, endLocalTime: day.effectiveOfficeHoursEnd || null, source: day.effectiveOfficeHoursSource || null,

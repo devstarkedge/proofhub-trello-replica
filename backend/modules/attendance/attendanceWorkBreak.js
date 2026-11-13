@@ -3,6 +3,7 @@ import { DateTime } from 'luxon';
 import Workspace from '../../models/Workspace.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import { getWorkspaceTimezone } from '../leave/leaveTimezone.util.js';
+import { cachedTrackingRead } from '../tracking/tracking.readCache.js';
 import { TrackingPolicy } from '../tracking/tracking.models.js';
 import workspaceScopePlugin from '../workspaces/workspaceScopePlugin.js';
 
@@ -49,19 +50,30 @@ export async function activateWorkBreak(workspaceId, previous, next, session) {
 
 export async function readWorkBreak(workspaceId, since, session = null) {
   const observedAt = new Date();
-  const [schedule] = await AttendanceWorkBreak.aggregate([
-    { $match: { workspaceId: new mongoose.Types.ObjectId(workspaceId), $or: [
-      { effectiveUntil: null }, { effectiveUntil: { $gte: since } }
-    ] } },
-    { $group: { _id: '$workspaceId', rules: { $push: {
-      startLocalTime: '$startLocalTime', endLocalTime: '$endLocalTime',
-      effectiveFrom: '$effectiveFrom', effectiveUntil: '$effectiveUntil'
-    } } } },
-    { $lookup: { from: Workspace.collection.name, localField: '_id', foreignField: '_id',
-      pipeline: [{ $project: { _id: 0, timezone: 1 } }], as: 'workspace' } }
-  ]).session(session);
-  if (!schedule) return { rules: [], timezone: null, observedAt };
-  return { rules: schedule.rules, timezone: getWorkspaceTimezone(schedule.workspace[0]), observedAt };
+  const bucket = Math.floor(+since / 86400000);
+  const lower = session ? since : new Date(bucket * 86400000);
+  const load = async () => {
+    const [schedule] = await AttendanceWorkBreak.aggregate([
+      { $match: { workspaceId: new mongoose.Types.ObjectId(workspaceId), $or: [
+        { effectiveUntil: null }, { effectiveUntil: { $gte: lower } }
+      ] } },
+      { $group: { _id: '$workspaceId', rules: { $push: {
+        startLocalTime: '$startLocalTime', endLocalTime: '$endLocalTime',
+        effectiveFrom: '$effectiveFrom', effectiveUntil: '$effectiveUntil'
+      } } } },
+      { $lookup: { from: Workspace.collection.name, localField: '_id', foreignField: '_id',
+        pipeline: [{ $project: { _id: 0, timezone: 1 } }], as: 'workspace' } }
+    ]).session(session);
+    if (!schedule) return { rules: [], timezone: null };
+    return { rules: schedule.rules, timezone: getWorkspaceTimezone(schedule.workspace[0]) };
+  };
+  if (session) return { ...(await load()), observedAt };
+  // Use a day bucket so current-session reads share one tenant-scoped entry.
+  const snapshot = await cachedTrackingRead({ workspaceId, viewerId: 'workspace-break-policy', kind: 'work-break-policy',
+    query: { bucket }, access: 'schedule', ttlMs: 30000 }, load);
+  return { ...snapshot, observedAt, rules: snapshot.rules.map(rule => ({ ...rule,
+    effectiveFrom: new Date(rule.effectiveFrom), effectiveUntil: rule.effectiveUntil ? new Date(rule.effectiveUntil) : null
+  })) };
 }
 
 function wallTime(day, time) {
@@ -108,6 +120,30 @@ export function workBreakWindowsInRange(schedule, from, at) {
     cursor = window.endsAt;
   }
   return windows;
+}
+
+export function officeDurationExpression(start, end, windows) {
+  return { $max: [0, { $subtract: [
+    { $subtract: [end, start] },
+    { $sum: { $map: { input: { $literal: windows }, as: 'window', in: { $max: [0, {
+      $subtract: [{ $min: [end, '$$window.endsAt'] }, { $max: [start, '$$window.startsAt'] }]
+    }] } } } }
+  ] }] };
+}
+
+export function officeTimeMilliseconds(start, end, windows = []) {
+  if (!start || !end || +end <= +start) return 0;
+  let cursor = +start;
+  let excluded = 0;
+  for (const window of windows) {
+    const from = Math.max(cursor, +window.startsAt);
+    const through = Math.min(+end, +window.endsAt);
+    if (through > from) {
+      excluded += through - from;
+      cursor = through;
+    }
+  }
+  return +end - +start - excluded;
 }
 
 export async function readRecentWorkBreakWindows(workspaceId, at) {

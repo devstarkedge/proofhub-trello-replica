@@ -144,7 +144,7 @@ function App() {
                     /leave/settings is role-gated, matching how the backend
                     treats self-service as structural rather than
                     permission-gated (see modules/leave/leaveAuthorization.service.js). */}
-                <Route path="/leave" element={<LeaveLayout />}>
+                <Route path="/leave" element={<ProjectWorkspaceGate resource="leave request" backLabel="Back to Home"><LeaveLayout /></ProjectWorkspaceGate>}>
                   <Route index element={<LeaveDashboardPage />} />
                   <Route path="my" element={<MyLeavePage />} />
                   <Route path="approvals" element={<ApprovalQueuePage />} />

@@ -1,3 +1,4 @@
+import { readWorkBreak, workBreakWindowsInRange } from './attendanceWorkBreak.js';
 import mongoose from 'mongoose';
 import { enqueueAttendanceReport, requestPriorityAttendanceReportDelivery } from '../../services/chat/attendanceReporting.service.js';
 import { captureReportingDepartment } from './attendanceReportingDepartment.service.js';
@@ -147,10 +148,21 @@ function evaluateCheckInBlockers(ctx) {
   return { allowed: true, code: null };
 }
 
-/** Computes today's multi-dimensional status and upserts AttendanceDay to match — the one place either check-in or check-out writes that document. */
-export async function computeAndUpsertDay({ workspaceId, userId, workDateKey, eligibility, timezone, calendar, leave, workModeResolution, policyVersion, shift, officeHours, sessions, serverNow, dbSession }) {
+export async function attendanceBreakWindows(workspaceId, sessions, at, dbSession) {
+  const start = Math.min(...sessions.filter(session => session.checkInAt).map(session => +new Date(session.checkInAt)));
+  if (!Number.isFinite(start) || start > +at) return [];
+  const end = sessions.some(session => session.status === 'ACTIVE') ? at
+    : new Date(Math.min(+at, Math.max(start, ...sessions.filter(session => session.checkOutAt).map(session => +new Date(session.checkOutAt)))));
+  if (+end <= start) return [];
+  const from = new Date(start);
+  return workBreakWindowsInRange(await readWorkBreak(workspaceId, from, dbSession), from, end);
+}
+
+/** Computes and persists the attendance day for check-in, checkout and regularization. */
+export async function computeAndUpsertDay({ workspaceId, userId, workDateKey, eligibility, timezone, calendar, leave, workModeResolution, policyVersion, shift, officeHours, sessions, serverNow, dbSession, breakWindows }) {
+  breakWindows ??= await attendanceBreakWindows(workspaceId, sessions, serverNow, dbSession);
   const status = resolveAttendanceStatus({
-    eligibility, timezone, calendar, leave, workModeResolution, policyVersion, shift, officeHours, sessions, serverNow, isDayOver: false, workDateKey
+    eligibility, timezone, calendar, leave, workModeResolution, policyVersion, shift, officeHours, sessions, serverNow, isDayOver: false, workDateKey, breakWindows
   });
   const day = await AttendanceDay.findOneAndUpdate(
     { user: userId, workDateKey }, // workspaceId deliberately omitted from the filter — workspaceScopePlugin injects it; see attendanceMemberProfile.service.js for why duplicating it here would break the upsert.
@@ -247,7 +259,8 @@ export async function getTodayStatus({ workspaceId, userId, membership, workspac
   const status = resolveAttendanceStatus({
     eligibility: ctx.eligibility, timezone: ctx.timezone, calendar: ctx.calendar, leave: ctx.leave,
     workModeResolution: ctx.workModeResolution, policyVersion: ctx.policyVersion, shift: ctx.shift, officeHours: ctx.officeHours,
-    sessions: ctx.sessions, serverNow: ctx.serverNow, isDayOver: false, workDateKey: ctx.workDateKey
+    sessions: ctx.sessions, serverNow: ctx.serverNow, isDayOver: false, workDateKey: ctx.workDateKey,
+    breakWindows: await attendanceBreakWindows(workspaceId, ctx.sessions, ctx.serverNow)
   });
   const checkInBlocker = evaluateCheckInBlockers(ctx);
 

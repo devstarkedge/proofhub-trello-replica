@@ -166,27 +166,27 @@ const AttachmentUploader = ({
     e.stopPropagation();
   }, []);
 
-  const handleDrop = useCallback((e) => {
+  const handleDrop = (e) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
 
     const files = Array.from(e.dataTransfer.files);
     handleFiles(files);
-  }, []);
+  };
 
-  const handleFileSelect = useCallback((e) => {
+  const handleFileSelect = (e) => {
     const files = Array.from(e.target.files);
     handleFiles(files);
     e.target.value = ''; // Reset input
-  }, []);
+  };
 
   const handleFiles = useCallback(async (files) => {
     if (files.length === 0) return;
 
     if (files.length > MAX_FILES) {
       toast.error(`Maximum ${MAX_FILES} files allowed at once`);
-      files = files.slice(0, MAX_FILES);
+      return;
     }
 
     const validFiles = [];
@@ -224,6 +224,10 @@ const AttachmentUploader = ({
     
     openPicker({
       onSelect: ({ files, accessToken }) => {
+        if (files?.length > MAX_FILES) {
+          toast.error(`Maximum ${MAX_FILES} files allowed at once`);
+          return;
+        }
         if (files && files.length > 0) {
           // Validate file sizes
           const validFiles = [];

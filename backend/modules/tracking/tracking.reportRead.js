@@ -5,7 +5,7 @@ import {DateTime} from 'luxon';
 import User from '../../models/User.js';
 import AttendanceDay from '../attendance/attendanceDay.model.js';
 import {effectiveAttendanceSession} from '../attendance/attendanceRegularizationOverlay.js';
-import {readWorkBreak,workBreakWindowsInRange} from '../attendance/attendanceWorkBreak.js';
+import {readWorkBreak,workBreakWindowsInRange,officeTimeMilliseconds} from '../attendance/attendanceWorkBreak.js';
 import {WorkSession,TrackingScreenshot,ActivityInterval} from './tracking.models.js';
 import { legacyHardCutoff } from '../attendance/attendanceActivity.service.js';
 import {contextFor,policyFor,fail,objectId,authorizeRecord} from './tracking.service.js';
@@ -49,7 +49,7 @@ export async function readTrackingReports(workspaceId,viewerId,query){
   );
   const candidates=await WorkSession.aggregate(pipeline).option({maxTimeMS:10000,allowDiskUse:true}),sessions=candidates.slice(0,20);
   const firstPause = sessions.reduce((earliest, session) => (session.pauses || []).reduce((start, pause) =>
-    Math.min(start, +pause.startedAt), earliest), Infinity);
+    Math.min(start, +pause.startedAt), Math.min(earliest, +(session._attendance?.checkInAt || session.startedAt))), Infinity);
   const [previews, pauseSchedule] = await Promise.all([
     query.summaryOnly==='true' ? new Map() : readReportPreviews(workspaceId,sessions,ctx,scope,query,now),
     firstPause < +recentStart ? readWorkBreak(workspaceId, new Date(firstPause)) : recentSchedule
@@ -58,7 +58,7 @@ export async function readTrackingReports(workspaceId,viewerId,query){
     const {_attendance,_subject,_day,...session}=record,attendance=_attendance?effectiveAttendanceSession(_attendance):null,officeEnd=attendance?.checkOutAt||(attendance?.status==='ACTIVE'?new Date(Math.min(+now,legacyHardCutoff(attendance) ? +legacyHardCutoff(attendance) : Infinity)):null);
     const preview=previews.get(id(session))||{records:[],totalCount:0},previewsLoaded=query.summaryOnly!=='true';
     const pauseWindows = workBreakWindowsInRange(pauseSchedule, session.startedAt, session.endedAt || now);
-    return {...session,userName:_subject?.[0]?.name||'Former member',totals:summarize(session,now,pauseWindows),attendance:{status:attendance?.status,day:_day?.[0],checkInAt:attendance?.checkInAt,checkOutAt:attendance?.checkOutAt,measuredOfficeSeconds:officeEnd?Math.max(0,(+officeEnd-+attendance.checkInAt)/1000):null},previewsLoaded,latestScreenshots:preview.records,totalScreenshots:previewsLoaded?preview.totalCount:null};
+    return {...session,userName:_subject?.[0]?.name||'Former member',totals:summarize(session,now,pauseWindows),attendance:{status:attendance?.status,day:_day?.[0],checkInAt:attendance?.checkInAt,checkOutAt:attendance?.checkOutAt,measuredOfficeSeconds:officeEnd?officeTimeMilliseconds(attendance.checkInAt, officeEnd, workBreakWindowsInRange(pauseSchedule, attendance.checkInAt, officeEnd)) / 1000:null},previewsLoaded,latestScreenshots:preview.records,totalScreenshots:previewsLoaded?preview.totalCount:null};
   })};
   });
 }

@@ -1,9 +1,12 @@
+import { actorFromToken } from '../../../shared/offlineQueue.mjs';
+import { registerResettable } from './resetRegistry';
 import { create } from 'zustand';
 import { devtools, subscribeWithSelector } from 'zustand/middleware';
 import attachmentService from '../services/attachmentService';
 import useWorkflowStore from './workflowStore';
 
 // Helper to generate composite key for entity-based state management
+let deviceUploadTail = Promise.resolve();
 const getEntityKey = (entityType, entityId) => `${entityType}:${entityId}`;
 
 const useAttachmentStore = create(
@@ -198,7 +201,12 @@ const useAttachmentStore = create(
       uploadFile: async (file, entityType, entityId, options = {}) => {
         const entityKey = getEntityKey(entityType, entityId);
         // Use existing ID if retrying, otherwise generate new
-        const uploadId = options.existingUploadId || `${Date.now()}-${file.name}`;
+        const uploadId = options.existingUploadId || Array.from(crypto.getRandomValues(new Uint8Array(12)), byte => byte.toString(16).padStart(2, '0')).join('');
+        const prior = get().uploadProgress[uploadId];
+        if (prior && prior.status !== 'error') return;
+        if (prior?.preview) URL.revokeObjectURL(prior.preview);
+        const scope = { workspace: localStorage.getItem('workspaceId'), user: actorFromToken(localStorage.getItem('token') || '') };
+        const isCurrent = () => scope.workspace === localStorage.getItem('workspaceId') && scope.user === actorFromToken(localStorage.getItem('token') || '');
         
         // Create preview URL for immediate display
         let preview = null;
@@ -210,8 +218,8 @@ const useAttachmentStore = create(
           uploadProgress: {
             ...s.uploadProgress,
             [uploadId]: { 
-              progress: 0, 
-              status: 'uploading', 
+              progress: 0,
+              status: 'queued',
               fileName: file.name,
               fileType: file.type.startsWith('image/') ? 'image' : 'file',
               preview,
@@ -219,6 +227,7 @@ const useAttachmentStore = create(
               entityType,
               entityId,
               entityKey,
+              scope,
               contextType: options.contextType,
               contextRef: options.contextRef,
               file // Store file object for retry capability
@@ -227,21 +236,22 @@ const useAttachmentStore = create(
         }));
 
         try {
-          const attachment = await attachmentService.uploadFile(file, entityId, {
+          const upload = deviceUploadTail.then(() => {
+            if (!isCurrent()) throw new Error('Workspace or account changed.');
+            if (get().uploadProgress[uploadId]) get().setUploadProgress(uploadId, { ...get().uploadProgress[uploadId], status: 'uploading' });
+            return attachmentService.uploadFile(file, entityId, {
             ...options,
+            existingUploadId: uploadId,
             entityType,
-            onProgress: (progress) => {
-              set((s) => ({
-                uploadProgress: {
-                  ...s.uploadProgress,
-                  [uploadId]: { 
-                    ...s.uploadProgress[uploadId],
-                    progress 
-                  }
-                }
-              }));
+            onProgress: progress => {
+              const current = get().uploadProgress[uploadId];
+              if (current && isCurrent()) get().setUploadProgress(uploadId, { ...current, progress });
             }
+            });
           });
+          deviceUploadTail = upload.catch(() => {});
+          const attachment = await upload;
+          if (!isCurrent()) return attachment;
 
           set((s) => {
             const current = s.attachments[entityKey] || [];
@@ -286,21 +296,15 @@ const useAttachmentStore = create(
 
           return attachment;
         } catch (error) {
-          set((s) => ({
-            uploadProgress: {
-              ...s.uploadProgress,
-              [uploadId]: { 
-                ...s.uploadProgress[uploadId],
-                status: 'error', 
-                error: error.message 
-              }
-            }
-          }));
+          if (isCurrent() && get().uploadProgress[uploadId]) get().setUploadProgress(uploadId, {
+            ...get().uploadProgress[uploadId], status: 'error', error: error.message
+          });
           throw error;
         }
       },
 
       uploadMultiple: async (files, entityType, entityId, options = {}) => {
+        if (files.length > 10) throw new Error('Maximum 10 files allowed at once');
         // Handle each file individually to show individual progress bars
         files.forEach(file => {
           get().uploadFile(file, entityType, entityId, options).catch(err => {
@@ -315,21 +319,9 @@ const useAttachmentStore = create(
       retryUpload: (uploadId) => {
         const state = get();
         const item = state.uploadProgress[uploadId];
-        if (!item || !item.file) return;
+        if (!item || !item.file || item.status !== 'error' || item.scope?.workspace !== localStorage.getItem('workspaceId') ||
+            item.scope?.user !== actorFromToken(localStorage.getItem('token') || '')) return;
 
-        // Reset status to uploading immediately
-        set((s) => ({
-          uploadProgress: {
-            ...s.uploadProgress,
-            [uploadId]: { 
-              ...item, 
-              status: 'uploading', 
-              error: null, 
-              progress: 0 
-            }
-          }
-        }));
-        
         // Retrigger upload with existing ID
         get().uploadFile(item.file, item.entityType, item.entityId, {
             contextType: item.contextType,
@@ -519,16 +511,9 @@ const useAttachmentStore = create(
 
           return attachment;
         } catch (error) {
-          set((s) => ({
-            uploadProgress: {
-              ...s.uploadProgress,
-              [uploadId]: { 
-                ...s.uploadProgress[uploadId],
-                status: 'error', 
-                error: error.message 
-              }
-            }
-          }));
+          if (get().uploadProgress[uploadId]) get().setUploadProgress(uploadId, {
+            ...get().uploadProgress[uploadId], status: 'error', error: error.message
+          });
           throw error;
         }
       },
@@ -692,7 +677,7 @@ const useAttachmentStore = create(
         // Also clear any upload progress for this entity
         const newUploadProgress = { ...state.uploadProgress };
         Object.keys(newUploadProgress).forEach(uploadId => {
-          if (newUploadProgress[uploadId]?.entityKey === entityKey) {
+          if (newUploadProgress[uploadId]?.entityKey === entityKey && !newUploadProgress[uploadId].file) {
             // Revoke object URL if exists
             if (newUploadProgress[uploadId]?.preview) {
               URL.revokeObjectURL(newUploadProgress[uploadId].preview);
@@ -743,6 +728,13 @@ const useAttachmentStore = create(
 
 // Export the helper function separately to avoid re-render issues
 export { getEntityKey };
+
+registerResettable(() => {
+  for (const item of Object.values(useAttachmentStore.getState().uploadProgress)) {
+    if (item.preview) URL.revokeObjectURL(item.preview);
+  }
+  useAttachmentStore.setState({ attachments: {}, loading: {}, error: {}, pagination: {}, uploadProgress: {}, selectedAttachments: [] });
+});
 
 export default useAttachmentStore;
 

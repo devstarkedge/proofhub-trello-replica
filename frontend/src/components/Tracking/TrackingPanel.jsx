@@ -49,18 +49,16 @@ const TrackingClock = memo(function TrackingClock({ state, kind }) {
   const workDelta = state.scheduledWorkBreak
     ? Math.min(delta, Math.max(0, (+new Date(state.scheduledWorkBreak.startsAt) - +new Date(state.serverNow)) / 1000))
     : delta;
+  const serverAt = +new Date(state.serverNow);
+  const breakStart = +new Date(state.scheduledWorkBreak?.startsAt);
+  const breakEnd = +new Date(state.scheduledWorkBreak?.endsAt);
+  const breakDelta = state.scheduledWorkBreak
+    ? Math.max(0, Math.min(serverAt + delta * 1000, breakEnd) - Math.max(serverAt, breakStart)) / 1000
+    : 0;
   const value =
     kind === 'office'
       ? state.attendance
-        ? Math.max(
-            0,
-            (Math.min(
-              +new Date(state.serverNow) + delta * 1000,
-              state.attendance.cutoffAt ? +new Date(state.attendance.cutoffAt) : Infinity
-            ) -
-              +new Date(state.attendance.checkInAt)) /
-              1000
-          )
+        ? Math.max(0, (state.attendance.officeElapsedMs ?? (serverAt - +new Date(state.attendance.checkInAt))) / 1000 + delta - breakDelta)
         : 0
       : kind === 'assigned'
       ? (session?.totals.assignedSeconds || 0) +

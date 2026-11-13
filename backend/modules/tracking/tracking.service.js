@@ -17,7 +17,7 @@ import { TrackingPolicy, WorkSession, TrackingDevice, TrackingCaptureLease, Task
 import { assertTimeline, closeTimeline, linkAssignment, endAssignment, summarize } from './tracking.timeline.js';
 import { trackingVisibility, departmentsOf, historicalDepartmentScope,trackingRole } from './tracking.visibility.js';
 import {enqueueAttendanceEvent} from '../attendance/attendanceEvents.service.js';
-import { readWorkBreak, firstWorkBreak, workBreakState, pauseForWorkBreak, refreshWorkBreakPause, SCHEDULED_WORK_BREAK } from '../attendance/attendanceWorkBreak.js';
+import { readWorkBreak, workBreakWindowsInRange, officeTimeMilliseconds, firstWorkBreak, workBreakState, pauseForWorkBreak, refreshWorkBreakPause, SCHEDULED_WORK_BREAK } from '../attendance/attendanceWorkBreak.js';
 
 export function fail(message, statusCode = 400, code = 'TRACKING_INVALID') {
   const error = new Error(message); Object.assign(error, { statusCode, code }); throw error;
@@ -306,16 +306,20 @@ export async function currentState(workspaceId, userId) {
   ]);
   let session = await WorkSession.findOne({ workspaceId, user: userId, ...(attendance ? { attendanceSession: attendance._id } : {}) }).sort({ startedAt: -1 }).lean();
   const ctx = await contextFor(workspaceId,userId,{includeProjects:Boolean(session?.segments?.some(s=>s.project||s.attributedProject))});
-  const workBreak = await readWorkBreak(workspaceId, session && session.status !== 'CLOSED' ? session.startedAt : new Date());
+  const workBreak = await readWorkBreak(workspaceId, attendance?.checkInAt || (session && session.status !== 'CLOSED' ? session.startedAt : new Date()));
   if (session) session = await reconcileSession(session._id,{session,policy,workBreak,attendance:attendance||undefined,ownerContext:ctx});
   const serverNow = new Date();
   const scheduledWorkBreak = workBreakState(workBreak, serverNow);
+  const cutoff = legacyHardCutoff(attendance);
+  const officeEnd = cutoff && +cutoff < +serverNow ? cutoff : serverNow;
+  const officeElapsedMs = attendance ? officeTimeMilliseconds(attendance.checkInAt, officeEnd,
+    workBreakWindowsInRange(workBreak, attendance.checkInAt, officeEnd)) : 0;
   const through = session?.status === 'RUNNING' && scheduledWorkBreak && +scheduledWorkBreak.startsAt <= +serverNow
     ? scheduledWorkBreak.startsAt : serverNow;
   const {versions:_,...publicPolicy}=policy;
   return { workspaceId, userId:String(userId), serverNow, policy:publicPolicy, scheduledWorkBreak, canTrack: policy.enabled && can(ctx, 'tracking.log', { workspaceId, user: userId }),
     canManagePolicy: await trackingRole(member,workspaceId)==='admin'&&can(ctx,'tracking.manage_policy',{workspaceId}), canViewReports: can(ctx, 'tracking.view_reports'),
-    attendance: attendance ? { _id: attendance._id, checkInAt: attendance.checkInAt, cutoffAt: legacyHardCutoff(attendance) } : null,
+    attendance: attendance ? { _id: attendance._id, checkInAt: attendance.checkInAt, cutoffAt: legacyHardCutoff(attendance), officeElapsedMs } : null,
     session: publicWorkSession(session, through),
     devices: devices.map(d => ({ ...d, connected: Date.now() - +new Date(d.lastSeenAt || 0) < 45000 })) };
 }

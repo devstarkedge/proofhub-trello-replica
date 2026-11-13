@@ -544,7 +544,7 @@ export default function WorkSelectionDialog({
                           value={taskId}
                           onChange={(e) => setTaskId(e.target.value)}
                         >
-                          <option value="">
+                          <option value="" disabled hidden>
                             {tasksLoading ? 'Loading assigned tasks…' : projectId ? 'Choose assigned task' : 'Select a project first'}
                           </option>
                           {options.tasks

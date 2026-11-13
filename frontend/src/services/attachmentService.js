@@ -1,3 +1,4 @@
+import api from './api';
 import { sessionFetch as fetch } from './sessionFetch';
 // Attachment service for Cloudinary-based file management
 const baseURL = import.meta.env.VITE_BACKEND_URL;
@@ -79,22 +80,14 @@ class AttachmentService {
     if (setCover && entityType === 'card') formData.append('setCover', 'true');
 
     try {
-      const response = await fetch(`${baseURL}/api/attachments/upload`, {
-        method: 'POST',
-        headers: this.getHeaders(false),
-        body: formData
+      if (options.existingUploadId) formData.append('operationId', options.existingUploadId);
+      const result = await api.post('/api/attachments/upload', formData, {
+        headers: { 'Content-Type': undefined }, skipOfflineQueue: true, timeout: 120000,
+        onUploadProgress: event => { if (event.total) onProgress?.(Math.min(99, event.loaded * 100 / event.total)); }
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Upload failed');
-      }
-
-      const result = await response.json();
-      return result.data;
+      return result.data.data;
     } catch (error) {
-      console.error('Upload error:', error);
-      throw error;
+      throw new Error(error.response?.data?.message || error.message || 'Upload failed', { cause: error });
     }
   }
 
@@ -405,6 +398,16 @@ class AttachmentService {
       console.error('Get attachments by context error:', error);
       throw error;
     }
+  }
+
+  mediaLinkNeedsRefresh(attachment) {
+    const value = attachment.secureUrl || attachment.url || '';
+    if (!value.includes('/api/attachments/')) return false;
+    try {
+      const token = new URL(value, window.location.origin).searchParams.get('grant');
+      const payload = token?.split('.')[1]?.replace(/-/g, '+').replace(/_/g, '/');
+      return !payload || JSON.parse(atob(payload)).exp * 1000 < Date.now() + 60000;
+    } catch { return true; }
   }
 
   // Get single attachment

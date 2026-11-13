@@ -12,12 +12,7 @@ import useLeaveQuery from '../../hooks/useLeaveQuery';
 import LeaveRequestDetails from './LeaveRequestDetails';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const DAY_TYPE_LABELS = {
-  FULL_DAY: 'Full Day Leave',
-  HALF_DAY_FIRST_HALF: 'Half Day (AM)',
-  HALF_DAY_SECOND_HALF: 'Half Day (PM)',
-  SHORT_LEAVE: 'Short Leave'
-};
+const weekdayFormat = new Intl.DateTimeFormat(undefined, { weekday: 'long' });
 const EVENT_STYLES = {
   leave: { color: 'var(--color-success-text)', backgroundColor: 'var(--color-success-subtle)' },
   pending: { color: 'var(--color-warning-text)', backgroundColor: 'var(--color-warning-subtle)' },
@@ -90,7 +85,7 @@ function buildEventsForDate({ status, holidays, date, leaveEvents = [] }) {
     details: [
       { label: 'Employee', value: day.request.requester?.name || 'Employee' },
       { label: 'Leave Type', value: day.request.leaveType?.name || 'Leave' },
-      { label: 'Day', value: DAY_TYPE_LABELS[day.dayType] || day.dayType },
+      { label: 'Day', value: weekdayFormat.format(date) },
       { label: 'Status', value: day.pending ? 'Pending' : day.request.status === 'CANCELLATION_REQUESTED' ? 'Approved — cancellation requested' : 'Approved' },
       ...(day.dayType === 'SHORT_LEAVE' ? [{ label: 'Time', value: day.shortLeaveStartTime + '–' + day.shortLeaveEndTime }, { label: 'Duration', value: formatHours(day.shortLeaveDurationMinutes) }] : [])
     ]

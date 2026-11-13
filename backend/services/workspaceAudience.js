@@ -10,7 +10,7 @@ export async function workspacePerson(userId, workspaceId = getActiveWorkspaceId
   const membership = await WorkspaceMembership.findOne({ user: userId, workspace: workspaceId, status: 'active' }).lean();
   if (!membership) return null;
   const user = await User.findOne({ _id: userId, isActive: true }).select('_id name email').lean();
-  return user ? { ...user, workspaceId, role: membership.role, roleId: membership.roleId, department: membership.department || [], team: membership.team, accessType: membership.accessType, allowedProjects: membership.allowedProjects || [] } : null;
+  return user ? { ...user, workspaceId, role: membership.role, roleId: membership.roleId, department: membership.departments ?? membership.department ?? [], team: membership.team, accessType: membership.accessType, allowedProjects: membership.allowedProjects || [] } : null;
 }
 
 export async function workspaceMemberIds(filter = {}, workspaceId = getActiveWorkspaceId()) {
@@ -30,62 +30,23 @@ export async function workspacePeople(filter = {}, workspaceId = getActiveWorksp
   const userIds = memberships.map(m => m.user);
 
   const [users, departments] = await Promise.all([
-    User.find({ _id: { $in: userIds }, isActive: true }).select('_id name email avatar title isVerified department').lean(),
-    workspaceContext.runUnscoped(async () => Department.find({ workspaceId, isActive: true }).select('_id name members managers').lean())
+    User.find({ _id: { $in: userIds }, isActive: true }).select('_id name email avatar title isVerified').lean(),
+    workspaceContext.runUnscoped(async () => Department.find({ workspaceId, isActive: true }).select('_id name').lean())
   ]);
 
   const deptMap = new Map((departments || []).map(d => [String(d._id), { _id: d._id, name: d.name }]));
-  const memberDeptMap = new Map();
-  for (const dept of (departments || [])) {
-    const formatted = { _id: dept._id, name: dept.name };
-    for (const memId of (dept.members || [])) {
-      const k = String(memId);
-      if (!memberDeptMap.has(k)) memberDeptMap.set(k, []);
-      memberDeptMap.get(k).push(formatted);
-    }
-    for (const mgrId of (dept.managers || [])) {
-      const k = String(mgrId);
-      if (!memberDeptMap.has(k)) memberDeptMap.set(k, []);
-      if (!memberDeptMap.get(k).some(d => String(d._id) === String(dept._id))) {
-        memberDeptMap.get(k).push(formatted);
-      }
-    }
-  }
-
   return users.map(user => {
     const m = byUser.get(String(user._id));
     const resolvedDepts = [];
     const seenDeptIds = new Set();
 
-    const rawMembershipDepts = (m?.department && m.department.length > 0)
-      ? m.department
-      : (m?.departments && m.departments.length > 0 ? m.departments : []);
+    const rawMembershipDepts = m?.departments ?? m?.department ?? [];
 
     for (const d of rawMembershipDepts) {
       const dId = String(d?._id || d);
       if (deptMap.has(dId) && !seenDeptIds.has(dId)) {
         seenDeptIds.add(dId);
         resolvedDepts.push(deptMap.get(dId));
-      }
-    }
-
-    const rosterDepts = memberDeptMap.get(String(user._id)) || [];
-    for (const d of rosterDepts) {
-      const dId = String(d._id);
-      if (!seenDeptIds.has(dId)) {
-        seenDeptIds.add(dId);
-        resolvedDepts.push(d);
-      }
-    }
-
-    if (resolvedDepts.length === 0 && user.department) {
-      const legacyDepts = Array.isArray(user.department) ? user.department : [user.department];
-      for (const d of legacyDepts) {
-        const dId = String(d?._id || d);
-        if (deptMap.has(dId) && !seenDeptIds.has(dId)) {
-          seenDeptIds.add(dId);
-          resolvedDepts.push(deptMap.get(dId));
-        }
       }
     }
 

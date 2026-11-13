@@ -50,7 +50,7 @@ async function workspaceUserProfile(userId, workspaceId, self = false) {
   if (!membership) throw new ErrorResponse('Member not found', 404);
   const user = await User.findById(userId).select(self ? 'name email avatar title isVerified isActive settings forcePasswordChange isSuperAdmin createdAt' : 'name email avatar title isVerified').lean();
   if (!user) throw new ErrorResponse('Member not found', 404);
-  return { ...user, workspaceId, role: membership.role, roleId: membership.roleId, department: membership.department || [],
+  return { ...user, workspaceId, role: membership.role, roleId: membership.roleId, department: membership.departments ?? membership.department ?? [],
     ...(membership.departments !== undefined && { reportingDepartments: membership.departments }),
     attendanceReportingDepartmentId: membership.attendanceReportingDepartmentId ?? null,
     team: membership.team || null, accessType: membership.accessType, allowedProjects: membership.allowedProjects || [] };

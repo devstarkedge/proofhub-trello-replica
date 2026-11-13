@@ -23,7 +23,7 @@ export function mediaResponse(req, res, next) {
   req.body = stripMediaGrants(req.body);
   const original = res.json.bind(res);
   res.json = body => {
-    const origin = (process.env.API_PUBLIC_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+    const origin = (process.env.API_PUBLIC_URL || `${config.isProd ? 'https' : req.protocol}://${req.get('host')}`).replace(/\/$/, '');
     return original(signMediaPayload(body, req.user, req.workspaceId, origin));
   };
   next();

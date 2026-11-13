@@ -24,7 +24,7 @@ import { attendanceIntervals, intervalMinutes, subtractIntervals, scheduleForDay
  */
 export function resolveAttendanceStatus({
   eligibility, timezone, calendar, leave, workModeResolution, policyVersion, shift = null, officeHours = null,
-  sessions = [], serverNow = new Date(), isDayOver = false, workDateKey = null
+  sessions = [], serverNow = new Date(), isDayOver = false, workDateKey = null, breakWindows = []
 }) {
   if (!eligibility?.attendanceRequired) {
     throw new Error('resolveAttendanceStatus must never be called for a member who is not attendance-required — callers must short-circuit on eligibility first.');
@@ -79,8 +79,9 @@ export function resolveAttendanceStatus({
   const closedCheckOuts = closedSessions.map((s) => s.checkOutAt).filter(Boolean);
   const lastCheckOutAt = closedCheckOuts.length ? new Date(Math.max(...closedCheckOuts.map((d) => new Date(d).getTime()))) : null;
 
-  const attended = attendanceIntervals(sessions.filter(s=>!(isDayOver&&s.status==='ACTIVE')),serverNow);
-  const workedMinutes = intervalMinutes(attended);
+  const eligibleSessions = sessions.filter(s => !(isDayOver && s.status === 'ACTIVE'));
+  const attended = attendanceIntervals(eligibleSessions, serverNow);
+  const workedMinutes = intervalMinutes(subtractIntervals(attended, breakWindows.map(window => [+window.startsAt, +window.endsAt])));
   const dayKey = workDateKey || (firstCheckInAt && DateTime.fromJSDate(firstCheckInAt).setZone(timezone).toISODate());
   const schedule = scheduleForDay({workDateKey:dayKey,timezone,officeHours,shift});
   const coverage = resolveLeaveCoverage(leave,schedule);

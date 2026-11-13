@@ -58,6 +58,7 @@ export async function dashboard(workspaceId,userId,query){
   const schedule = await readWorkBreak(workspaceId, new Date(Math.min(+dates.start, +recentStart)));
   const workBreakWindows = workBreakWindowsInRange(schedule, recentStart, now);
   const pauseBreakWindows = workBreakWindowsInRange(schedule, dates.start, new Date(Math.min(+now, +dates.end)));
+  const officeBreakWindows = +dates.end >= +now ? pauseBreakWindows : workBreakWindowsInRange(schedule, dates.start, now);
   const options={workspaceId,ctx,scope,bounds,query,dates,now,policy,filtered,workBreakWindows,pauseBreakWindows};
   let matchingGroups=null;
   if(filtered||query.status){
@@ -90,7 +91,7 @@ export async function dashboard(workspaceId,userId,query){
     };
   }
   const computeTotals=async()=>{
-    const [groups,office]=await Promise.all([matchingGroups||readDashboardGroups({...options,owners:allOwners}),readOfficeGroups(workspaceId,allOwners,dates,now)]);
+    const [groups,office]=await Promise.all([matchingGroups||readDashboardGroups({...options,owners:allOwners}),readOfficeGroups(workspaceId,allOwners,dates,now,officeBreakWindows)]);
     const allowed=new Set(allOwners.map(id)),visible=groups.filter(group=>allowed.has(id(group)));
     return {workSeconds:visible.reduce((n,g)=>n+g.workSeconds,0),personalPauseSeconds:visible.reduce((n,g)=>n+g.personalPauseSeconds,0),officeSeconds:office.reduce((n,g)=>n+g.officeSeconds,0),activeUsers:visible.filter(g=>trackingStatus(g)==='RUNNING').length,checkedInUsers:office.filter(g=>g.checkedIn).length,totalUsers:total,viewerRole:scope.viewerRole,canViewPauseBreakdown};
   };
@@ -104,7 +105,7 @@ export async function dashboard(workspaceId,userId,query){
   });
   if(evidenceOnly){const evidenceMap=await evidenceRead;return {...metadata,users:selected.map(m=>({userId:m.user,evidence:evidenceMap.get(id(m.user))||summarizeEvidence([])})),nextCursor:members.length>limit?id(selected.at(-1)):null,totals:null};}
   const [office,devices,users,departmentDocs,evidenceMap]=await Promise.all([
-    readOfficeGroups(workspaceId,owners,dates,now),
+    readOfficeGroups(workspaceId,owners,dates,now,officeBreakWindows),
     TrackingDevice.find({workspaceId,user:{$in:owners},revokedAt:null}).select('user state lastSeenAt activeSession screenshotIssue lastUploadError').lean(),
     User.find({_id:{$in:owners}}).select('name avatar').lean(),
     Department.find({workspaceId,_id:{$in:selected.flatMap(departmentsOf)}}).select('name').lean(),evidenceRead

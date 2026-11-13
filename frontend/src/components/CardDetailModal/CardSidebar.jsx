@@ -102,7 +102,7 @@ const CardSidebar = ({
                         }
                       }
                       const member = teamMembers.find(m => String(m._id) === String(assigneeId));
-                      if (member && member !== assignee) {
+                      if (member && member !== assignee && rawDept == null) {
                         const mRawDept = member.department || member.departments;
                         const mDepts = Array.isArray(mRawDept) ? mRawDept : (mRawDept ? [mRawDept] : []);
                         for (const d of mDepts) {
@@ -113,14 +113,7 @@ const CardSidebar = ({
                           }
                         }
                       }
-                      if (departments && departments.length > 0) {
-                        const match = departments.find(dept =>
-                          dept.members?.some(m => String(m._id || m) === String(assigneeId)) ||
-                          dept.managers?.some(m => String(m._id || m) === String(assigneeId))
-                        );
-                        if (match?.name) return match.name;
-                      }
-                      return 'Unassigned';
+                      return 'No department';
                     };
                     const departmentName = resolveAssigneeDepartment();
                     const safeKey = String(assigneeId || `assignee-${idx}`).trim() || `assignee-${idx}`;

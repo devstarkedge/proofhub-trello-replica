@@ -318,6 +318,9 @@ class SocketService {
     });
 
     // Department assignment events
+    this.socket.on('member-departments-updated', data => {
+      window.dispatchEvent(new CustomEvent('socket-member-departments-updated', { detail: data }));
+    });
     this.socket.on('user-assigned', (data) => {
       if (import.meta.env.DEV) console.log('User assigned to department:', data);
       window.dispatchEvent(new CustomEvent('socket-user-assigned', { detail: data }));

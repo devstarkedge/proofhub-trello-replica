@@ -4,6 +4,7 @@ import { emitChanged, finalizeAttendanceWork } from '../tracking/tracking.servic
 import { DateTime } from 'luxon';
 import AttendanceSession from './attendanceSession.model.js';
 import AttendanceDay from './attendanceDay.model.js';
+import { attendanceIntervals, intervalMinutes } from './attendanceIntervals.js';
 import { attendanceClosureCandidate } from './attendanceActivity.service.js';
 import { enqueueAttendanceEvent, processAttendanceEvents } from './attendanceEvents.service.js';
 import { enqueueAttendanceReport, requestPriorityAttendanceReportDelivery } from '../../services/chat/attendanceReporting.service.js';
@@ -12,7 +13,7 @@ import AttendanceShift from './attendanceShift.model.js';
 import Workspace from '../../models/Workspace.js';
 import WorkspaceMembership from '../../models/WorkspaceMembership.js';
 import { resolveEffectiveOfficeHours } from './attendanceOfficeHoursOverride.service.js';
-import { recomputeAttendanceDayForDate, settleCheckoutWork } from './attendance.service.js';
+import { attendanceBreakWindows, recomputeAttendanceDayForDate, settleCheckoutWork } from './attendance.service.js';
 import { getWorkspaceTimezone, dateOnlyToInstant } from '../leave/leaveTimezone.util.js';
 import * as attendanceHooks from './attendanceHooks.js';
 import * as workspaceContext from '../workspaces/workspaceContext.js';
@@ -193,7 +194,8 @@ export async function reconcileOverdueSession({ session, workspace = null, now =
         let work;
         if (auto) {
           updated.checkoutSummary = {
-            attendanceSeconds: Math.max(0, (+closure.at - +current.checkInAt) / 1000),
+            attendanceSeconds: intervalMinutes(attendanceIntervals([updated], closure.at,
+              await attendanceBreakWindows(workspaceId, [updated], closure.at, dbSession))) * 60,
             outcome: { presenceState: day?.presenceState, leaveState: day?.leaveState }
           };
           const settlement = await settleCheckoutWork(updated, timezone, dbSession, { allowUnmarked: true });

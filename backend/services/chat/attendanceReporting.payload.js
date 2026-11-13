@@ -61,7 +61,7 @@ export function transitionSnapshot({ action, attendance, work, before, at, day, 
         checkoutReason: attendance.closureReason, lastActivityAt: attendance.lastActivityAt,
       } : {}),
       summary: dailyWorkSummary(sessions || [], attendanceRows || [attendance], at),
-      attendanceSeconds: attendance.checkoutSummary?.attendanceSeconds ?? (day?.workedMinutes || 0) * 60,
+      attendanceSeconds: attendance.checkoutSummary?.attendanceSeconds ?? (day?.workedMinutes == null ? null : day.workedMinutes * 60),
       outcome: attendance.checkoutSummary?.outcome || { presenceState: day?.presenceState, leaveState: day?.leaveState },
       // Pending screenshots cannot change authoritative work time. They are
       // informational only and are never counted as work.

@@ -29,7 +29,15 @@ router.use(protect);
 
 // Upload routes
 router.post('/upload', uploadRateLimit, uploadBudget, uploadMiddleware.single('file'), uploadAttachment);
-router.post('/upload-multiple', uploadRateLimit, uploadBudget, uploadMiddleware.array('files', 10), uploadMultipleAttachments);
+const batchUpload = uploadMiddleware.array('files', 10);
+router.post('/upload-multiple', uploadRateLimit, uploadBudget, (req, res, next) => {
+  batchUpload(req, res, error => {
+    if (['LIMIT_FILE_COUNT', 'LIMIT_UNEXPECTED_FILE'].includes(error?.code)) {
+      return res.status(400).json({ success: false, message: 'Maximum 10 files allowed at once' });
+    }
+    next(error);
+  });
+}, uploadMultipleAttachments);
 router.post('/paste', uploadRateLimit, uploadBudget, uploadFromPaste);
 router.post('/upload-from-drive', uploadRateLimit, uploadBudget, uploadFromGoogleDrive);
 

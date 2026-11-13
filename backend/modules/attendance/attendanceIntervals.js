@@ -1,5 +1,6 @@
 import { DateTime } from 'luxon';
 import { shortLeaveWindowMinutes } from '../leave/leaveRequest.validation.js';
+import { officeDurationExpression } from './attendanceWorkBreak.js';
 import { confirmedCheckoutStatuses, legacyHardCutoff } from './attendanceActivity.service.js';
 
 // Half-open UTC intervals. These helpers never persist or infer attendance status.
@@ -19,22 +20,23 @@ export function subtractIntervals(intervals, exclusions) {
 }
 export const intervalMinutes = intervals => unionIntervals(intervals).reduce((sum,[a,b]) => sum+(b-a)/60000,0);
 
-export function attendanceIntervals(sessions, at) {
-  return unionIntervals(sessions.flatMap(s => {
+export function attendanceIntervals(sessions, at, breakWindows = []) {
+  const intervals = sessions.flatMap(s => {
     const cutoff = legacyHardCutoff(s);
     const end = confirmedCheckoutStatuses.includes(s.status) ? +new Date(s.checkOutAt) : s.status === 'ACTIVE' ? Math.min(+at, cutoff ? +new Date(cutoff) : Infinity) : NaN;
     return s.checkInAt && end ? [[+new Date(s.checkInAt),Math.min(end,+at)]] : [];
-  }));
+  });
+  return subtractIntervals(intervals, breakWindows.map(window => [+window.startsAt, +window.endsAt]));
 }
 
 /** Mongo projection of unionIntervals for already normalized, start-sorted
  * attendance intervals. Reporting uses this for running-session elapsed time;
  * it does not change stored duration or classify attendance. */
-export function attendanceIntervalMillisecondsExpression(input) {
+export function attendanceIntervalMillisecondsExpression(input, windows = []) {
   return { $let: { vars: { union: { $reduce: {
     input, initialValue: { end: new Date(0), milliseconds: 0 },
     in: { $cond: [{ $and: [{ $ne: ['$$this._intervalEnd', null] }, { $gt: ['$$this._intervalEnd', '$$this._intervalStart'] }] },
-      { end: { $max: ['$$value.end', '$$this._intervalEnd'] }, milliseconds: { $add: ['$$value.milliseconds', { $max: [0, { $subtract: ['$$this._intervalEnd', { $max: ['$$value.end', '$$this._intervalStart'] }] }] }] } }, '$$value'] }
+      { end: { $max: ['$$value.end', '$$this._intervalEnd'] }, milliseconds: { $add: ['$$value.milliseconds', officeDurationExpression({ $max: ['$$value.end', '$$this._intervalStart'] }, '$$this._intervalEnd', windows)] } }, '$$value'] }
   } } }, in: '$$union.milliseconds' } };
 }
 

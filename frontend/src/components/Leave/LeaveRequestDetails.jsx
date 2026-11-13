@@ -136,6 +136,7 @@ export default function LeaveRequestDetails({ requestId, onClose }) {
   const [confirmation, setConfirmation] = useState(null);
   const [comment, setComment] = useState('');
   const [copiedLink, setCopiedLink] = useState(false);
+  const [manualShareLink, setManualShareLink] = useState('');
 
   const panel = useRef(null);
 
@@ -153,13 +154,16 @@ export default function LeaveRequestDetails({ requestId, onClose }) {
   }, []);
 
   const handleCopyLink = async () => {
+    if (!detail?.shareUrl) return;
+    const url = new URL(detail.shareUrl);
     try {
-      await navigator.clipboard.writeText(`${window.location.origin}/leave?request=${requestId}`);
+      await navigator.clipboard.writeText(url.href);
+      setManualShareLink('');
       setCopiedLink(true);
       toast.success('Request link copied');
       setTimeout(() => setCopiedLink(false), 2000);
     } catch {
-      setError('Unable to copy link.');
+      setManualShareLink(url.href);
     }
   };
 
@@ -308,6 +312,7 @@ export default function LeaveRequestDetails({ requestId, onClose }) {
             <button
               type="button"
               onClick={handleCopyLink}
+              disabled={!detail?.shareUrl}
               className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-semibold hover:bg-[var(--color-bg-subtle)] transition-all cursor-pointer shadow-2xs active:scale-95"
               style={{ borderColor: 'var(--color-border-default)', color: 'var(--color-text-secondary)' }}
               title="Copy request link"
@@ -334,6 +339,10 @@ export default function LeaveRequestDetails({ requestId, onClose }) {
               <span>Saving your leave update. You can continue working.</span>
             </div>
           )}
+          {manualShareLink && <label className="block text-sm">
+            Copy this request link manually
+            <input className="mt-1 w-full rounded border p-2" readOnly value={manualShareLink} onFocus={event => event.target.select()} />
+          </label>}
           {error && (
             <div
               role="alert"

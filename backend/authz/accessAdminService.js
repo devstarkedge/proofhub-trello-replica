@@ -7,19 +7,23 @@ import Team from '../models/Team.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { invalidateAuthCache } from '../middleware/authMiddleware.js';
 import { recordAuditLog } from '../modules/permissions/auditLogService.js';
-import { emitToUser, getIO } from '../realtime/emitters.js';
+import { emitToUser, emitToWorkspace, getIO } from '../realtime/emitters.js';
 import { ROOM } from '../realtime/events.js';
 import { syncUserDepartmentRoster } from '../modules/workspaces/departmentRosterSync.js';
 import { activeReportingDepartments, assignedDepartmentIds } from '../modules/attendance/attendanceReportingDepartment.service.js';
 
 // Transitional single writer. V2 grants and ceiling validation are added below
 // as the catalog lands; legacy controllers already stop touching User mirrors.
-export async function updateMemberAccess({ workspaceId, userId, actor, patch, reason = 'Workspace member access updated', meta = {} }) {
+export async function updateMemberAccess({ workspaceId, userId, actor, patch, expectedDepartments, reason = 'Workspace member access updated', meta = {} }) {
   if (!workspaceId || !actor || String(actor._id || actor.id) === String(userId)) throw new ErrorResponse('You cannot modify your own access', 403);
   const workspace = await Workspace.findById(workspaceId).lean();
   const member = await WorkspaceMembership.findOne({ workspace: workspaceId, user: userId, status: { $ne: 'removed' } });
   if (!workspace || !member) throw new ErrorResponse('Member not found', 404);
   if (String(workspace.owner) === String(userId)) throw new ErrorResponse('Workspace owner access is locked', 403);
+  if (expectedDepartments !== undefined && (member.status !== 'active' ||
+      JSON.stringify(assignedDepartmentIds(member)) !== JSON.stringify(expectedDepartments.map(String)))) {
+    throw new ErrorResponse('Member assignments changed. Reload the profile and try again.', 409);
+  }
   const allowed = ['role', 'roleId', 'department', 'team', 'accessType', 'allowedProjects', 'status', 'attendanceReportingDepartmentId'];
   if (Object.keys(patch).some(key => !allowed.includes(key))) throw new ErrorResponse('Invalid access field', 400);
   if (member.role === 'admin' && (patch.status && patch.status !== 'active' || patch.role && patch.role !== 'admin')) {
@@ -82,6 +86,7 @@ export async function updateMemberAccess({ workspaceId, userId, actor, patch, re
   if (!Object.keys(accessPatch).length) return member;
   invalidateAuthCache(userId);
   try {
+    if (updatesDepartments) emitToWorkspace('member-departments-updated', { workspaceId, userId }, workspaceId);
     emitToUser(userId, 'authz:changed', { workspaceId, userId }, workspaceId);
     emitToUser(userId, 'user:access-updated', { workspaceId, userId }, workspaceId);
     emitToUser(userId, 'user-role-changed', { workspaceId, userId, previousRole: before.role, newRole: member.role, roleId: member.roleId }, workspaceId);

@@ -68,7 +68,8 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     throw new ErrorResponse('No file uploaded', 400);
   }
 
-  const { cardId, subtaskId, nanoSubtaskId, boardId: projectId, contextType = 'description', contextRef, commentId, setCover } = req.body;
+  const { cardId, subtaskId, nanoSubtaskId, boardId: projectId, contextType = 'description', contextRef, commentId, setCover, operationId } = req.body;
+  if (operationId && (typeof operationId !== 'string' || !/^[a-f\d]{24}$/i.test(operationId))) throw new ErrorResponse('Invalid upload operation', 400);
 
   // Validate exactly one parent reference is provided
   const parentCount = [cardId, subtaskId, nanoSubtaskId, projectId].filter(Boolean).length;
@@ -76,12 +77,12 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     throw new ErrorResponse('Exactly one parent reference (cardId, subtaskId, nanoSubtaskId, or boardId) is required', 400);
   }
 
-  let resolvedBoardId, parentType, parentRefId, folderPath, cardForCover;
+  let resolvedBoardId, parentType, parentRefId, folderPath, cardForCover, parentCard;
   
   if (cardId) {
-    const card = await Card.findById(cardId).select('board').lean();
-    if (!card) throw new ErrorResponse('Card not found', 404);
-    resolvedBoardId = card.board;
+    parentCard = await Card.findById(cardId).select('title board').lean();
+    if (!parentCard) throw new ErrorResponse('Card not found', 404);
+    resolvedBoardId = parentCard.board;
     parentType = 'card';
     parentRefId = cardId;
     folderPath = `flowtask/workspaces/${req.workspaceId}/cards/${cardId}/attachments`;
@@ -114,6 +115,10 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     folderPath = `flowtask/workspaces/${req.workspaceId}/projects/${projectId}/attachments`;
     cardForCover = null;
   }
+
+  const operation = operationId ? { _id: operationId, uploadedBy: req.user.id, [parentType]: parentRefId, isDeleted: false } : null;
+  const replay = operation && await Attachment.findOne(operation).populate('uploadedBy', 'name avatar');
+  if (replay) return res.json({ success: true, data: replay });
 
   const fileType = getFileTypeCategory(req.file.mimetype);
   const resourceType = getCloudinaryResourceType(req.file.mimetype);
@@ -159,6 +164,7 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
   try {
     cloudinaryResult = await uploadToCloudinary(req.file.path || req.file.buffer, {
       folder: folderPath,
+      ...(operation ? { public_id: `${req.user.id}-${operationId}`, use_filename: false, unique_filename: false } : {}),
       resourceType,
       context: {
         [parentType]: parentRefId,
@@ -236,7 +242,14 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     }
   }
 
-  const attachment = await Attachment.create(attachmentData);
+  let attachment;
+  try {
+    attachment = await Attachment.create({ ...attachmentData, ...(operation ? { _id: operationId } : {}) });
+  } catch (error) {
+    const committed = operation && error.code === 11000 && await Attachment.findOne(operation).populate('uploadedBy', 'name avatar');
+    if (committed) return res.json({ success: true, data: committed });
+    throw error;
+  }
   await attachment.populate('uploadedBy', 'name avatar');
 
   // If this attachment is set as cover (only for cards), update the card's coverImage field
@@ -244,6 +257,8 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
     await Card.findByIdAndUpdate(cardForCover, { coverImage: attachment._id });
   }
 
+  res.status(201).json({ success: true, data: attachment });
+  void (async () => {
   // Log activity
   const activityData = {
     type: 'attachment_added',
@@ -286,35 +301,12 @@ export const uploadAttachment = asyncHandler(async (req, res) => {
   }
 
   // Chat webhook for attachment added (card-level only)
-  if (parentType === 'card' && cardId && resolvedBoardId) {
-    try {
-      const parentCard = await Card.findById(cardId).select('title board').lean();
-      const boardDoc = await Board.findById(resolvedBoardId).select('name department').lean();
-
-      const cardPayload = parentCard ? { _id: parentCard._id, title: parentCard.title } : { _id: cardId };
-      const boardPayload = boardDoc || { _id: resolvedBoardId };
-
-      chatHooks.onAttachmentAdded(
-        { fileName: req.file.originalname, mimeType: req.file.mimetype, fileSize: req.file.size },
-        cardPayload,
-        boardPayload,
-        req.user
-      ).catch(console.error);
-    } catch (err) {
-      console.error('Failed to dispatch attachment webhook', err);
-      chatHooks.onAttachmentAdded(
-        { fileName: req.file.originalname, mimeType: req.file.mimetype, fileSize: req.file.size },
-        { _id: cardId },
-        { _id: resolvedBoardId },
-        req.user
-      ).catch(console.error);
-    }
+  if (parentCard && resolvedBoardId) {
+    const board = await Board.findById(resolvedBoardId).select('name department').lean();
+    await chatHooks.onAttachmentAdded(attachment, { ...parentCard, workspaceId: req.workspaceId }, board || { _id: resolvedBoardId }, req.user);
   }
 
-  res.status(201).json({
-    success: true,
-    data: attachment
-  });
+  })().catch(error => console.error('Attachment follow-up failed:', error.message));
 });
 
 // @desc    Upload multiple attachments to Cloudinary
@@ -334,7 +326,7 @@ export const uploadMultipleAttachments = asyncHandler(async (req, res) => {
     throw new ErrorResponse('Card not found', 404);
   }
 
-  const uploadPromises = req.files.map(async (file) => {
+  const uploadOne = async file => {
     const fileType = getFileTypeCategory(file.mimetype);
     const resourceType = getCloudinaryResourceType(file.mimetype);
 
@@ -390,9 +382,10 @@ export const uploadMultipleAttachments = asyncHandler(async (req, res) => {
     } catch (error) {
       return { success: false, error: error.message, originalName: file.originalname };
     }
-  });
+  };
 
-  const results = await Promise.all(uploadPromises);
+  const results = [];
+  for (const file of req.files) results.push(await uploadOne(file));
   
   // Filter successful uploads
   const successfulUploads = results.filter(r => r.success);

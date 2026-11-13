@@ -923,7 +923,7 @@ export const createCard = asyncHandler(async (req, res, next) => {
   }
 
   const populatedCard = await Card.findById(card._id)
-    .populate({ path: "assignees", select: "name email avatar department", populate: { path: "department", select: "name" } })
+    .populate('assignees', 'name email avatar')
     .populate("members", "name email avatar")
     .populate("createdBy", "name email avatar")
     .lean();
@@ -1045,7 +1045,7 @@ export const updateCard = asyncHandler(async (req, res, next) => {
     runValidators: true,
     expectedRevision: req.expectedRevision,
   })
-    .populate({ path: "assignees", select: "name email avatar department", populate: { path: "department", select: "name" } })
+    .populate('assignees', 'name email avatar')
     .populate("members", "name email avatar")
     .populate("createdBy", "name email avatar")
     .populate("coverImage", "url secureUrl thumbnailUrl fileName fileType")
