@@ -130,4 +130,4 @@ export default api;
 
 export const getAttendanceOperation=async id=>(await api.get(`/operations/${id}`)).data.data;
 
-export const getMyWorkTime = async (params = {}) => (await api.get('/me/work-time', { params })).data;
+export const getMyWorkTime = async (params = {}, { signal } = {}) => (await api.get('/me/work-time', { params, signal })).data;

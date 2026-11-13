@@ -107,6 +107,25 @@ const AttendanceQuickControl = () => {
   const sessionAction=useSessionAction();
   const isDesktop = window.flowtaskDesktop?.isDesktop === true;
   const {status,error:sessionError,reload:load,scope,workspaceId,expired,loading:sessionLoading}=useAttendanceSession();
+  const [completedWork, setCompletedWork] = useState(null);
+  const completedDate = status?.completed && status.attendanceApplicable ? status.workDateKey : null;
+  const completedWorkKey = JSON.stringify([scope, completedDate, status?.lastCheckOutAt]);
+
+  useEffect(() => {
+    if (!completedDate || !workspaceId) return;
+    const controller = new AbortController();
+    attendanceApi.getMyWorkTime({ startDate: completedDate, endDate: completedDate }, { signal: controller.signal })
+      .then(({ data }) => {
+        if (controller.signal.aborted) return;
+        const day = data?.days?.find(row => row.workDateKey === completedDate);
+        setCompletedWork({ key: completedWorkKey, seconds: day?.seconds ?? null });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setCompletedWork({ key: completedWorkKey, seconds: null });
+      });
+    return () => controller.abort();
+  }, [completedDate, completedWorkKey, workspaceId]);
+
   const [showWorkSelection, setShowWorkSelection] = useState(false);
   const [showCheckOut,setShowCheckOut] = useState(false);
   const checkoutInactive=useCallback(()=>{setShowCheckOut(false);window.dispatchEvent(new Event('socket-attendance-updated'));},[]);
@@ -225,13 +244,21 @@ const AttendanceQuickControl = () => {
   </label> : null;
   const hasAttendanceDetails = Boolean(
     status.activeSession?.checkInAt ||
-    (status.completed && typeof status.workedMinutes === 'number') ||
+    status.completed ||
     (!isDesktop && !status.completed && (status.activeSession || status.canCheckIn)) ||
     status.unresolvedMissedCheckout
   );
   const attendanceDetails = hasAttendanceDetails ? <div className="space-y-2 text-xs">
     {status.activeSession?.checkInAt && <AttendanceElapsed status={status}/>}
-    {status.completed && typeof status.workedMinutes === 'number' && <p>Worked {formatHours(status.workedMinutes)} today</p>}
+    {status.completed && (!completedDate || !workspaceId ? (
+      <p>Tracked work time unavailable</p>
+    ) : completedWork?.key !== completedWorkKey ? (
+      <p role="status">Loading work time…</p>
+    ) : completedWork.seconds == null ? (
+      <p>Tracked work time unavailable</p>
+    ) : (
+      <p>Worked {formatHours(completedWork.seconds / 60)} today</p>
+    ))}
     {!isDesktop && !status.completed && (status.activeSession || status.canCheckIn) && <p>Use the FlowTask desktop app to check in and check out.</p>}
     {status.unresolvedMissedCheckout && <p>Missed checkout on {status.unresolvedMissedCheckout.workDateKey} {status.unresolvedMissedCheckout.closureReason === 'MISSING_ACTIVITY_TELEMETRY' && ' · Activity data unavailable'} · Regularize in Attendance</p>}
   </div> : null;
