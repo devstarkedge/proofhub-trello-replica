@@ -9,6 +9,7 @@ import {
 import * as XLSX from 'xlsx';
 import DepartmentContext from '../context/DepartmentContext';
 import AuthContext from '../context/AuthContext';
+import WorkspaceContext from '../context/WorkspaceContext';
 import Database from '../services/database';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { Badge } from '../components/ui/badge';
@@ -24,6 +25,7 @@ import useSmartSearch from '../hooks/useSmartSearch';
 import useSmartSearchStore from '../store/smartSearchStore';
 
 const CardDetailModal = lazy(() => import('../components/CardDetailModal'));
+const emptyCards = [];
 
 /**
  * ListViewTasks - Tasks section for the List View page
@@ -33,9 +35,17 @@ const CardDetailModal = lazy(() => import('../components/CardDetailModal'));
 const ListViewTasks = () => {
   const { currentDepartment, departments, setCurrentDepartment } = useContext(DepartmentContext);
   const { user } = useContext(AuthContext);
+  const { currentWorkspace } = useContext(WorkspaceContext);
+  const userId = user?._id || user?.id;
+  const departmentId = user?.role === 'employee' ? 'all' : currentDepartment?._id;
+  const assignedToMe = !['admin', 'manager'].includes(user?.role);
+  const cardScope = userId && user?.role && currentWorkspace?._id && departmentId
+    ? JSON.stringify([currentWorkspace._id, userId, user.role, user.roleId, departmentId])
+    : null;
   const navigate = useNavigate();
   const taskCache = useRef(new Map());
-  const [cards, setCards] = useState([]);
+  const [cardResult, setCardResult] = useState(null);
+  const cards = cardResult?.scope === cardScope ? cardResult?.cards ?? emptyCards : emptyCards;
   const cardReadGeneration = useRef(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -44,7 +54,6 @@ const ListViewTasks = () => {
     dateTo: ''
   });
   const [sorting, setSorting] = useState({ key: 'dueDate', order: 'asc' });
-  const [viewMode, setViewMode] = useState('comfortable');
   const smartSearchChips = useSmartSearchStore(s => s.chips);
   const smartSearchText = useSmartSearchStore(s => s.searchText);
   const smartSearchActiveField = useSmartSearchStore(s => s.activeField);
@@ -52,21 +61,8 @@ const ListViewTasks = () => {
   const addChip = useSmartSearchStore(s => s.addChip);
 
   useEffect(() => {
-    if (currentDepartment) {
-      setPage(1);
-    }
-  }, [currentDepartment]);
-
-  useEffect(() => {
-    if (currentDepartment) {
-      loadCards();
-    } else {
-      cardReadGeneration.current++;
-      setCards([]);
-      setLoading(false);
-    }
-    return () => { cardReadGeneration.current++; };
-  }, [currentDepartment?._id]);
+    setPage(1);
+  }, [cardScope]);
 
   // Workflow data is loaded on navigation, not for five unrelated boards.
 
@@ -81,28 +77,41 @@ const ListViewTasks = () => {
 
 
 
-  const loadCards = async (force = false, background = false) => {
+  const loadCards = useCallback(async (force = false, background = false) => {
     const request = ++cardReadGeneration.current;
     try {
       if (!background) setLoading(true);
-      const response = await Database.getAllCardsByDepartment(currentDepartment._id, { force });
-      if (request === cardReadGeneration.current) setCards(response.data || []);
+      const response = await Database.getAllCardsByDepartment(departmentId, { force, assignedToMe });
+      if (request === cardReadGeneration.current) setCardResult({ scope: cardScope, cards: response.data || [] });
     } catch (error) {
       if (request !== cardReadGeneration.current || error.code === 'ERR_CANCELED') return;
       console.error('Error loading cards:', error);
-      setCards([]);
+      setCardResult({ scope: cardScope, cards: [] });
     } finally {
       if (request === cardReadGeneration.current) setLoading(false);
     }
-  };
+  }, [assignedToMe, cardScope, departmentId]);
 
   useEffect(() => {
-    const refresh = () => { if (currentDepartment?._id) loadCards(true, true); };
+    const invalidate = () => { cardReadGeneration.current++; };
+    if (cardScope) {
+      loadCards();
+    } else {
+      invalidate();
+      setCardResult(null);
+      setLoading(false);
+    }
+    return invalidate;
+  }, [cardScope, loadCards]);
+
+  useEffect(() => {
+    const refresh = () => { if (cardScope) loadCards(true, true); };
     window.addEventListener('flowtask:data-invalidated', refresh);
     return () => window.removeEventListener('flowtask:data-invalidated', refresh);
-  }, [currentDepartment?._id]);
+  }, [cardScope, loadCards]);
 
   const handleRefresh = async () => {
+    if (!cardScope) return;
     setRefreshing(true);
     await loadCards(true);
     setTimeout(() => setRefreshing(false), 500);
@@ -114,7 +123,6 @@ const ListViewTasks = () => {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalCard, setModalCard] = useState(null);
-  const [modalLoading, setModalLoading] = useState(false);
 
   const openCardModal = (card) => {
     if (!card) return;
@@ -130,23 +138,12 @@ const ListViewTasks = () => {
     }
   };
 
-  const baseCards = useMemo(() => {
-    if (!user || !cards) return cards;
-    if (user.role === 'admin' || user.role === 'manager') {
-      return cards;
-    }
-    return cards.filter(card => {
-      if (!card.assignees || card.assignees.length === 0) return false;
-      return card.assignees.some(assignee => 
-        assignee._id === user._id || assignee.email === user.email
-      );
-    });
-  }, [cards, user]);
-
   // Smart search integration — filtering, sorting, highlighting all handled by the hook
   const { filteredCards, searchTerms } = useSmartSearch({
-    cards: baseCards,
-    departmentId: currentDepartment?._id || 'all',
+    cards,
+    departmentId: departmentId || 'all',
+    scopeKey: cardScope,
+    assignedTasksOnly: user?.role === 'employee',
     legacyFilters: {
       dateFrom: filters.dateFrom,
       dateTo: filters.dateTo,
@@ -272,11 +269,11 @@ const ListViewTasks = () => {
   const hasActiveFilters = filters.dateFrom !== '' || filters.dateTo !== '' || smartSearchChips.length > 0 || (smartSearchText && smartSearchActiveField === 'all');
 
   const stats = useMemo(() => {
-    const total = baseCards.length;
-    const completed = baseCards.filter(c => c.list?.title?.toLowerCase() === 'done').length;
-    const inProgress = baseCards.filter(c => c.list?.title?.toLowerCase() === 'in progress').length;
-    const highPriority = baseCards.filter(c => c.priority?.toLowerCase() === 'high').length;
-    const overdue = baseCards.filter(c => {
+    const total = cards.length;
+    const completed = cards.filter(c => c.list?.title?.toLowerCase() === 'done').length;
+    const inProgress = cards.filter(c => c.list?.title?.toLowerCase() === 'in progress').length;
+    const highPriority = cards.filter(c => c.priority?.toLowerCase() === 'high').length;
+    const overdue = cards.filter(c => {
       if (!c.dueDate) return false;
       const today = new Date();
       const due = new Date(c.dueDate);
@@ -284,7 +281,7 @@ const ListViewTasks = () => {
     }).length;
     const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
     return { total, completed, inProgress, highPriority, overdue, completionRate };
-  }, [baseCards]);
+  }, [cards]);
 
   const getPriorityPill = useCallback((priority) => {
     if (!priority) {
@@ -406,7 +403,7 @@ const ListViewTasks = () => {
     XLSX.writeFile(workbook, fileName);
   }, [filteredAndSortedCards, currentDepartment, calculateTotalLoggedTime]);
 
-  const rowPaddingClass = viewMode === 'compact' ? 'py-2' : viewMode === 'comfortable' ? 'py-4' : 'py-6';
+  const rowPaddingClass = 'py-4';
 
   if (loading) return <ListViewSkeleton />;
 
@@ -414,7 +411,7 @@ const ListViewTasks = () => {
     <>
       <div className="space-y-6">
         {/* Stats Cards */}
-        {currentDepartment && (
+        {departmentId && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
             <StatCard title="Total Tasks" value={stats.total} icon={ClipboardList} color="blue" delay="0ms" />
             <StatCard title="In Progress" value={stats.inProgress} icon={Activity} color="cyan" delay="50ms" />
@@ -564,7 +561,7 @@ const ListViewTasks = () => {
                           <p className="text-sm text-gray-500 max-w-sm">
                             {hasActiveFilters
                               ? 'No tasks match your current filters. Try removing some filters or adjusting your search.'
-                              : currentDepartment ? 'No tasks available in this department.' : 'Select a department to view tasks.'}
+                              : user?.role === 'employee' ? 'No assigned tasks available.' : currentDepartment ? 'No tasks available in this department.' : 'Select a department to view tasks.'}
                           </p>
                         </div>
                         {hasActiveFilters && (
@@ -584,7 +581,7 @@ const ListViewTasks = () => {
         </div>
 
         {/* Preview Footer */}
-        <PreviewFooter totalCount={baseCards.length} />
+        <PreviewFooter totalCount={cards.length} />
 
         {/* Pagination */}
         {!loading && filteredAndSortedCards.length > 0 && (
@@ -615,13 +612,13 @@ const ListViewTasks = () => {
                 const resp = await Database.updateCard(modalCard._id, updates);
                 const updatedCard = resp.data || resp;
                 taskCache.current.set(modalCard._id, updatedCard);
-                setCards(prev => prev.map(c => c._id === modalCard._id ? updatedCard : c));
+                loadCards(true, true);
                 setModalCard(updatedCard);
               } catch (err) { console.error('Error updating card', err); }
             }}
             onDelete={async () => {
               try {
-                setCards(prev => prev.filter(c => c._id !== modalCard._id));
+                loadCards(true, true);
                 taskCache.current.delete(modalCard._id);
                 setModalOpen(false);
               } catch (err) { console.error('Error deleting card', err); }
@@ -642,7 +639,8 @@ const ListViewTasks = () => {
 };
 
 // Memoized helper components
-const StatCard = memo(({ title, value, icon: Icon, color, subtitle, delay, pulse }) => {
+const StatCard = memo(({ title, value, icon, color, subtitle, delay, pulse }) => {
+  const Icon = icon;
   const colorClasses = {
     blue: { bg: 'from-blue-500 to-cyan-500', text: 'text-blue-600', iconBg: 'bg-blue-100', border: 'border-blue-200', shadow: 'hover:shadow-blue-200' },
     cyan: { bg: 'from-cyan-500 to-blue-500', text: 'text-cyan-600', iconBg: 'bg-cyan-100', border: 'border-cyan-200', shadow: 'hover:shadow-cyan-200' },

@@ -381,32 +381,26 @@ export const getCardsByBoard = asyncHandler(async (req, res, next) => {
 // @access  Private
 export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
   const { departmentId } = req.params;
-  const { page = 1, limit = 200 } = req.query;
+  const { page = 1, limit = 200, assignedToMe } = req.query;
   const user = req.user;
   const pageNum = pageNumber(page), limitNum = boundedInteger(limit, 100, 100);
   const readScope = await resourceReadFilter(req, 'task');
 
   if (departmentId !== 'all' && !mongoose.isValidObjectId(departmentId)) throw new ErrorResponse('Invalid department', 400);
-  const departmentMatch = departmentId === 'all' ? {} : { 'boardInfo.department': new mongoose.Types.ObjectId(departmentId) };
+  const boardFilter = await boardAccessFilter(user);
+  const visibleBoards = await Board.distinct('_id', {
+    $and: [boardFilter, departmentId === 'all' ? {} : { department: departmentId }],
+    workspaceId: req.workspaceId
+  });
+  const cardMatch = { $and: [{
+    workspaceId: new mongoose.Types.ObjectId(req.workspaceId),
+    board: { $in: visibleBoards },
+    isArchived: false,
+    ...(assignedToMe === 'true' ? { assignees: new mongoose.Types.ObjectId(user._id || user.id) } : {})
+  }, readScope] };
 
-  // Use aggregation pipeline for better performance
-  const visibleBoards = await Board.distinct('_id', await boardAccessFilter(req.user));
   const pipeline = [
-    { $match: { $and: [{ board: { $in: visibleBoards }, isArchived: false }, readScope] } },
-    {
-      $lookup: {
-        from: 'boards',
-        localField: 'board',
-        foreignField: '_id',
-        as: 'boardInfo'
-      }
-    },
-    {
-      $match: {
-        ...departmentMatch,
-        isArchived: false
-      }
-    },
+    { $match: cardMatch },
     // Filter, order and bound root cards before user/time enrichment.
     { $sort: { updatedAt: -1, _id: -1 } },
     { $skip: (pageNum - 1) * limitNum },
@@ -546,25 +540,8 @@ export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
   ];
 
   const cards = await Card.aggregate(scopeWorkspaceLookups(pipeline, req.workspaceId));
-  const totalCount = await Card.aggregate([
-    { $match: { $and: [{ board: { $in: visibleBoards }, isArchived: false }, readScope] } },
-    {
-      $lookup: {
-        from: 'boards',
-        localField: 'board',
-        foreignField: '_id',
-        as: 'boardInfo'
-      }
-    },
-    {
-      $match: departmentMatch
-    },
-    {
-      $count: "total"
-    }
-  ]);
-
-  const total = totalCount.length > 0 ? totalCount[0].total : 0;
+  const totalCount = await Card.aggregate([{ $match: cardMatch }, { $count: 'total' }]);
+  const total = totalCount[0]?.total ?? 0;
 
   res.status(200).json({
     success: true,

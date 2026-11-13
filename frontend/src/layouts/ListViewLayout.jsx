@@ -8,6 +8,7 @@ import {
   Users2
 } from 'lucide-react';
 import DepartmentContext from '../context/DepartmentContext';
+import AuthContext from '../context/AuthContext';
 import { ListViewSkeleton } from '../components/LoadingSkeleton';
 
 /**
@@ -19,6 +20,7 @@ const ListViewLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentDepartment } = useContext(DepartmentContext);
+  const { user } = useContext(AuthContext);
 
   // Determine active tab based on current route
   const isTeamsActive = location.pathname.includes('/list-view/teams');
@@ -56,7 +58,7 @@ const ListViewLayout = () => {
                   {activeTab === 'tasks' ? 'Task List View' : 'Team Logged Time'}
                 </h1>
                 <p className="text-gray-600 mt-1.5">
-                  {currentDepartment ? (
+                  {activeTab === 'tasks' && user?.role === 'employee' ? 'My assigned tasks' : currentDepartment ? (
                     <span className="flex items-center gap-2">
                       <FolderKanban className="w-4 h-4 text-blue-600" />
                       <span className="font-medium text-gray-700">{currentDepartment.name}</span>

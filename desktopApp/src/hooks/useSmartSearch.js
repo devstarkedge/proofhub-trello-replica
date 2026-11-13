@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import useSmartSearchStore from '../store/smartSearchStore';
 import Database from '../services/database';
 
@@ -22,16 +22,17 @@ function textMatches(text, query) {
  * @param {Object} opts
  * @param {Array}  opts.cards          – base card array (already role-filtered)
  * @param {string} opts.departmentId   – current department _id (or 'all')
+ * @param {string} opts.scopeKey       – active identity and workspace for suggestions
+ * @param {boolean} opts.assignedTasksOnly – suggest only values from the assigned cards
  * @param {Object} opts.legacyFilters  – { status, priority, dateFrom, dateTo } from ListView
  * @param {Object} opts.sorting        – { key, order }
  * @returns {Object} { filteredCards, previewCount, searchTerms }
  */
-export default function useSmartSearch({ cards = [], departmentId, legacyFilters = {}, sorting = {} }) {
+export default function useSmartSearch({ cards = [], departmentId, scopeKey, assignedTasksOnly = false, legacyFilters = {}, sorting = {} }) {
   const {
     activeField,
     searchText,
     chips,
-    setSearchText,
     setSuggestions,
     setSuggestionsLoading,
     setShowSuggestions,
@@ -43,7 +44,7 @@ export default function useSmartSearch({ cards = [], departmentId, legacyFilters
   const fetchSuggestionsRef = useRef(null);
 
   if (!fetchSuggestionsRef.current) {
-    fetchSuggestionsRef.current = debounce(async (field, query, deptId) => {
+    fetchSuggestionsRef.current = debounce(async (field, query, deptId, isCurrent) => {
       if (!query || query.length < 1) {
         setSuggestions([]);
         setShowSuggestions(false);
@@ -82,34 +83,53 @@ export default function useSmartSearch({ cards = [], departmentId, legacyFilters
       setSuggestionsLoading(true);
       try {
         const res = await Database.getSearchSuggestions(field, query, deptId);
-        if (res.success) {
+        if (isCurrent() && res.success) {
           setSuggestions(res.data);
           setShowSuggestions(res.data.length > 0);
         }
       } catch {
-        setSuggestions([]);
+        if (isCurrent()) setSuggestions([]);
       } finally {
-        setSuggestionsLoading(false);
+        if (isCurrent()) setSuggestionsLoading(false);
       }
     }, 250);
   }
 
-  const fetchSuggestions = useCallback((field, query, deptId) => {
-    fetchSuggestionsRef.current(field, query, deptId);
-  }, []);
-
-  // Cancel pending on unmount
-  useEffect(() => () => fetchSuggestionsRef.current?.cancel(), []);
+  const suggestionCards = assignedTasksOnly ? cards : null;
 
   // Trigger suggestions when searchText or activeField changes
   useEffect(() => {
-    if (searchText.length >= 1) {
-      fetchSuggestions(activeField, searchText, departmentId);
-    } else {
-      setSuggestions([]);
-      setShowSuggestions(false);
+    setSuggestions([]);
+    setShowSuggestions(false);
+    setSuggestionsLoading(false);
+    if (!searchText || !scopeKey) return;
+
+    if (suggestionCards && ['all', 'task', 'project', 'assignee'].includes(activeField)) {
+      const matches = new Map();
+      const addMatch = (type, label) => {
+        if ((activeField === 'all' || activeField === type) && textMatches(label, searchText)) {
+          matches.set(JSON.stringify([type, label]), { value: label, label, type });
+        }
+      };
+      for (const card of suggestionCards) {
+        addMatch('task', card.title);
+        addMatch('project', card.board?.name);
+        card.assignees?.forEach(assignee => addMatch('assignee', assignee.name));
+        if (matches.size >= 10) break;
+      }
+      setSuggestions([...matches.values()].slice(0, 10));
+      setShowSuggestions(matches.size > 0);
+      return;
     }
-  }, [searchText, activeField, departmentId, fetchSuggestions, setSuggestions, setShowSuggestions]);
+
+    let current = true;
+    const pending = fetchSuggestionsRef.current;
+    pending(activeField, searchText, departmentId, () => current);
+    return () => {
+      current = false;
+      pending.cancel();
+    };
+  }, [searchText, activeField, departmentId, scopeKey, suggestionCards, setSuggestions, setShowSuggestions, setSuggestionsLoading]);
 
   // ─── Filtering engine ──────────────────────────────────────────────
   const filteredCards = useMemo(() => {

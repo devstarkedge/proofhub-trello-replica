@@ -368,18 +368,20 @@ class DatabaseService {
     return await res.json();
   }
 
-  async getCardsByDepartment(departmentId, { page = 1, limit = 100, signal } = {}) {
+  async getCardsByDepartment(departmentId, { page = 1, limit = 100, signal, assignedToMe = false } = {}) {
     const headers = buildHeaders();
-    const res = await fetch(`${baseURL}/api/cards/department/${departmentId}?page=${page}&limit=${Math.min(100, Math.max(1, limit))}`, { headers, signal });
+    const params = new URLSearchParams({ page, limit: Math.min(100, Math.max(1, limit)) });
+    if (assignedToMe) params.set('assignedToMe', 'true');
+    const res = await fetch(`${baseURL}/api/cards/department/${departmentId}?${params}`, { headers, signal });
     if (!res.ok) {
       throw new Error(`HTTP error! status: ${res.status}`);
     }
     return await res.json();
   }
 
-  async getAllCardsByDepartment(departmentId, { force = false } = {}) {
-    return departmentCardsCache.read('department-cards:' + departmentId,
-      () => collectPagedRead(page => this.getCardsByDepartment(departmentId, { page })), { force });
+  async getAllCardsByDepartment(departmentId, { force = false, assignedToMe = false } = {}) {
+    return departmentCardsCache.read(`department-cards:${departmentId}:${assignedToMe}`,
+      () => collectPagedRead(page => this.getCardsByDepartment(departmentId, { page, assignedToMe })), { force });
   }
 
   async getCard(cardId) {
