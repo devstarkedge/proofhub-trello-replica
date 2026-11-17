@@ -1,7 +1,9 @@
 import DurationHoursInput from '../ui/DurationHoursInput';
-import { useState } from 'react';
+import { useContext, useState } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '../ui/button';
+import WorkspaceContext from '../../context/WorkspaceContext';
+import { workspaceDateKey } from '../../utils/workspaceDateRange';
 
 const inputClass = 'w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-border-focus)]';
 const inputStyle = { backgroundColor: 'var(--color-bg-base)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' };
@@ -18,8 +20,8 @@ function defaultContent(version) {
       endLocalTime: version?.officeHours?.endLocalTime || '18:00'
     },
     scheduledWorkBreak: version?.scheduledWorkBreak || null,
-    graceMinutes: version?.graceMinutes ?? 15,
-    earlyExitGraceMinutes: version?.earlyExitGraceMinutes ?? 0,
+    graceMinutes: version?.graceMinutes ?? (version ? 15 : 30),
+    earlyExitGraceMinutes: version?.earlyExitGraceMinutes ?? (version ? 0 : 25),
     minimumFullDayMinutes: version?.minimumFullDayMinutes ?? 480,
     minimumHalfDayMinutes: version?.minimumHalfDayMinutes ?? 240,
     halfDayTrigger: version?.halfDayTrigger || 'MINIMUM_DURATION',
@@ -82,14 +84,17 @@ const Checkbox = ({ checked, onChange, label }) => (
 
 /** Create or edit an AttendancePolicy — mode='create'|'edit'. onSubmit({name, description, effectiveDate, content}). */
 const PolicyFormModal = ({ mode = 'create', initialPolicy, initialVersion, submitting, onCancel, onSubmit }) => {
+  const { currentWorkspace } = useContext(WorkspaceContext) || {};
   const [name, setName] = useState(initialPolicy?.name || '');
   const [description, setDescription] = useState(initialPolicy?.description || '');
-  const [effectiveDate, setEffectiveDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [effectiveDate, setEffectiveDate] = useState(() => workspaceDateKey(new Date(), currentWorkspace?.timezone || undefined));
   const [content, setContent] = useState(() => defaultContent(initialVersion));
 
   const updateContent = (patch) => setContent((prev) => ({ ...prev, ...patch }));
   const updateNested = (key, patch) => setContent((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
   const workBreak = content.scheduledWorkBreak;
+  const percentageOffice = content.halfDayTrigger === 'MINIMUM_DURATION';
+  const fixedMinimumRequired = !percentageOffice || content.allowedWorkModes.some(mode => mode !== 'OFFICE');
   const invalidWorkBreak = workBreak && (!workBreak.startLocalTime || !workBreak.endLocalTime || workBreak.startLocalTime === workBreak.endLocalTime);
 
   const toggleWorkMode = (mode_) => {
@@ -158,19 +163,21 @@ const PolicyFormModal = ({ mode = 'create', initialPolicy, initialVersion, submi
           <div className="grid grid-cols-2 gap-3">
             <div><label className={labelClass} style={labelStyle}>Start time</label><input type="time" className={inputClass} style={inputStyle} value={content.officeHours.startLocalTime} onChange={(e) => updateNested('officeHours', { startLocalTime: e.target.value })} required /></div>
             <div><label className={labelClass} style={labelStyle}>End time</label><input type="time" className={inputClass} style={inputStyle} value={content.officeHours.endLocalTime} onChange={(e) => updateNested('officeHours', { endLocalTime: e.target.value })} required /></div>
-            <div><label className={labelClass} style={labelStyle}>Check-in grace period (hours)</label><DurationHoursInput minMinutes={0} className={inputClass} style={inputStyle} value={content.graceMinutes} onChange={(value) => updateContent({ graceMinutes: value })} /></div>
-            <div><label className={labelClass} style={labelStyle}>Early-exit grace (hours)</label><DurationHoursInput minMinutes={0} className={inputClass} style={inputStyle} value={content.earlyExitGraceMinutes} onChange={(value) => updateContent({ earlyExitGraceMinutes: value })} /></div>
+            <div><label className={labelClass} style={labelStyle} htmlFor="attendance-checkin-grace">Check-in grace (minutes)</label><input id="attendance-checkin-grace" type="number" min="0" step="any" className={inputClass} style={inputStyle} value={content.graceMinutes} onChange={(e) => updateContent({ graceMinutes: e.target.value === '' ? '' : Number(e.target.value) })} required /></div>
+            <div><label className={labelClass} style={labelStyle} htmlFor="attendance-exit-grace">Early-exit grace (minutes)</label><input id="attendance-exit-grace" type="number" min="0" step="any" className={inputClass} style={inputStyle} value={content.earlyExitGraceMinutes} onChange={(e) => updateContent({ earlyExitGraceMinutes: e.target.value === '' ? '' : Number(e.target.value) })} required /></div>
             <div><label className={labelClass} style={labelStyle}>Full-day minimum (hours)</label><DurationHoursInput minMinutes={1} className={inputClass} style={inputStyle} value={content.minimumFullDayMinutes} onChange={(value) => updateContent({ minimumFullDayMinutes: value })} /></div>
-            <div><label className={labelClass} style={labelStyle}>Half-day minimum (hours)</label><DurationHoursInput minMinutes={1} className={inputClass} style={inputStyle} value={content.minimumHalfDayMinutes} onChange={(value) => updateContent({ minimumHalfDayMinutes: value })} /></div>
+            {fixedMinimumRequired && <div><label className={labelClass} style={labelStyle}>{percentageOffice ? 'Half-day minimum for non-office days (hours)' : 'Half-day minimum (hours)'}</label><DurationHoursInput minMinutes={1} className={inputClass} style={inputStyle} value={content.minimumHalfDayMinutes} onChange={(value) => updateContent({ minimumHalfDayMinutes: value })} /></div>}
           </div>
           <div>
-            <label className={labelClass} style={labelStyle}>Half-day is triggered by</label>
+            <label className={labelClass} style={labelStyle}>Attendance calculation</label>
             <select className={inputClass} style={inputStyle} value={content.halfDayTrigger} onChange={(e) => updateContent({ halfDayTrigger: e.target.value })}>
-              <option value="MINIMUM_DURATION">Duration worked only</option>
+              <option value="MINIMUM_DURATION">Office time as a percentage of the full-day minimum</option>
+              <option value="FIXED_DURATION">Fixed duration thresholds</option>
               <option value="LATE_ARRIVAL">Late arrival</option>
               <option value="EARLY_DEPARTURE">Early departure</option>
               <option value="COMBINED">Duration, late arrival, or early departure</option>
             </select>
+            {percentageOffice && <p className="mt-1 text-xs" style={labelStyle}>Office days use the full-day minimum after approved leave. Present is checked first using early-exit grace. Otherwise, up to 25% is Absent, over 25% to under 75% is Half Day, and 75% or more is Short Leave. Check-in grace controls the late flag.</p>}
           </div>
         </Section>
 

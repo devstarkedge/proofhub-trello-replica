@@ -3,6 +3,7 @@ import { resolveDisplayStatus } from '../../utils/attendanceStatus';
 export const PERSONAL_DAY_STYLES = {
   PRESENT: { label: 'Present', short: 'P', color: 'var(--color-success-text)', background: 'var(--color-success-subtle)' },
   HALF_PRESENT: { label: 'Half day', short: 'H', color: 'var(--color-warning-text)', background: 'var(--color-warning-subtle)' },
+  SHORT_PRESENT: { label: 'Short leave (attendance)', short: 'SL', color: 'var(--color-warning-text)', background: 'var(--color-warning-subtle)' },
   ABSENT: { label: 'Absent', short: 'A', color: 'var(--color-error-text)', background: 'var(--color-error-subtle)' },
   ON_LEAVE: { label: 'On leave', short: 'L', color: 'var(--color-info-text)', background: 'var(--color-info-subtle)' },
   MISSING_CHECKOUT: { label: 'Missing checkout', short: '!', color: 'var(--color-warning-text)', background: 'var(--color-warning-subtle)' },
@@ -53,11 +54,12 @@ export function personalAttendanceDays(records, today, month) {
 }
 
 export function personalAttendanceCounts(days) {
-  const counts = { present: 0, halfDays: 0, absent: 0, leave: 0 };
+  const counts = { present: 0, halfDays: 0, shortDays: 0, absent: 0, leave: 0 };
   for (const day of days) {
     const status = personalDayStatus(day);
     if (status === 'PRESENT' || status === 'LATE') counts.present++;
     if (status === 'HALF_PRESENT') counts.halfDays++;
+    if (status === 'SHORT_PRESENT') counts.shortDays++;
     if (status === 'ABSENT') counts.absent++;
     if (status === 'ON_LEAVE') counts.leave++;
   }

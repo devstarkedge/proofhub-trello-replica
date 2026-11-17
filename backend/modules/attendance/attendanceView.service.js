@@ -91,7 +91,7 @@ export async function getAttendanceView({ viewer, workspaceId, startDate, endDat
   return { scope: access.scope, records };
 }
 
-const SUMMARY_STATES = ['NOT_STARTED', 'PRESENT', 'HALF_PRESENT', 'ABSENT', 'MISSING_CHECKOUT', 'ON_LEAVE'];
+const SUMMARY_STATES = ['NOT_STARTED', 'PRESENT', 'HALF_PRESENT', 'SHORT_PRESENT', 'ABSENT', 'MISSING_CHECKOUT', 'ON_LEAVE'];
 
 /**
  * Dashboard summary counts (spec §10-12), scoped identically to

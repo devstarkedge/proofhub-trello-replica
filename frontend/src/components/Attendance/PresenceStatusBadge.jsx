@@ -14,6 +14,7 @@ const STYLES = {
   NOT_STARTED: { label: 'Not Started', color: 'var(--color-text-muted)', backgroundColor: 'var(--color-bg-muted)' },
   ON_LEAVE: { label: 'On Leave', color: 'var(--color-info-text)', backgroundColor: 'var(--color-info-subtle)' },
   SHORT_LEAVE: { label: 'Short Leave', color: 'var(--color-info-text)', backgroundColor: 'var(--color-info-subtle)' },
+  SHORT_PRESENT: { label: 'Short Leave', color: 'var(--color-warning-text)', backgroundColor: 'var(--color-warning-subtle)' },
   PROVISIONAL: { label: 'Provisional', color: 'var(--color-warning-text)', backgroundColor: 'var(--color-warning-subtle)' },
   HOLIDAY: { label: 'Holiday', color: 'var(--color-info-text)', backgroundColor: 'var(--color-info-subtle)' },
   WEEKLY_OFF: { label: 'Weekly Off', color: 'var(--color-text-secondary)', backgroundColor: 'var(--color-bg-muted)' },

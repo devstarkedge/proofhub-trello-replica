@@ -114,7 +114,7 @@ const attendancePolicyVersionSchema = new mongoose.Schema({
   earlyExitGraceMinutes: { type: Number, default: 0, min: 0 },
   minimumFullDayMinutes: { type: Number, default: 480, min: 1 },
   minimumHalfDayMinutes: { type: Number, default: 240, min: 1 },
-  halfDayTrigger: { type: String, enum: ['MINIMUM_DURATION', 'LATE_ARRIVAL', 'EARLY_DEPARTURE', 'COMBINED'], default: 'MINIMUM_DURATION' },
+  halfDayTrigger: { type: String, enum: ['MINIMUM_DURATION', 'FIXED_DURATION', 'LATE_ARRIVAL', 'EARLY_DEPARTURE', 'COMBINED'], default: 'MINIMUM_DURATION' },
 
   gpsRequirements: { type: gpsRequirementsSchema, default: () => ({}) },
   missingCheckout: { type: missingCheckoutSchema, default: () => ({}) },

@@ -25,8 +25,15 @@ export async function enqueueLeaveAttendanceChanges(request,dbSession) {
   const dateKeys=leaveDays.map(day=>instantToDateOnlyKey(day.date,zone));
   const days=await AttendanceDay.find({workspaceId:request.workspaceId,user:request.requester,workDateKey:{$in:dateKeys}}).select('_id workDateKey').session(dbSession).lean();
   for(const day of days){
-    await AttendanceDay.updateOne({_id:day._id},{$inc:{evaluationRevision:1}},{session:dbSession});
-    await enqueueAttendanceEvent({workspaceId:request.workspaceId,user:request.requester,key:`leave-${request._id}-${request.status}-${day.workDateKey}`,kind:'RECALCULATE',workDateKey:day.workDateKey},dbSession);
+    const revised = await AttendanceDay.findOneAndUpdate(
+      { _id: day._id, workspaceId: request.workspaceId, user: request.requester },
+      { $inc: { evaluationRevision: 1 } }, { new: true, session: dbSession, projection: { evaluationRevision: 1 } }
+    ).lean();
+    if (revised) await enqueueAttendanceEvent({
+      workspaceId: request.workspaceId, user: request.requester,
+      key: `leave-${request._id}-${day.workDateKey}-${revised.evaluationRevision}`,
+      kind: 'RECALCULATE', workDateKey: day.workDateKey
+    }, dbSession);
   }
 }
 

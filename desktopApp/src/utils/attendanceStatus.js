@@ -11,6 +11,5 @@ export function resolveDisplayStatus(day) {
   if (day.leaveState === 'FULL_LEAVE') return 'ON_LEAVE';
   if (day.calendarDayType === 'HOLIDAY') return 'HOLIDAY';
   if (day.calendarDayType && !day.isCalendarWorkingDay) return 'WEEKLY_OFF';
-  if (day.presenceState === 'PRESENT' && (day.punctualityState === 'LATE' || day.punctualityState === 'LATE_AND_EARLY_EXIT')) return 'LATE';
   return day.presenceState || 'NOT_STARTED';
 }

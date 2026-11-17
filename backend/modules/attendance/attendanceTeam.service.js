@@ -32,9 +32,9 @@ import { validateTeamQuery, serializeTeamRow, csvLine, TEAM_STATUSES, TEAM_WORK_
 const id = value => String(value?._id || value || '');
 const oid = value => new mongoose.Types.ObjectId(id(value));
 const queryOptions = { maxTimeMS: 20000, allowDiskUse: true };
-const emptyTotals = () => ({ totalMembers: 0, membersWithRecords: 0, membersPresent: 0, present: 0, halfDays: 0, absent: 0, missingCheckout: 0, leaveDays: 0, attendanceMinutes: null });
+const emptyTotals = () => ({ totalMembers: 0, membersWithRecords: 0, membersPresent: 0, present: 0, halfDays: 0, shortDays: 0, absent: 0, missingCheckout: 0, leaveDays: 0, attendanceMinutes: null });
 const dayFields = { _id: 1, user: 1, workDateKey: 1, calendarDayType: 1, isCalendarWorkingDay: 1, workMode: 1,
-  firstCheckInAt: 1, lastCheckOutAt: 1, workedMinutes: 1, shiftExpectedMinutes: 1, presenceState: 1,
+  firstCheckInAt: 1, lastCheckOutAt: 1, workedMinutes: 1, officeSeconds: 1, expectedWorkingMinutes: 1, shiftExpectedMinutes: 1, presenceState: 1,
   punctualityState: 1, leaveState: 1, presenceFraction: 1, leaveFraction: 1, exceptionFlags: 1,
   isFinalized: 1, policyVersion: 1, effectiveOfficeHoursStart: 1, effectiveOfficeHoursEnd: 1, effectiveOfficeHoursSource: 1 };
 
@@ -158,7 +158,8 @@ function sessionFactsStages(ctx) {
       { $eq: ['$$s.status', 'ACTIVE'] }, { $eq: [{ $ifNull: ['$$s.regularizationResolution.appliedAt', null] }, null] },
       { $gt: [{ $ifNull: [attendanceFallbackCutoffExpression('$$s.'), new Date(8640000000000000)] }, now] }
     ] } } } } } },
-    { $set: { workedMinutes: { $cond: ['$_live', { $floor: { $add: [{ $divide: [attendanceIntervalMillisecondsExpression('$_sessions', ctx.breakWindows), 60000] }, 0.5] } }, '$workedMinutes'] } } }
+    { $set: { workedMinutes: { $cond: ['$_live', { $divide: [attendanceIntervalMillisecondsExpression('$_sessions', ctx.breakWindows), 60000] },
+      { $cond: [{ $isNumber: '$officeSeconds' }, { $divide: ['$officeSeconds', 60] }, '$workedMinutes'] }] } } }
   ];
 }
 
@@ -181,14 +182,14 @@ function summarizedPipeline(ctx) {
       { $not: [{ $in: ['$isCalendarWorkingDay', [true, false]] }] },
       { $eq: ['$presenceState', 'MISSING_CHECKOUT'] },
       { $and: ['$_required', { $not: [{ $and: [
-      '$hasAttendance', '$_ended', { $in: ['$presenceState', ['PRESENT', 'HALF_PRESENT', 'ABSENT']] },
+      '$hasAttendance', '$_ended', { $in: ['$presenceState', ['PRESENT', 'HALF_PRESENT', 'SHORT_PRESENT', 'ABSENT']] },
       { $ne: [{ $ifNull: ['$policyVersion', null] }, null] }, { $isNumber: '$presenceFraction' },
       { $not: [{ $in: ['LEAVE_COVERAGE_UNRESOLVED', { $ifNull: ['$exceptionFlags', []] }] }] },
       { $gte: ['$presenceFraction', 0] }, { $lte: ['$presenceFraction', { $subtract: [1, '$leaveFraction'] }] }
     ] }] }] }] } } },
     { $group: { _id: '$user', recordedDays: countIf('$_matches'), attendanceDays: countIf({ $and: ['$_matches', '$hasAttendance'] }),
       measuredDays: countIf({ $and: ['$_matches', '$hasAttendance', { $isNumber: '$workedMinutes' }] }),
-      ...Object.fromEntries([['present', 'PRESENT'], ['halfDays', 'HALF_PRESENT'], ['absent', 'ABSENT'], ['missingCheckout', 'MISSING_CHECKOUT'], ['leaveDays', 'ON_LEAVE']].map(([key, state]) => [key, countIf({ $and: ['$_matches', { $eq: ['$displayStatus', state] }] })])),
+      ...Object.fromEntries([['present', 'PRESENT'], ['halfDays', 'HALF_PRESENT'], ['shortDays', 'SHORT_PRESENT'], ['absent', 'ABSENT'], ['missingCheckout', 'MISSING_CHECKOUT'], ['leaveDays', 'ON_LEAVE']].map(([key, state]) => [key, countIf({ $and: ['$_matches', { $eq: ['$displayStatus', state] }] })])),
       attendanceMinutes: { $sum: { $cond: [{ $and: ['$_matches', '$hasAttendance', { $isNumber: '$workedMinutes' }] }, '$workedMinutes', 0] } },
       coveredDates: countIf('$_elapsed'), unresolvedDays: countIf({ $and: ['$_elapsed', { $not: ['$_ongoing'] }, '$_unresolved'] }),
       completedWorkdays: countIf(completedWorkday),
@@ -235,7 +236,7 @@ export async function getTeamAttendance(args) {
   for (const row of rows) {
     if (row.recordedDays) totals.membersWithRecords++;
     if (row.present) totals.membersPresent++;
-    for (const key of ['present', 'halfDays', 'absent', 'missingCheckout', 'leaveDays']) totals[key] += row[key];
+    for (const key of ['present', 'halfDays', 'shortDays', 'absent', 'missingCheckout', 'leaveDays']) totals[key] += row[key];
     if (row.attendanceMinutes != null) totals.attendanceMinutes = (totals.attendanceMinutes || 0) + row.attendanceMinutes;
   }
   const pageCount = Math.max(1, Math.ceil(rows.length / ctx.q.pageSize)), page = Math.min(ctx.q.page, pageCount);
@@ -327,7 +328,7 @@ export async function getTeamAttendanceDay(args) {
   return { user: ctx.subjects[0].user, timezone: ctx.timezone, asOf: ctx.now, day,
     schedule: { startLocalTime: day.effectiveOfficeHoursStart || null, endLocalTime: day.effectiveOfficeHoursEnd || null, source: day.effectiveOfficeHoursSource || null,
       recordedEndAt: sessions.map(s => s.effectiveShiftEndAt).filter(Boolean).sort((a, b) => +b - +a)[0] || null,
-      expectedMinutes: day.hasAttendance ? day.shiftExpectedMinutes : null, policyVersion: policy?.versionNumber || null },
+      expectedMinutes: day.hasAttendance ? day.expectedWorkingMinutes ?? day.shiftExpectedMinutes : null, policyVersion: policy?.versionNumber || null },
     sessions: effective.map(s => ({ status: s.status, checkInAt: s.checkInAt, checkOutAt: s.checkOutAt, regularized: !!s.regularized, regularizationStatus: s.regularizationStatus || null })),
     regularizations: regularizations.map(r => ({ status: r.status, type: r.type, appliedAt: r.appliedAt || null })),
     approvedLeaves: leaveDays.map(d => { const request = requests.find(r => id(r) === id(d.request)); return { dayType: d.dayType, isConsuming: d.isConsuming,

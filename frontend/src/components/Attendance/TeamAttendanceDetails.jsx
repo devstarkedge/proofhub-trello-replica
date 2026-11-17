@@ -11,6 +11,7 @@ import { controlClass, inputStyle, panelStyle, mutedStyle, labels, useTeamRead, 
 const calendarColors = {
   PRESENT: { cell: 'bg-emerald-200 text-emerald-950 dark:bg-emerald-800 dark:text-emerald-50', swatch: 'bg-emerald-600 dark:bg-emerald-400' },
   HALF_PRESENT: { cell: 'bg-amber-200 text-amber-950 dark:bg-amber-800 dark:text-amber-50', swatch: 'bg-amber-500 dark:bg-amber-400' },
+  SHORT_PRESENT: { cell: 'bg-yellow-100 text-yellow-950 dark:bg-yellow-900 dark:text-yellow-100', swatch: 'bg-yellow-400 dark:bg-yellow-600' },
   ABSENT: { cell: 'bg-rose-200 text-rose-950 dark:bg-rose-800 dark:text-rose-50', swatch: 'bg-rose-600 dark:bg-rose-400' },
   MISSING_CHECKOUT: { cell: 'bg-violet-200 text-violet-950 dark:bg-violet-800 dark:text-violet-50', swatch: 'bg-violet-600 dark:bg-violet-400' },
   ON_LEAVE: { cell: 'bg-sky-200 text-sky-950 dark:bg-sky-800 dark:text-sky-50', swatch: 'bg-sky-600 dark:bg-sky-400' },

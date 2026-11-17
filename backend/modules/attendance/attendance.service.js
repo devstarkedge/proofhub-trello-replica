@@ -20,10 +20,11 @@ import { resolveApplicablePolicyVersion } from './attendancePolicy.service.js';
 import { resolveApplicableShift, resolveWorkDateKey } from './attendanceShiftResolver.service.js';
 import { resolveEligibleLocations, validateAttendanceGeofence, validateGpsQuality, logAttendanceLocationValidation } from './attendanceGeofence.service.js';
 import { resolveAuthorizedWorkMode } from './attendanceWorkMode.service.js';
-import { resolveEffectiveOfficeHours } from './attendanceOfficeHoursOverride.service.js';
+import { resolveSessionOfficeHours } from './attendanceOfficeHoursOverride.service.js';
 import { resolveExpectedWorkingMinutes } from './attendanceExpectedMinutes.service.js';
 import { resolveLeaveContextForDate } from './attendanceLeaveReconciliation.service.js';
-import { resolveAttendanceStatus } from './attendanceStatusResolver.service.js';
+import { resolveAttendanceStatus, usesOfficePercentage } from './attendanceStatusResolver.service.js';
+import { scheduleForDay } from './attendanceIntervals.js';
 import { resolveWorkspaceDay } from '../workCalendar/workCalendarFacade.js';
 import { getWorkspaceTimezone, dateOnlyToInstant } from '../leave/leaveTimezone.util.js';
 import { codedError } from './attendanceErrors.js';
@@ -62,8 +63,7 @@ function primaryDepartmentId(membership) {
  * whatever is "currently" active — never letting a same-day policy edit
  * reinterpret a session already in progress (spec §37, §74, §80-82).
  */
-export async function resolveAttendanceContext({ workspaceId, userId, membership, workspace, pinnedPolicyVersion = null, pinnedShift = null, pinnedWorkDateKey = null, requestedWorkMode = null }) {
-  const serverNow = new Date();
+export async function resolveAttendanceContext({ workspaceId, userId, membership, workspace, pinnedPolicyVersion = null, pinnedShift = null, pinnedWorkDateKey = null, requestedWorkMode = null, useRecordedMode = false, serverNow = new Date() }) {
   const timezone = getWorkspaceTimezone(workspace);
 
   const preliminaryEligibility = await resolveAttendanceEligibility({ workspaceId, userId, membership, workspace });
@@ -71,29 +71,23 @@ export async function resolveAttendanceContext({ workspaceId, userId, membership
     return { attendanceApplicable: false, eligibility: preliminaryEligibility, serverNow, timezone };
   }
 
-  const policyVersion = pinnedPolicyVersion || await resolveApplicablePolicyVersion({ workspaceId });
+  let policyVersion = pinnedPolicyVersion || await resolveApplicablePolicyVersion({ workspaceId });
   if (!policyVersion) {
     throw codedError(friendlyAttendanceMessage('POLICY_NOT_CONFIGURED'), 400, 'POLICY_NOT_CONFIGURED');
   }
 
   // Re-resolve with the policy loaded — excludedRoles/excludedUserIds are
   // policy-level extension points the preliminary pass couldn't see yet.
-  const eligibility = await resolveAttendanceEligibility({ workspaceId, userId, membership, workspace, attendancePolicy: policyVersion });
+  let eligibility = await resolveAttendanceEligibility({ workspaceId, userId, membership, workspace, attendancePolicy: policyVersion });
   if (!eligibility.attendanceRequired) {
     return { attendanceApplicable: false, eligibility, serverNow, timezone };
   }
 
   const profile = eligibility.profile;
-  const shift = pinnedShift !== null ? pinnedShift : await resolveApplicableShift({ workspaceId, userId, membership, date: serverNow, profile, policyVersion });
-  const workDateKey = pinnedWorkDateKey || resolveWorkDateKey({ nowInstant: serverNow, timezone, shift });
-  const dayInstant = dateOnlyToInstant(workDateKey, timezone);
-
-  const calendar = await resolveWorkspaceDay({ workspaceId, date: dayInstant, departmentId: primaryDepartmentId(membership), timezone });
-  const leave = await resolveLeaveContextForDate({ workspaceId, userId, dayInstant });
-  const workModeResolution = await resolveAuthorizedWorkMode({ workspaceId, userId, membership, dayInstant, timezone, policyVersion, requestedWorkMode });
-  const officeHours = await resolveEffectiveOfficeHours({ workspaceId, userId, membership, date: dayInstant, policyVersion, shift });
-
-  const sessions = await AttendanceSession.find({ workspaceId, user: userId, workDateKey }).sort({ checkInAt: 1 }).lean();
+  let shift = pinnedShift ?? await resolveApplicableShift({ workspaceId, userId, membership, date: serverNow, profile, policyVersion });
+  let workDateKey = pinnedWorkDateKey || resolveWorkDateKey({ nowInstant: serverNow, timezone, shift });
+  const loadSessions = key => AttendanceSession.find({ workspaceId, user: userId, workDateKey: key }).sort({ checkInAt: 1 }).lean();
+  let sessions = await loadSessions(workDateKey);
   // Active-session detection must be date-agnostic, matching the REAL
   // concurrency guard: AttendanceSession's partial unique index is scoped
   // to {workspaceId, user} + status:'ACTIVE' only — it has no workDateKey
@@ -110,6 +104,44 @@ export async function resolveAttendanceContext({ workspaceId, userId, membership
   // common case where today's own session (if any) is already the active one.
   const activeSession = sessions.find((s) => s.status === 'ACTIVE')
     || await AttendanceSession.findOne({ workspaceId, user: userId, status: 'ACTIVE' }).lean();
+
+  if (activeSession && activeSession.workDateKey !== workDateKey) {
+    workDateKey = activeSession.workDateKey;
+    sessions = await loadSessions(workDateKey);
+  }
+  const dayInstant = dateOnlyToInstant(workDateKey, timezone);
+  const recorded = activeSession || sessions.findLast(session => session.policyVersion);
+  if (recorded?.policyVersion && String(recorded.policyVersion) !== String(policyVersion._id)) {
+    policyVersion = await AttendancePolicyVersion.findOne({ workspaceId, _id: recorded.policyVersion }).lean();
+    if (!policyVersion) throw codedError(friendlyAttendanceMessage('POLICY_NOT_CONFIGURED'), 400, 'POLICY_NOT_CONFIGURED');
+    eligibility = await resolveAttendanceEligibility({ workspaceId, userId, membership, workspace, attendancePolicy: policyVersion });
+  } else if (!recorded && dayInstant < new Date(policyVersion.effectiveFrom)) {
+    const historical = await resolveApplicablePolicyVersion({ workspaceId, date: dayInstant });
+    if (historical) {
+      policyVersion = historical;
+      eligibility = await resolveAttendanceEligibility({ workspaceId, userId, membership, workspace, attendancePolicy: policyVersion });
+      shift = pinnedShift ?? await resolveApplicableShift({ workspaceId, userId, membership, date: dayInstant, profile, policyVersion });
+    }
+  }
+  if (recorded && String(recorded.shift || '') !== String(shift?._id || '')) {
+    shift = recorded.shift ? await AttendanceShift.findOne({ workspaceId, _id: recorded.shift }).lean() : null;
+  }
+  const calendar = await resolveWorkspaceDay({ workspaceId, date: dayInstant, departmentId: primaryDepartmentId(membership), timezone });
+  const leave = await resolveLeaveContextForDate({ workspaceId, userId, dayInstant });
+  let workModeResolution = await resolveAuthorizedWorkMode({ workspaceId, userId, membership, dayInstant, timezone, policyVersion, requestedWorkMode });
+  if (recorded?.checkIn?.workMode && useRecordedMode) {
+    const { workMode, effectiveMode } = recorded.checkIn;
+    workModeResolution = { ...workModeResolution, workMode, effectiveMode: effectiveMode || (workMode === 'HYBRID' ? workModeResolution.effectiveMode : workMode) };
+  }
+  const officeHours = await resolveSessionOfficeHours(recorded, { workspaceId, userId, membership, date: dayInstant, policyVersion, shift });
+  if (!pinnedWorkDateKey && !recorded && workModeResolution.effectiveMode === 'OFFICE') {
+    const officeDate = resolveWorkDateKey({ nowInstant: serverNow, timezone, shift: officeHours });
+    if (officeDate !== workDateKey) {
+      return resolveAttendanceContext({ workspaceId, userId, membership, workspace, pinnedPolicyVersion, pinnedShift,
+        pinnedWorkDateKey: officeDate, requestedWorkMode, useRecordedMode, serverNow });
+    }
+  }
+  if (!eligibility.attendanceRequired) return { attendanceApplicable: false, eligibility, serverNow, timezone };
 
   const approvedRegularizations=await AttendanceRegularization.find({workspaceId,requester:userId,workDateKey,status:'APPROVED'}).sort({decidedAt:1,createdAt:1,_id:1}).lean();
   const effectiveSessions=applyRegularizationOverlay({sessions,approvedRegularizations});
@@ -148,19 +180,21 @@ function evaluateCheckInBlockers(ctx) {
   return { allowed: true, code: null };
 }
 
-export async function attendanceBreakWindows(workspaceId, sessions, at, dbSession) {
-  const start = Math.min(...sessions.filter(session => session.checkInAt).map(session => +new Date(session.checkInAt)));
+export async function attendanceBreakWindows(workspaceId, sessions, at, dbSession, schedule = null) {
+  const start = Math.min(schedule ? +schedule.startedAt : Infinity, ...sessions.filter(session => session.checkInAt).map(session => +new Date(session.checkInAt)));
   if (!Number.isFinite(start) || start > +at) return [];
   const end = sessions.some(session => session.status === 'ACTIVE') ? at
     : new Date(Math.min(+at, Math.max(start, ...sessions.filter(session => session.checkOutAt).map(session => +new Date(session.checkOutAt)))));
-  if (+end <= start) return [];
+  const through = new Date(Math.max(+end, schedule ? +schedule.endedAt : -Infinity));
+  if (+through <= start) return [];
   const from = new Date(start);
-  return workBreakWindowsInRange(await readWorkBreak(workspaceId, from, dbSession), from, end);
+  return workBreakWindowsInRange(await readWorkBreak(workspaceId, from, dbSession), from, through);
 }
 
 /** Computes and persists the attendance day for check-in, checkout and regularization. */
 export async function computeAndUpsertDay({ workspaceId, userId, workDateKey, eligibility, timezone, calendar, leave, workModeResolution, policyVersion, shift, officeHours, sessions, serverNow, dbSession, breakWindows }) {
-  breakWindows ??= await attendanceBreakWindows(workspaceId, sessions, serverNow, dbSession);
+  const schedule = scheduleForDay({ workDateKey, timezone, officeHours, shift });
+  breakWindows ??= await attendanceBreakWindows(workspaceId, sessions, serverNow, dbSession, schedule);
   const status = resolveAttendanceStatus({
     eligibility, timezone, calendar, leave, workModeResolution, policyVersion, shift, officeHours, sessions, serverNow, isDayOver: false, workDateKey, breakWindows
   });
@@ -171,8 +205,8 @@ export async function computeAndUpsertDay({ workspaceId, userId, workDateKey, el
         calendarDayType: status.calendarDayType, isCalendarWorkingDay: status.isCalendarWorkingDay,
         policyVersion: policyVersion._id, shift: shift?._id || null, workMode: status.workMode,
         firstCheckInAt: status.firstCheckInAt, lastCheckOutAt: status.lastCheckOutAt,
-        workedMinutes: status.workedMinutes, shiftExpectedMinutes: status.shiftExpectedMinutes,
-        expectedWorkingMinutes: resolveExpectedWorkingMinutes({ workMode: status.workMode, officeHours, calendar, shift, leave }),
+        workedMinutes: status.workedMinutes, officeSeconds: status.officeSeconds, shiftExpectedMinutes: status.shiftExpectedMinutes,
+        expectedWorkingMinutes: expectedMinutes(status, { policyVersion, workModeResolution, officeHours, calendar, shift, leave }),
         lateMinutes: status.lateMinutes, earlyExitMinutes: status.earlyExitMinutes,
         effectiveOfficeHoursStart: status.effectiveOfficeHoursStart, effectiveOfficeHoursEnd: status.effectiveOfficeHoursEnd,
         effectiveOfficeHoursGraceMinutes: status.effectiveOfficeHoursGraceMinutes, effectiveOfficeHoursSource: status.effectiveOfficeHoursSource,
@@ -185,6 +219,13 @@ export async function computeAndUpsertDay({ workspaceId, userId, workDateKey, el
     { upsert: true, new: true, session: dbSession, runValidators: true }
   );
   return { day, status };
+}
+
+function expectedMinutes(status, { policyVersion, workModeResolution, officeHours, calendar, shift, leave }) {
+  if (usesOfficePercentage(policyVersion, workModeResolution.effectiveMode || status.workMode)) {
+    return calendar.isWorkingDay && leave.leaveState !== 'FULL_LEAVE' ? status.requiredOfficeSeconds / 60 : 0;
+  }
+  return resolveExpectedWorkingMinutes({ workMode: status.workMode, officeHours, calendar, shift, leave });
 }
 
 /**
@@ -206,40 +247,56 @@ export async function computeAndUpsertDay({ workspaceId, userId, workDateKey, el
  * evidence is preserved; successful application metadata is stored separately.
  */
 export async function recomputeAttendanceDayForDate({ workspaceId, userId, membership, workspace, workDateKey, dbSession = null }) {
+  return computeAndUpsertDay(await readAttendanceDayEvaluation({ workspaceId, userId, membership, workspace, workDateKey, dbSession }));
+}
+
+export async function readAttendanceDayEvaluation({ workspaceId, userId, membership, workspace, workDateKey, dbSession = null, historicalRepair = false }) {
   const timezone = getWorkspaceTimezone(workspace);
   const dayInstant = dateOnlyToInstant(workDateKey, timezone);
 
   const existingDay = await AttendanceDay.findOne({ workspaceId, user: userId, workDateKey }).session(dbSession).lean();
-  const policyVersion = existingDay?.policyVersion
-    ? await AttendancePolicyVersion.findById(existingDay.policyVersion).session(dbSession).lean()
-    : await resolveApplicablePolicyVersion({ workspaceId });
+  const rawSessions = await AttendanceSession.find({ workspaceId, user: userId, workDateKey }).sort({ checkInAt: 1 }).session(dbSession).lean();
+  const evidence = rawSessions.findLast(session => session.policyVersion);
+  const policyId = existingDay?.policyVersion || evidence?.policyVersion;
+  const policyVersion = policyId
+    ? await AttendancePolicyVersion.findOne({ _id: policyId, workspaceId }).session(dbSession).lean()
+    : await resolveApplicablePolicyVersion({ workspaceId, date: dayInstant, dbSession });
   if (!policyVersion) throw codedError(friendlyAttendanceMessage('POLICY_NOT_CONFIGURED'), 400, 'POLICY_NOT_CONFIGURED');
 
-  const shift = existingDay?.shift
-    ? await AttendanceShift.findById(existingDay.shift).session(dbSession).lean()
-    : null;
-
   const eligibility = await resolveAttendanceEligibility({ workspaceId, userId, membership, workspace, attendancePolicy: policyVersion });
+  const shiftId = existingDay ? existingDay.shift : evidence?.shift;
+  const shift = shiftId
+    ? await AttendanceShift.findOne({ _id: shiftId, workspaceId }).session(dbSession).lean()
+    : existingDay || evidence ? null : await resolveApplicableShift({ workspaceId, userId, membership, date: dayInstant, profile: eligibility.profile, policyVersion });
   const calendar = await resolveWorkspaceDay({ workspaceId, date: dayInstant, departmentId: primaryDepartmentId(membership), timezone, dbSession });
   const leave = await resolveLeaveContextForDate({ workspaceId, userId, dayInstant, dbSession });
   let workModeResolution = await resolveAuthorizedWorkMode({ workspaceId, userId, membership, dayInstant, timezone, policyVersion });
-  // Resolved fresh, scoped to `dayInstant` — same treatment as
-  // workModeResolution above, never pinned to a prior snapshot, since an
-  // Office Hours Override is date-scoped (effectiveFrom/effectiveUntil)
-  // the same way a Work Mode Override already is (spec §35: recompute
-  // using the configuration applicable TO THAT DATE, not "current" state).
-  const officeHours = await resolveEffectiveOfficeHours({ workspaceId, userId, membership, date: dayInstant, policyVersion, shift, dbSession });
+  const officeHours = await resolveSessionOfficeHours(evidence, { workspaceId, userId, membership, date: dayInstant, policyVersion, shift, dbSession });
 
-  const rawSessions = await AttendanceSession.find({ workspaceId, user: userId, workDateKey }).session(dbSession).lean();
-  const recordedMode = rawSessions.find(session=>session.checkIn?.workMode)?.checkIn.workMode;
-  if(recordedMode && recordedMode !== 'HYBRID')workModeResolution={...workModeResolution,workMode:recordedMode,effectiveMode:recordedMode};
+  const recordedMode = rawSessions.findLast(session => session.checkIn?.workMode)?.checkIn;
+  if (recordedMode) {
+    workModeResolution = { ...workModeResolution, workMode: recordedMode.workMode,
+      effectiveMode: recordedMode.effectiveMode || (recordedMode.workMode === 'HYBRID' ? workModeResolution.effectiveMode : recordedMode.workMode) };
+  }
   const approvedRegularizations = await AttendanceRegularization.find({ workspaceId, requester: userId, workDateKey, status: 'APPROVED' }).sort({decidedAt:1,createdAt:1,_id:1}).session(dbSession).lean();
+  if (historicalRepair && (!existingDay?.policyVersion || !rawSessions.length || rawSessions.some(session => session.status === 'ACTIVE')
+      || approvedRegularizations.length || existingDay.exceptionFlags?.includes('REGULARIZED'))) {
+    return null;
+  }
+  if (historicalRepair && !evidence?.officeHoursSnapshot
+      && (existingDay.shift || existingDay.effectiveOfficeHoursSource !== officeHours.source
+        || officeHours.source !== 'WORKSPACE_POLICY')) {
+    return null;
+  }
   const sessions = applyRegularizationOverlay({ sessions: rawSessions, approvedRegularizations });
-
-  return computeAndUpsertDay({
-    workspaceId, userId, workDateKey, eligibility: existingDay ? {...eligibility,attendanceRequired:true} : eligibility, timezone, calendar, leave, workModeResolution,
-    policyVersion, shift, officeHours, sessions, serverNow: new Date(), dbSession
-  });
+  const serverNow = new Date();
+  const schedule = scheduleForDay({ workDateKey, timezone, officeHours, shift });
+  const breakWindows = await attendanceBreakWindows(workspaceId, sessions, serverNow, dbSession, schedule);
+  return {
+    workspaceId, userId, workDateKey, eligibility: existingDay ? { ...eligibility, attendanceRequired: true } : eligibility,
+    timezone, calendar: historicalRepair ? { ...calendar, dayType: existingDay.calendarDayType, isWorkingDay: existingDay.isCalendarWorkingDay } : calendar,
+    leave, workModeResolution, policyVersion, shift, officeHours, sessions, serverNow, dbSession, breakWindows
+  };
 }
 
 /** Own status, including existing overdue reconciliation and targeted recovery
@@ -251,7 +308,7 @@ export async function getTodayStatus({ workspaceId, userId, membership, workspac
   const {repairApprovedMissedCheckoutsForUser}=await import('./attendanceRegularizationApplication.service.js');
   await repairApprovedMissedCheckoutsForUser({workspaceId,userId});
 
-  const ctx = await resolveAttendanceContext({ workspaceId, userId, membership, workspace });
+  const ctx = await resolveAttendanceContext({ workspaceId, userId, membership, workspace, useRecordedMode: true });
   if (!ctx.attendanceApplicable) {
     return { attendanceApplicable: false, attendanceRequired: false, reason: ctx.eligibility.reason };
   }
@@ -260,7 +317,7 @@ export async function getTodayStatus({ workspaceId, userId, membership, workspac
     eligibility: ctx.eligibility, timezone: ctx.timezone, calendar: ctx.calendar, leave: ctx.leave,
     workModeResolution: ctx.workModeResolution, policyVersion: ctx.policyVersion, shift: ctx.shift, officeHours: ctx.officeHours,
     sessions: ctx.sessions, serverNow: ctx.serverNow, isDayOver: false, workDateKey: ctx.workDateKey,
-    breakWindows: await attendanceBreakWindows(workspaceId, ctx.sessions, ctx.serverNow)
+    breakWindows: await attendanceBreakWindows(workspaceId, ctx.sessions, ctx.serverNow, null, scheduleForDay(ctx))
   });
   const checkInBlocker = evaluateCheckInBlockers(ctx);
 
@@ -296,7 +353,7 @@ export async function getTodayStatus({ workspaceId, userId, membership, workspac
     workModeSource: ctx.workModeResolution.workModeSource,
     // Informational only (new spec §33) — never fed back into presence/
     // duration tiering, which stays governed by shiftExpectedMinutes above.
-    expectedWorkingMinutes: resolveExpectedWorkingMinutes({ workMode: status.workMode, officeHours: ctx.officeHours, calendar: ctx.calendar, shift: ctx.shift, leave: ctx.leave }),
+    expectedWorkingMinutes: expectedMinutes(status, ctx),
     requirements: { officeRequiresGeofence: Boolean(ctx.policyVersion?.office?.requireCheckoutGeofence), wfhRequiresApproval: Boolean(ctx.policyVersion?.wfh?.requireApproval) }
   };
 }
@@ -321,7 +378,8 @@ export async function checkIn({ workspaceId, userId, membership, workspace, gps 
   }
 
   let evidence = {
-    workMode: ctx.workModeResolution.workMode, location: null, coordinates: null, reportedAccuracyMeters: null,
+    workMode: ctx.workModeResolution.workMode, effectiveMode: ctx.workModeResolution.effectiveMode,
+    location: null, coordinates: null, reportedAccuracyMeters: null,
     capturedAt: null, distanceMeters: null, allowedRadiusMeters: null, ipAddress
   };
 
@@ -398,7 +456,7 @@ export async function checkIn({ workspaceId, userId, membership, workspace, gps 
         [created] = await AttendanceSession.create([{
           workspaceId, user: userId, attendanceDay: dayShell._id, workDateKey: ctx.workDateKey,
           status: 'ACTIVE', checkInAt: ctx.serverNow, checkIn: evidence,
-          policyVersion: ctx.policyVersion._id, shift: ctx.shift?._id || null,
+          policyVersion: ctx.policyVersion._id, shift: ctx.shift?._id || null, officeHoursSnapshot: ctx.officeHours,
           reportingDepartmentId: reportingDepartment?._id ?? null,
           missedCheckoutCutoffAt,
           effectiveShiftEndAt,

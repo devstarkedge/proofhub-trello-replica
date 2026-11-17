@@ -15,13 +15,13 @@ const muted={color:'var(--color-text-secondary)'};
 function checkoutOutcomeStatus(outcome) {
   if (outcome.provisional) return 'PROVISIONAL';
   if (outcome.leaveState === 'FULL_LEAVE') return 'ON_LEAVE';
-  return outcome.presenceState;
+  return outcome.displayStatus || outcome.presenceState;
 }
 
 function checkoutWarningMessage(warning, uncoveredEarlyMinutes) {
   const minutes = warning.minutes ?? uncoveredEarlyMinutes;
   if (warning.code === 'EARLY_EXIT' && Number.isFinite(minutes)) {
-    return `${formatHours(minutes)} of early departure outside approved leave.`;
+    return `Proposed checkout leaves ${formatHours(minutes)} of scheduled office time before shift end, after scheduled breaks and approved leave.`;
   }
   return warning.message;
 }
@@ -92,8 +92,10 @@ export default function CheckOutConfirmationModal({attendanceSessionId,onClose,o
           <p className="flex flex-wrap items-center gap-2 text-sm font-semibold">
             Expected outcome
             <PresenceStatusBadge status={checkoutOutcomeStatus(preview.outcome)} label={preview.outcome.label} />
+            {['LATE', 'LATE_AND_EARLY_EXIT'].includes(preview.outcome.punctualityState) && <PresenceStatusBadge status="LATE" />}
           </p>
           <p className="mt-1 text-xs" style={muted}>{preview.outcome.explanation}</p>
+          {preview.remainingOfficeSeconds > 0 && <p className="mt-2 text-sm" style={muted}>Office time still needed for Present <strong className="tabular-nums">{formatTrackingClock(Math.ceil(preview.remainingOfficeSeconds))}</strong></p>}
         </div>
         {preview.approvedLeaves.length > 0 && <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3">
           <p className="flex items-center gap-2 text-sm font-medium"><ShieldCheck size={16} />Approved leave</p>

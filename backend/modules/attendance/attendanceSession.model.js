@@ -9,6 +9,7 @@ import workspaceScopePlugin from '../workspaces/workspaceScopePlugin.js';
  */
 const evidenceSchema = new mongoose.Schema({
   workMode: { type: String, enum: ['OFFICE', 'WFH', 'HYBRID', 'FIELD'], required: true },
+  effectiveMode: { type: String, enum: ['OFFICE', 'WFH', 'FIELD'] },
   location: { type: mongoose.Schema.Types.ObjectId, ref: 'AttendanceLocation', default: null },
   // Denormalized at write time — so this evidence stays fully explainable
   // even after the referenced AttendanceLocation is later renamed or
@@ -47,6 +48,11 @@ const attendanceSessionSchema = new mongoose.Schema({
   // trap an already-active session or reinterpret it (spec §37, §74, §80-82).
   policyVersion: { type: mongoose.Schema.Types.ObjectId, ref: 'AttendancePolicyVersion', default: null },
   shift: { type: mongoose.Schema.Types.ObjectId, ref: 'AttendanceShift', default: null },
+  officeHoursSnapshot: { type: new mongoose.Schema({
+    startLocalTime: String, endLocalTime: String, graceMinutes: Number, earlyExitGraceMinutes: Number,
+    minimumFullDayMinutes: Number, minimumHalfDayMinutes: Number, source: String,
+    cutoffGraceMinutes: Number, maxSessionDurationHours: Number
+  }, { _id: false }), default: undefined },
   // Null means check-in resolved no safe destination. An absent field marks a
   // pre-rollout session whose route can be recovered from its check-in report.
   reportingDepartmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department' },

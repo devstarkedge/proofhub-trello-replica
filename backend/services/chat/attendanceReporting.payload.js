@@ -38,8 +38,11 @@ export function dailyWorkSummary(sessions, attendanceRows, at) {
       const row = rows.get(key) || { ...context, seconds: 0 };
       row.seconds += seconds; rows.set(key, row); workSeconds += seconds;
     }
-    for (const pause of session.pauses || []) personalPauseSeconds += Math.max(0,
-      (Math.min(+new Date(pause.endedAt || at), cutoff) - Math.max(start, +new Date(pause.startedAt))) / 1000);
+    for (const pause of session.pauses || []) {
+      if (pause.reason === 'SCHEDULED_WORK_BREAK') continue;
+      personalPauseSeconds += Math.max(0,
+        (Math.min(+new Date(pause.endedAt || at), cutoff) - Math.max(start, +new Date(pause.startedAt))) / 1000);
+    }
   }
   return { rows: [...rows.values()], workSeconds, personalPauseSeconds };
 }
@@ -61,8 +64,8 @@ export function transitionSnapshot({ action, attendance, work, before, at, day, 
         checkoutReason: attendance.closureReason, lastActivityAt: attendance.lastActivityAt,
       } : {}),
       summary: dailyWorkSummary(sessions || [], attendanceRows || [attendance], at),
-      attendanceSeconds: attendance.checkoutSummary?.attendanceSeconds ?? (day?.workedMinutes == null ? null : day.workedMinutes * 60),
-      outcome: attendance.checkoutSummary?.outcome || { presenceState: day?.presenceState, leaveState: day?.leaveState },
+      attendanceSeconds: attendance.checkoutSummary?.attendanceSeconds ?? day?.officeSeconds ?? (day?.workedMinutes == null ? null : day.workedMinutes * 60),
+      outcome: attendance.checkoutSummary?.outcome || { presenceState: day?.presenceState, leaveState: day?.leaveState, punctualityState: day?.punctualityState },
       // Pending screenshots cannot change authoritative work time. They are
       // informational only and are never counted as work.
       pendingEvidenceUploads: attendance.checkoutSummary?.pendingUploads || 0,

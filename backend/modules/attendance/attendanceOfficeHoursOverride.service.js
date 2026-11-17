@@ -132,6 +132,12 @@ export async function resolveEffectiveOfficeHours({ workspaceId, userId, members
 
 // ─── Settings CRUD ──────────────────────────────────────────────────────────
 
+// Check-in captures effective settings because shifts and overrides can be
+// edited in place even while the policy version itself stays unchanged.
+export async function resolveSessionOfficeHours(session, args) {
+  return session?.officeHoursSnapshot || resolveEffectiveOfficeHours(args);
+}
+
 export async function listOverrides({ workspaceId }) {
   const overrides = await AttendanceOfficeHoursOverride.find({ workspaceId, isActive: true }).sort({ scopeType: 1, priority: -1 }).lean();
   return Promise.all(overrides.map(async (o) => ({ ...o, scopeName: await scopeName(o.scopeType, o.scopeId) })));

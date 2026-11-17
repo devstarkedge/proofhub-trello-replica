@@ -40,6 +40,7 @@ const attendanceDaySchema = new mongoose.Schema({
   firstCheckInAt: { type: Date, default: null },
   lastCheckOutAt: { type: Date, default: null },
   workedMinutes: { type: Number, default: 0, min: 0 },
+  officeSeconds: { type: Number, min: 0 },
   expectedWorkingMinutes: { type: Number, min: 0 },
   shiftExpectedMinutes: { type: Number, default: 0, min: 0 }, // from policy/shift minimumFullDayMinutes, NOT the calendar's own expected-hours concept
   lateMinutes: { type: Number, default: 0, min: 0 },
@@ -58,7 +59,7 @@ const attendanceDaySchema = new mongoose.Schema({
   evaluationRevision: { type: Number, default: 0 },
   presenceState: {
     type: String,
-    enum: ['NOT_STARTED', 'PRESENT', 'HALF_PRESENT', 'ABSENT', 'MISSING_CHECKOUT'],
+    enum: ['NOT_STARTED', 'PRESENT', 'HALF_PRESENT', 'SHORT_PRESENT', 'ABSENT', 'MISSING_CHECKOUT'],
     default: 'NOT_STARTED'
   },
   punctualityState: { type: String, enum: ['ON_TIME', 'LATE', 'EARLY_EXIT', 'LATE_AND_EARLY_EXIT', null], default: null },

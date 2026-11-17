@@ -7,14 +7,15 @@ import AttendanceRegularization from './attendanceRegularization.model.js';
 import { WorkSession, TrackingScreenshot } from '../tracking/tracking.models.js';
 import { trackingContext, can } from '../tracking/tracking.authorization.js';
 import { resolveAttendanceEligibility } from './attendanceEligibility.service.js';
-import { resolveEffectiveOfficeHours } from './attendanceOfficeHoursOverride.service.js';
+import { resolveSessionOfficeHours } from './attendanceOfficeHoursOverride.service.js';
 import { resolveAuthorizedWorkMode } from './attendanceWorkMode.service.js';
 import { resolveWorkspaceDay } from '../workCalendar/workCalendarFacade.js';
 import { dateOnlyToInstant, getWorkspaceTimezone } from '../leave/leaveTimezone.util.js';
 import { resolveLeaveContextForDate } from './attendanceLeaveReconciliation.service.js';
 import { resolveAttendanceStatus } from './attendanceStatusResolver.service.js';
+import { reportStatus } from './attendanceTeamReport.js';
 import { applyRegularizationOverlay } from './attendanceRegularizationOverlay.js';
-import { attendanceIntervals, intervalMinutes, unionIntervals, scheduleForDay, resolveLeaveCoverage } from './attendanceIntervals.js';
+import { intervalMinutes, unionIntervals, scheduleForDay, resolveLeaveCoverage } from './attendanceIntervals.js';
 import { attendanceBreakWindows } from './attendance.service.js';
 import { codedError } from './attendanceErrors.js';
 import { legacyHardCutoff } from './attendanceActivity.service.js';
@@ -63,19 +64,22 @@ export async function evaluateCheckout({workspaceId,userId,membership,workspace,
   const eligibility=await resolveAttendanceEligibility({workspaceId,userId,membership,workspace,attendancePolicy:policyVersion});
   // An already-started attendance cycle can still be closed after eligibility changes.
   const context={workspaceId,userId,workDateKey,timezone,dayInstant,policyVersion,shift,eligibility:{...eligibility,attendanceRequired:true},serverNow:at};
-  context.officeHours=await resolveEffectiveOfficeHours({workspaceId,userId,membership,date:dayInstant,policyVersion,shift,dbSession});
+  context.officeHours=await resolveSessionOfficeHours(attendance,{workspaceId,userId,membership,date:dayInstant,policyVersion,shift,dbSession});
   context.calendar=await resolveWorkspaceDay({workspaceId,date:dayInstant,departmentId:membership.department?.[0],timezone,dbSession});
   context.leave=await resolveLeaveContextForDate({workspaceId,userId,dayInstant,dbSession});
   // The mode actually authorized at check-in remains authoritative for this cycle.
   const storedMode=attendance.checkIn?.workMode;
-  context.workModeResolution=storedMode&&storedMode!=='HYBRID'?{workMode:storedMode,effectiveMode:storedMode}:await resolveAuthorizedWorkMode({workspaceId,userId,membership,dayInstant,timezone,policyVersion,requestedWorkMode:storedMode});
+  const effectiveMode=attendance.checkIn?.effectiveMode || (storedMode !== 'HYBRID' ? storedMode : null);
+  context.workModeResolution=effectiveMode ? {workMode:storedMode,effectiveMode}
+    : await resolveAuthorizedWorkMode({workspaceId,userId,membership,dayInstant,timezone,policyVersion,requestedWorkMode:storedMode});
   const raw=await AttendanceSession.find({workspaceId,user:userId,workDateKey}).select('status checkInAt checkOutAt effectiveShiftEndAt missedCheckoutCutoffAt systemGeneratedCheckout regularizationResolution').session(dbSession).lean();
   const proposed=raw.map(s=>String(s._id)===String(attendance._id)?{...s,status:'COMPLETED',checkOutAt:at}:s);
   const regularizations=await AttendanceRegularization.find({workspaceId,requester:userId,workDateKey,status:'APPROVED'}).sort({decidedAt:1,createdAt:1,_id:1}).select('attendanceSession finalCorrection').session(dbSession).lean();
   context.sessions=applyRegularizationOverlay({sessions:proposed,approvedRegularizations:regularizations});
-  context.breakWindows = await attendanceBreakWindows(workspaceId, context.sessions, at, dbSession);
+  const schedule=scheduleForDay(context);
+  context.breakWindows = await attendanceBreakWindows(workspaceId, context.sessions, at, dbSession, schedule);
   const outcome=resolveAttendanceStatus(context);
-  const schedule=scheduleForDay(context),coverage=resolveLeaveCoverage(context.leave,schedule);
+  const coverage=resolveLeaveCoverage(context.leave,schedule);
   const permissions=await trackingContext(workspaceId,userId,{includeProjects:false});
   const workVisible=can(permissions,'tracking.log',{workspaceId,user:userId})||can(permissions,'tracking.view_reports',{workspaceId,user:userId});
   let trackedWorkSeconds=null,workSessionIds=[],pendingUploads=0,workBreak=null;
@@ -101,23 +105,28 @@ export async function evaluateCheckout({workspaceId,userId,membership,workspace,
   }
   const warnings=[];
   if(!coverage.unresolved && context.leave.leaveState!=='FULL_LEAVE'){
-    if(outcome.earlyExitMinutes>0)warnings.push({code:'EARLY_EXIT',minutes:outcome.earlyExitMinutes,message:`${outcome.earlyExitMinutes} minutes of early departure are not covered by approved leave.`});
-    if(outcome.presenceState==='ABSENT')warnings.push({code:'INSUFFICIENT_DURATION',message:'Recorded attendance is below the required minimum after approved leave adjustments.'});
-    else if(outcome.presenceState==='HALF_PRESENT'&&context.leave.leaveFraction===0)warnings.push({code:'HALF_PRESENT',message:'Your effective attendance policy currently evaluates this workday as half present.'});
+    if(outcome.earlyExitMinutes>0)warnings.push({code:'EARLY_EXIT',minutes:outcome.earlyExitMinutes,message:'Your proposed checkout is before the scheduled shift ends.'});
   }
-  const label=coverage.unresolved?'Provisional — attendance review needed':context.leave.leaveState==='FULL_LEAVE'?'On approved leave':context.leave.leaveFraction===0.5&&outcome.presenceState==='HALF_PRESENT'?'Half present · half approved leave':({PRESENT:'Present',HALF_PRESENT:'Half present',ABSENT:'Absent',MISSING_CHECKOUT:'Missing checkout'})[outcome.presenceState]||'Provisional';
+  const { presenceState, punctualityState, leaveState, presenceFraction, leaveFraction } = outcome;
+  const displayStatus = reportStatus(outcome);
+  const labels = { PRESENT:'Present', HALF_PRESENT:'Half Day', SHORT_PRESENT:'Short Leave', ABSENT:'Absent',
+    MISSING_CHECKOUT:'Missing checkout', ON_LEAVE:'On approved leave', HOLIDAY:'Holiday', WEEKLY_OFF:'Non-working day' };
+  const label = coverage.unresolved ? 'Provisional — attendance review needed'
+    : (labels[displayStatus] || 'Provisional') + (leaveFraction === 0.5 ? ' · half approved leave' : '');
   const explanation=coverage.unresolved?'An approved leave time window could not be resolved safely. Your attendance will retain a review flag.':context.leave.leaveState==='FULL_LEAVE'?'Approved full-day leave is preserved. Recorded attendance remains available for authorized review.':coverage.summaries.some(s=>s.coverageResolved)&&!outcome.earlyExitMinutes?'Approved leave has been included in the attendance evaluation.':'Calculated using your effective attendance policy and recorded attendance.';
   const cutoff = legacyHardCutoff(attendance);
   const canConfirm = !cutoff || +at < +new Date(cutoff);
   const data={attendanceSessionId:attendance._id,workSessionIds,workDateKey,timezone,serverNow:at,proposedCheckOutAt:at,checkInAt:attendance.checkInAt,
-    attendanceSeconds:intervalMinutes(attendanceIntervals(context.sessions,at,context.breakWindows))*60,trackedWorkSeconds,workVisible,
+    attendanceSeconds:outcome.officeSeconds,trackedWorkSeconds,workVisible,
+    remainingOfficeSeconds:outcome.remainingOfficeSeconds,requiredOfficeSeconds:outcome.requiredOfficeSeconds,durationGraceSeconds:outcome.durationGraceSeconds,
     policyVersionId:policyVersion._id,schedule:schedule?{startedAt:schedule.startedAt,endedAt:schedule.endedAt,midpointAt:schedule.midpointAt}:null,
-    outcome:{presenceState:outcome.presenceState,punctualityState:outcome.punctualityState,leaveState:outcome.leaveState,presenceFraction:outcome.presenceFraction,leaveFraction:outcome.leaveFraction,label,provisional:coverage.unresolved,explanation},
+    outcome:{presenceState,punctualityState,leaveState,presenceFraction,leaveFraction,displayStatus,label,provisional:coverage.unresolved,explanation},
     approvedLeaves:coverage.summaries,uncoveredEarlyMinutes:outcome.earlyExitMinutes,warnings,pendingUploads,canConfirm};
   // Exact clocks/elapsed seconds are deliberately excluded from the proof:
   // only a changed outcome, schedule or approved coverage needs reconfirmation.
+  const { presenceFraction: _elapsedCredit, ...confirmationOutcome } = data.outcome;
   const fingerprint=digest({session:String(attendance._id),workDateKey,policy:String(policyVersion._id),schedule:data.schedule,mode:context.workModeResolution.effectiveMode,
-    officeHours:context.officeHours,outcome:data.outcome,leaves:data.approvedLeaves.map(({status:_,...covered})=>covered),warnings:warnings.map(w=>w.code),canConfirm});
+    officeHours:context.officeHours,outcome:confirmationOutcome,leaves:data.approvedLeaves.map(({status:_,...covered})=>covered),warnings:warnings.map(w=>w.code),canConfirm});
   return {...data,fingerprint,context:{...context,outcome,workBreak}};
 }
 export async function getCheckoutPreview(args) {

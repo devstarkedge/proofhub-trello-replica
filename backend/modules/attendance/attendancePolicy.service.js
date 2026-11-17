@@ -9,6 +9,7 @@ import * as workspaceContext from '../workspaces/workspaceContext.js';
 import { activateWorkBreak, validateWorkBreak } from './attendanceWorkBreak.js';
 import { onPolicyUpdated } from './attendanceHooks.js';
 import { invalidateTrackingReads } from '../tracking/tracking.readCache.js';
+import { usesOfficePercentage } from './attendanceStatusResolver.service.js';
 
 /**
  * Attendance policy lifecycle — a simplified, workspace-only version of
@@ -31,7 +32,12 @@ export async function getPolicyConfiguration({ workspaceId }) {
 }
 
 /** The published version currently governing this workspace's attendance calculations, or null if none has ever been activated. */
-export async function resolveApplicablePolicyVersion({ workspaceId }) {
+export async function resolveApplicablePolicyVersion({ workspaceId, date, dbSession = null }) {
+  if (date) {
+    return AttendancePolicyVersion.findOne({
+      workspaceId, status: { $in: ['published', 'superseded'] }, effectiveFrom: { $lte: date }
+    }).sort({ effectiveFrom: -1, publishedAt: -1, versionNumber: -1, _id: -1 }).session(dbSession).lean();
+  }
   const policy = await AttendancePolicy.findOne({ workspaceId, isDefault: true, status: 'active' }).lean();
   if (!policy?.currentVersion) return null;
   return AttendancePolicyVersion.findOne({ _id: policy.currentVersion, workspaceId }).lean();
@@ -44,8 +50,18 @@ function assertValidPolicyContent(content) {
   if (!Array.isArray(content.allowedWorkModes) || content.allowedWorkModes.length === 0) {
     throw new ErrorResponse('At least one allowed work mode (Office/WFH/Hybrid/Field) must be configured', 400);
   }
-  if (content.minimumHalfDayMinutes >= content.minimumFullDayMinutes) {
+  for (const [key, minimum] of [['graceMinutes', 0], ['earlyExitGraceMinutes', 0], ['minimumFullDayMinutes', 1], ['minimumHalfDayMinutes', 1]]) {
+    if (Object.hasOwn(content, key) && (!Number.isFinite(content[key]) || content[key] < minimum)) {
+      throw new ErrorResponse(`Invalid attendance policy duration: ${key} must be at least ${minimum} minutes`, 400);
+    }
+  }
+  const percentage = usesOfficePercentage(content, 'OFFICE');
+  const needsFixedMinimum = !percentage || content.allowedWorkModes.some(mode => mode !== 'OFFICE');
+  if (needsFixedMinimum && (content.minimumHalfDayMinutes ?? 240) >= (content.minimumFullDayMinutes ?? 480)) {
     throw new ErrorResponse('The half-day minimum must be less than the full-day minimum', 400);
+  }
+  if (percentage && (content.earlyExitGraceMinutes ?? 0) >= (content.minimumFullDayMinutes ?? 480)) {
+    throw new ErrorResponse('Early-exit grace must be shorter than the full-day minimum', 400);
   }
   const officeHours = content.officeHours;
   if (officeHours) {

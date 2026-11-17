@@ -18,7 +18,8 @@ export function subtractIntervals(intervals, exclusions) {
   for (const [left,right] of unionIntervals(exclusions)) result = result.flatMap(([a,b]) => right <= a || left >= b ? [[a,b]] : [[a,Math.min(b,left)],[Math.max(a,right),b]].filter(([s,e]) => e > s));
   return result;
 }
-export const intervalMinutes = intervals => unionIntervals(intervals).reduce((sum,[a,b]) => sum+(b-a)/60000,0);
+export const intervalMilliseconds = intervals => unionIntervals(intervals).reduce((sum,[a,b]) => sum+b-a,0);
+export const intervalMinutes = intervals => intervalMilliseconds(intervals) / 60000;
 
 export function attendanceIntervals(sessions, at, breakWindows = []) {
   const intervals = sessions.flatMap(s => {
@@ -67,11 +68,20 @@ export function resolveLeaveCoverage(leave, schedule) {
       else {
         const base=DateTime.fromISO(schedule.workDateKey,{zone:schedule.timezone});
         const [h,m]=from.split(':').map(Number),[eh,em]=to.split(':').map(Number);
-        let local=base.set({hour:h,minute:m,second:0,millisecond:0});
-        if (+local < +schedule.startedAt && +schedule.endedAt > +base.plus({days:1})) local=local.plus({days:1});
-        let finish=local.set({hour:eh,minute:em});if(to <= from)finish=finish.plus({days:1});
-        if (local.toFormat('HH:mm') !== from || finish.toFormat('HH:mm') !== to || local.getPossibleOffsets().length>1 || finish.getPossibleOffsets().length>1 || (+finish-+local)/60000 !== duration) unresolved=true;
-        else { start=Math.max(+local,+schedule.startedAt);end=Math.min(+finish,+schedule.endedAt); }
+        // A post-midnight wall time may belong to either side of the
+        // business date. Match against the actual shift interval.
+        const anchor = base.set({hour:h,minute:m,second:0,millisecond:0});
+        const candidates = [anchor, anchor.plus({days:1})].map(local => {
+          const finish = (to <= from ? local.plus({days:1}) : local).set({hour:eh,minute:em});
+          return { local, finish, start: Math.max(+local, +schedule.startedAt), end: Math.min(+finish, +schedule.endedAt) };
+        }).filter(candidate => candidate.end > candidate.start);
+        const match = candidates[0];
+        if (match) {
+          const { local, finish } = match;
+          if (candidates.length > 1 || local.toFormat('HH:mm') !== from || finish.toFormat('HH:mm') !== to
+              || local.getPossibleOffsets().length > 1 || finish.getPossibleOffsets().length > 1 || (+finish-+local)/60000 !== duration) unresolved=true;
+          else ({ start, end } = match);
+        }
       }
     } else unresolved=true;
     const resolved=Number.isFinite(start)&&Number.isFinite(end)&&end>start;

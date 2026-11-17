@@ -36,13 +36,14 @@ function DayDetails({ day, selectedDate, timezone, pending, error }) {
       <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
         <span className="text-xs" style={mutedStyle}>Workspace office time - {schedule || 'Unavailable'}</span>
         <DayStatus day={day} />
+        {['LATE', 'LATE_AND_EARLY_EXIT'].includes(day?.punctualityState) && <PresenceStatusBadge status="LATE" />}
       </div>
     </div>
     <div className="grid gap-2 sm:grid-cols-2">
       <DetailField icon={LogIn} label="Check-in">{attendanceTimeLabel(day?.activeSession?.checkInAt || day?.firstCheckInAt, timezone)}</DetailField>
       <DetailField icon={Monitor} label="Work mode">{workModes[day?.workMode] || 'Unavailable'}</DetailField>
       <DetailField icon={LogOut} label="Check-out">{attendanceTimeLabel(day?.lastCheckOutAt, timezone)}</DetailField>
-      <DetailField icon={Layers} label="Office hours">{day?.firstCheckInAt && day.workedMinutes != null ? formatHours(day.workedMinutes) : 'Unavailable'}</DetailField>
+      <DetailField icon={Layers} label="Office hours">{day?.firstCheckInAt && (day.officeSeconds != null || day.workedMinutes != null) ? formatHours(day.officeSeconds != null ? day.officeSeconds / 60 : day.workedMinutes) : 'Unavailable'}</DetailField>
       <DetailField icon={Clock3} label="Work time">{day?.trackedSeconds != null ? formatHours(day.trackedSeconds / 60) : 'Unavailable'}</DetailField>
       <DetailField icon={CalendarCheck} label="Status">{personalDayStyle(day).label}</DetailField>
     </div>
@@ -118,6 +119,7 @@ export default function MyAttendanceOverview({ today, workspace, scope, children
   const cards = [
     { label: 'Present days', value: counts.present, icon: CalendarCheck, color: 'var(--color-success-text)', background: 'var(--color-success-subtle)' },
     { label: 'Half days', value: counts.halfDays, icon: Clock3, color: 'var(--color-warning-text)', background: 'var(--color-warning-subtle)' },
+    { label: 'Short leave (attendance)', value: counts.shortDays, icon: Clock3, color: 'var(--color-warning-text)', background: 'var(--color-warning-subtle)' },
     { label: 'Absent days', value: counts.absent, icon: CalendarX, color: 'var(--color-error-text)', background: 'var(--color-error-subtle)' },
     { label: 'On leave', value: counts.leave, icon: Umbrella, color: 'var(--color-info-text)', background: 'var(--color-info-subtle)' }
   ];
@@ -170,7 +172,7 @@ export default function MyAttendanceOverview({ today, workspace, scope, children
                   </button>;
                 })}</div></div>
             </div> : !days.length ? <div className="px-5 py-12 text-center text-sm" style={mutedStyle}>No attendance records are available for this month.</div> : <div className="max-h-[34rem] overflow-auto"><table className="w-full text-left text-xs"><thead className="sticky top-0" style={{ backgroundColor: 'var(--color-card-bg)' }}><tr>{['Date', 'Status', 'Check-in', 'Check-out', 'Work time'].map(label => <th key={label} className="whitespace-nowrap px-3 py-3 font-medium" style={mutedStyle}>{label}</th>)}</tr></thead><tbody>{days.map(day => <tr key={day.workDateKey} className="border-t" style={{ borderColor: 'var(--color-border-subtle)', backgroundColor: selectedDate === day.workDateKey ? 'var(--color-primary-subtle)' : undefined }}><td className="whitespace-nowrap px-3 py-3"><button type="button" className="font-medium underline-offset-2 hover:underline" style={{ color: 'var(--color-primary)' }} onClick={() => setSelectedDate(day.workDateKey)}>{attendanceDateLabel(day.workDateKey, { day: 'numeric', month: 'short' })}</button>{day.currentStatus && <span className="mt-0.5 block text-[10px]" style={mutedStyle}>Current status</span>}</td><td className="px-3 py-3"><DayStatus day={day} /></td><td className="whitespace-nowrap px-3 py-3">{attendanceTimeLabel(day.activeSession?.checkInAt || day.firstCheckInAt, timezone)}</td><td className="whitespace-nowrap px-3 py-3">{attendanceTimeLabel(day.lastCheckOutAt, timezone)}</td><td className="whitespace-nowrap px-3 py-3 tabular-nums">{day.trackedSeconds != null ? formatHours(day.trackedSeconds / 60) : 'Unavailable'}</td></tr>)}</tbody></table></div>}
-            <div className="flex flex-wrap gap-x-3 gap-y-2 border-t p-4" style={{ borderColor: 'var(--color-border-subtle)' }}>{['PRESENT', 'HALF_PRESENT', 'ABSENT', 'ON_LEAVE', 'MISSING_CHECKOUT', 'HOLIDAY', 'WEEKLY_OFF', 'LATE', 'NOT_STARTED', 'UNKNOWN'].map(status => { const style = PERSONAL_DAY_STYLES[status]; return <span key={status} className="inline-flex items-center gap-1.5 text-[10px]" style={mutedStyle}><span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full text-[9px] font-bold" style={{ color: style.color, backgroundColor: style.background }}>{style.short || '—'}</span>{style.label}</span>; })}</div>
+            <div className="flex flex-wrap gap-x-3 gap-y-2 border-t p-4" style={{ borderColor: 'var(--color-border-subtle)' }}>{['PRESENT', 'HALF_PRESENT', 'SHORT_PRESENT', 'ABSENT', 'ON_LEAVE', 'MISSING_CHECKOUT', 'HOLIDAY', 'WEEKLY_OFF', 'NOT_STARTED', 'UNKNOWN'].map(status => { const style = PERSONAL_DAY_STYLES[status]; return <span key={status} className="inline-flex items-center gap-1.5 text-[10px]" style={mutedStyle}><span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full text-[9px] font-bold" style={{ color: style.color, backgroundColor: style.background }}>{style.short || '—'}</span>{style.label}</span>; })}</div>
           </>}
         </section>
 

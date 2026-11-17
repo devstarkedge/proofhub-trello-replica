@@ -6,6 +6,7 @@ import AttendanceSession from './attendanceSession.model.js';
 import AttendanceDay from './attendanceDay.model.js';
 import { attendanceIntervals, intervalMinutes } from './attendanceIntervals.js';
 import { attendanceClosureCandidate } from './attendanceActivity.service.js';
+import { reportStatus } from './attendanceTeamReport.js';
 import { enqueueAttendanceEvent, processAttendanceEvents } from './attendanceEvents.service.js';
 import { enqueueAttendanceReport, requestPriorityAttendanceReportDelivery } from '../../services/chat/attendanceReporting.service.js';
 import AttendancePolicyVersion from './attendancePolicyVersion.model.js';
@@ -176,12 +177,12 @@ export async function reconcileOverdueSession({ session, workspace = null, now =
 
         const timezone = getWorkspaceTimezone(workspaceDoc);
         const membership = await WorkspaceMembership.findOne({ workspace: workspaceId, user }).session(dbSession).lean();
-        let day = null;
+        let day = null, status = null;
         if (membership) {
           await AttendanceDay.updateOne({ _id: current.attendanceDay, workspaceId, user },
             { $inc: { evaluationRevision: 1 } }, { session: dbSession });
           try {
-            ({ day } = await recomputeAttendanceDayForDate({
+            ({ day, status } = await recomputeAttendanceDayForDate({
               workspaceId, userId: user, membership, workspace: workspaceDoc, workDateKey: current.workDateKey, dbSession
             }));
           } catch (error) {
@@ -194,9 +195,10 @@ export async function reconcileOverdueSession({ session, workspace = null, now =
         let work;
         if (auto) {
           updated.checkoutSummary = {
-            attendanceSeconds: intervalMinutes(attendanceIntervals([updated], closure.at,
+            attendanceSeconds: status?.officeSeconds ?? intervalMinutes(attendanceIntervals([updated], closure.at,
               await attendanceBreakWindows(workspaceId, [updated], closure.at, dbSession))) * 60,
-            outcome: { presenceState: day?.presenceState, leaveState: day?.leaveState }
+            outcome: { presenceState: day?.presenceState, leaveState: day?.leaveState,
+              punctualityState: day?.punctualityState, displayStatus: reportStatus(day) }
           };
           const settlement = await settleCheckoutWork(updated, timezone, dbSession, { allowUnmarked: true });
           updated.checkoutSummary = settlement.summary;
