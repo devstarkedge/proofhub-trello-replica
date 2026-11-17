@@ -153,6 +153,13 @@ const HomePage = () => {
   useEffect(() => {
     if (currentWorkspace?._id) fetchDepartments();
   }, [fetchDepartments, currentWorkspace?._id]);
+  useEffect(() => {
+    const refresh = ({ detail }) => {
+      if (String(detail?.workspaceId) === String(currentWorkspace?._id)) void fetchDepartments(true);
+    };
+    window.addEventListener('socket-project-access-updated', refresh);
+    return () => window.removeEventListener('socket-project-access-updated', refresh);
+  }, [fetchDepartments, currentWorkspace?._id]);
 
   // useRealtimeSync owns directory refreshes and coalesces socket event bursts.
 

@@ -108,7 +108,10 @@ const EnterpriseEditProjectModal = React.memo(({
   });
 
   const managerChoices = useProjectManagers(loadedProject?.department?._id || loadedProject?.department, isOpen && ready && teamOpened, projectId);
-  const managers = managerChoices.users;
+  const managers = useMemo(() => [...new Map([
+    ...(loadedProject?.members || []).filter(member => member?._id).map(member => [String(member._id), { ...member, projectMemberOnly: true }]),
+    ...managerChoices.users.map(manager => [String(manager._id), manager])
+  ]).values()], [loadedProject?.members, managerChoices.users]);
   const selectedEmployees = useMemo(() =>
     formData.assignees.map(id => managers.find(m => m._id === id)).filter(Boolean),
     [formData.assignees, managers]
@@ -501,12 +504,15 @@ const EnterpriseEditProjectModal = React.memo(({
         startDate: formData.startDate,
         dueDate: formData.dueDate,
         technologies: formData.technologies,
-        members: formData.assignees,
         status: formData.status,
         priority: formData.priority,
         visibility: formData.visibility,
         projectType: formData.projectType
       };
+      const savedMembers = new Set((loadedProject.members || []).map(member => String(member?._id || member)));
+      if (formData.assignees.length !== savedMembers.size || formData.assignees.some(id => !savedMembers.has(String(id)))) {
+        updates.members = formData.assignees;
+      }
 
       // Only include client/billing fields for Hired Client projects
       if (formData.projectType !== 'Inhouse') {
@@ -1073,6 +1079,7 @@ const EnterpriseEditProjectModal = React.memo(({
                   {/* Team Tab */}
                   {ready && activeTab === 'team' && (
                     <TeamTab managersLoading={managerChoices.loading} managersError={managerChoices.error}
+                      title="Project members"
                       managers={managers}
                       assignees={formData.assignees}
                       selectedEmployees={selectedEmployees}

@@ -9,6 +9,8 @@ import {
   getBoardsByDepartment, 
   getWorkflowData, 
   getWorkflowComplete,
+  getProjectMemberOptions,
+  addProjectMember,
   getProjectActivity,
   uploadCoverImage,
   removeCoverImage,
@@ -32,6 +34,8 @@ router.get('/', protect, getBoards);
 router.get('/department/:departmentId', protect, getBoardsByDepartment);
 router.get('/workflow/:departmentId/:projectId', protect, getWorkflowData);
 router.get('/:id/workflow-complete', protect, getWorkflowComplete); // Optimized single-call endpoint
+router.get('/:id/member-options', protect, getProjectMemberOptions);
+router.post('/:id/members', protect, addProjectMember);
 router.get('/:id/activity', protect, getProjectActivity);
 router.get('/:id', protect, getBoard);
 

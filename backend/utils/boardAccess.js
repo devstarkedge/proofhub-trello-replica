@@ -32,7 +32,7 @@ export async function canUserAccessBoard(boardOrId, user, accessFacts = null) {
   if (typeof boardOrId === 'string' || boardOrId instanceof mongoose.Types.ObjectId) {
     if (!mongoose.Types.ObjectId.isValid(boardOrId)) return false;
     board = await Board.findById(boardOrId)
-      .select('workspaceId owner members visibility isDeleted department team')
+      .select('workspaceId owner members managers visibility isDeleted department team')
       .lean();
   }
 
@@ -43,7 +43,7 @@ export async function canUserAccessBoard(boardOrId, user, accessFacts = null) {
     const { loadAssignments } = await import('../authz/loaders.js');
     const { can } = await import('../authz/engine.js');
     const ctx = await buildContext(userId, user.workspaceId || board.workspaceId);
-    if (ctx.restriction?.type === 'assigned_only') await loadAssignments(ctx);
+    if (board.visibility === 'private' || ctx.restriction?.type === 'assigned_only') await loadAssignments(ctx);
     return can(ctx, 'project.view', board);
   }
 
@@ -53,6 +53,12 @@ export async function canUserAccessBoard(boardOrId, user, accessFacts = null) {
   const restriction = user.restriction?.type || user.accessType;
   if (restriction === 'selected_projects') {
     return (user.restriction?.projectIds || user.allowedProjects || []).some(value => String(value?._id || value) === boardId);
+  }
+  if (board.visibility === 'private') {
+    if ([board.owner, ...(board.members || []), ...(board.managers || [])].some(value => String(value?._id || value) === userId) ||
+        user.allowedProjects?.some(value => String(value?._id || value) === boardId)) return true;
+    const assigned = accessFacts?.activeAssignedBoardIds || accessFacts?.assignedBoardIds || new Set((await getAssignmentBasedBoardIds(userId)).map(String));
+    return assigned.has(boardId);
   }
   if (restriction === 'assigned_only' || restriction === 'assigned_tasks' || userHasCapability(user, CAPABILITIES.FORCE_ASSIGNMENT_SCOPE)) {
     if (String(board.owner?._id || board.owner) === userId || (board.members || []).some(value => String(value?._id || value) === userId)) return true;
@@ -172,14 +178,19 @@ export async function boardAccessFilter(user) {
   const restriction = user.restriction?.type || user.accessType;
   const selected = user.restriction?.projectIds || user.allowedProjects || [];
   if (restriction === 'selected_projects') return { isDeleted: { $ne: true }, _id: { $in: selected } };
-  if (user.role === 'admin' && !['assigned_only', 'assigned_tasks'].includes(restriction)) return { isDeleted: { $ne: true } };
+  const scoped = ['assigned_only', 'assigned_tasks'].includes(restriction) || userHasCapability(user, CAPABILITIES.FORCE_ASSIGNMENT_SCOPE);
   const assigned = await getAssignmentBasedBoardIds(actor);
-  const alternatives = [{ owner: actor }, { members: actor }, { _id: { $in: assigned } }];
-  if (user.role !== 'employee' && user.team) alternatives.push({ team: user.team?._id || user.team });
-  if (!['assigned_only', 'assigned_tasks'].includes(restriction) && !userHasCapability(user, CAPABILITIES.FORCE_ASSIGNMENT_SCOPE)) {
+  const alternatives = [{ owner: actor }, { members: actor }, { _id: { $in: assigned } },
+    { visibility: 'private', $or: [{ managers: actor }, { _id: { $in: selected } }] }];
+  const nonPrivate = { visibility: { $ne: 'private' } };
+  if (!scoped && (user.role === 'admin' || userHasCapability(user, CAPABILITIES.VIEW_ALL_PROJECTS))) {
+    return { isDeleted: { $ne: true }, $or: [...alternatives, nonPrivate] };
+  }
+  if (user.role !== 'employee' && user.team) alternatives.push({ ...nonPrivate, team: user.team?._id || user.team });
+  if (!scoped) {
     const roster = await Department.distinct('_id', { $or: [{ members: actor }, { managers: actor }] });
     const departments = Array.isArray(user.department) ? user.department : user.department ? [user.department] : [];
-    alternatives.push({ visibility: 'public' }, { department: { $in: [...departments, ...roster] } });
+    alternatives.push({ visibility: 'public' }, { ...nonPrivate, department: { $in: [...departments, ...roster] } });
   }
   return { isDeleted: { $ne: true }, $or: alternatives };
 }

@@ -271,7 +271,7 @@ boardSchema.index({ workspaceId: 1, members: 1, updatedAt: -1 });
 boardSchema.index({ workspaceId: 1, isDeleted: 1, deletedAt: 1 });
 
 boardSchema.plugin(workspaceScopePlugin);
-boardSchema.plugin(tenantReferencesPlugin, { members: ['owner', 'members'], references: { department: 'Department', team: 'Team', technologies: 'ProjectDropdownOption' }, parent: null });
+boardSchema.plugin(tenantReferencesPlugin, { members: ['owner', 'members', 'managers'], references: { department: 'Department', team: 'Team', technologies: 'ProjectDropdownOption' }, parent: null });
 boardSchema.plugin(hubspotSourcePlugin);
 boardSchema.index({ workspaceId: 1, 'hubspotSync.status': 1, 'hubspotSync.nextAttemptAt': 1 });
 boardSchema.index({ workspaceId: 1, 'hubspotSync.emailHash': 1, projectType: 1 });

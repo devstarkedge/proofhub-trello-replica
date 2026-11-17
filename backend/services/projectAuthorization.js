@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import Role from '../models/Role.js';
 import WorkspaceMembership from '../models/WorkspaceMembership.js';
+import Department from '../models/Department.js';
 import RecurringTask from '../models/RecurringTask.js';
 import { loadResource, loadAssignments } from '../authz/loaders.js';
 import { buildContext } from '../authz/context.js';
@@ -49,7 +50,9 @@ export async function requireProjectPermission(req, permission, resource) {
     throw new ErrorResponse('Employees have read-only project access', 403);
   }
   if (process.env.AUTHZ_V2 === 'enforce') {
-    if (!can(await context(req), permission, permission.startsWith('project.') ? resource?.project || resource : resource)) throw new ErrorResponse('Permission denied', 403);
+    const ctx = await context(req);
+    if ((resource?.project || resource)?.visibility === 'private' && ctx.kind !== 'guest') await loadAssignments(ctx);
+    if (!can(ctx, permission, permission.startsWith('project.') ? resource?.project || resource : resource)) throw new ErrorResponse('Permission denied', 403);
     return;
   }
   const key = legacyPermissions[permission];
@@ -62,6 +65,17 @@ export async function requireProjectPermission(req, permission, resource) {
   const role = req.projectRole;
   const permissions = role?.isSystem ? Role.getDefaultPermissions(role.slug) : role?.permissions;
   if (!role?.isActive || permissions?.[key] !== true) throw new ErrorResponse('Permission denied', 403);
+  if (permission === 'project.manage_members' && resource) {
+    const project = resource.project || resource;
+    const userId = id(req.user._id || req.user.id);
+    const department = id(project.department);
+    const assigned = [project.owner, ...(project.members || []), ...(project.managers || [])].some(value => id(value) === userId) ||
+      (req.user.restriction?.projectIds || req.user.allowedProjects || []).some(value => id(value) === id(project._id));
+    const assignedDepartment = (req.user.department || []).some(value => id(value) === department);
+    if (!assigned && !assignedDepartment && !await Department.exists({ _id: department, workspaceId: req.workspaceId, managers: userId })) {
+      throw new ErrorResponse('You cannot manage members of this project', 403);
+    }
+  }
 }
 
 /** Resolve the tenant-owned parent before any response, mutation or delivery. */

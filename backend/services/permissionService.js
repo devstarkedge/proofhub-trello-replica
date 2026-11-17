@@ -101,7 +101,7 @@ export const getAssignmentBasedBoardIds = async (userId) => {
   const { default: SubtaskNano } = await import('../models/SubtaskNano.js');
 
   const [cardBoards, subtaskBoards, nanoBoards] = await Promise.all([
-    Card.distinct('board', { assignees: userObjectId, isArchived: { $ne: true } }),
+    Card.distinct('board', { $or: [{ assignees: userObjectId }, { members: userObjectId }], isArchived: { $ne: true } }),
     Subtask.distinct('board', { assignees: userObjectId }),
     SubtaskNano.distinct('board', { assignees: userObjectId }),
   ]);

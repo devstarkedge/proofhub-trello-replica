@@ -1,3 +1,5 @@
+import { boardAccessFilter } from '../utils/boardAccess.js';
+import { castResourceFilter } from '../services/resourceReadFilter.js';
 import ProjectDropdownOption from '../models/ProjectDropdownOption.js';
 import { updateMemberAccess } from '../authz/accessAdminService.js';
 import { assignedDepartmentIds } from '../modules/attendance/attendanceReportingDepartment.service.js';
@@ -15,7 +17,7 @@ import { emitUserAssigned, emitUserUnassigned, emitBulkUsersUnassigned } from ".
 import "../middleware/authMiddleware.js";
 import { runBackground, createNotificationInBackground } from '../utils/backgroundTasks.js';
 import { resolveDepartmentScope } from '../utils/departmentStats.js';
-import { getAssignmentBasedBoardIds, getAssignmentBasedDepartmentIds, userHasCapability, CAPABILITIES } from '../services/permissionService.js';
+import { userHasCapability, CAPABILITIES } from '../services/permissionService.js';
 import { chatHooks } from '../utils/chatHooks.js';
 import { syncMembershipFromUser, isActiveWorkspaceMember } from '../modules/workspaces/membershipSyncService.js';
 import WorkspaceMembership from '../models/WorkspaceMembership.js';
@@ -182,66 +184,49 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
     ? { $map: { input: expression, as: 'assignedProject', in: { _id: '$$assignedProject._id' } } }
     : expression;
 
-  // Build match query based on user role (for Dashboard/Home - shows only assigned)
-  let matchQuery = { isActive: true };
-
-  // Determine access type first — needed for both dept and project match queries
-  const isEmployee = userHasCapability(user, CAPABILITIES.FORCE_ASSIGNMENT_SCOPE);
-  const userAccessType = (user.role === 'admin') ? 'full_department'
-    : isEmployee ? 'assigned_tasks'
-    : (user.accessType || 'full_department');
-
-  if (user) {
-    if (user.role !== 'admin') {
-      // Static: departments the user is formally a member of
-      const userDeptIds = Array.isArray(user.department) ? user.department : [];
-
-      // Dynamic: departments the user has cross-dept access to via task/subtask/nano assignment
-      // Example: user is in "Shopify" dept but assigned a task in a "Frontend" dept project
-      let dynamicDeptIds = [];
-      if (userAccessType === 'assigned_tasks') {
-        dynamicDeptIds = await getAssignmentBasedDepartmentIds(user.id);
-      }
-
-      // Union of static + dynamic, deduplicated
-      const seen = new Set();
-      const allDeptIds = [];
-      for (const id of [...userDeptIds, ...dynamicDeptIds]) {
-        const key = id.toString();
-        if (!seen.has(key)) {
-          seen.add(key);
-          allDeptIds.push(new mongoose.Types.ObjectId(key));
-        }
-      }
-
-      matchQuery._id = { $in: allDeptIds };
-    }
-    // Admin users see all departments (no additional filter)
-  }
-
+  const workspaceId = new mongoose.Types.ObjectId(req.workspaceId);
+  const userId = new mongoose.Types.ObjectId(user.id);
+  const ownDepartments = (Array.isArray(user.department) ? user.department : [user.department])
+    .map(value => value?._id || value).filter(mongoose.isValidObjectId).map(value => new mongoose.Types.ObjectId(value));
+  const accessType = user.restriction?.type || user.accessType;
+  const assignedOnly = user.role !== 'admin' && (
+    ['assigned_only', 'assigned_tasks'].includes(accessType)
+    || userHasCapability(user, CAPABILITIES.FORCE_ASSIGNMENT_SCOPE)
+  );
+  const prioritizeOwnAndDirectProjects = user.role !== 'admin' && !assignedOnly && accessType !== 'selected_projects';
   const projectMatchFilter = {
-    workspaceId: new mongoose.Types.ObjectId(req.workspaceId),
+    workspaceId,
     $expr: { $eq: ['$department', '$$deptId'] },
-    isArchived: false,
-    isDeleted: { $ne: true }
+    isArchived: { $ne: true },
+    $and: [castResourceFilter(await boardAccessFilter(user)), ...(prioritizeOwnAndDirectProjects ? [{ $or: [
+      { department: { $in: ownDepartments } }, { owner: userId }, { members: userId }, { managers: userId }, { visibility: 'private' }
+    ] }] : [])]
   };
-  if (userAccessType === 'selected_projects') {
-    const allowedIds = (user.allowedProjects || []).map(id => new mongoose.Types.ObjectId(id.toString()));
-    projectMatchFilter._id = { $in: allowedIds };
-  } else if (userAccessType === 'assigned_tasks') {
-    const uid = new mongoose.Types.ObjectId(user.id);
-    // Collect board IDs from task/subtask/nano-subtask assignees PLUS direct board ownership/membership
-    const assignedBoardIds = await getAssignmentBasedBoardIds(user.id);
-    projectMatchFilter.$or = [
-      { owner: uid },
-      { members: uid },
-      { _id: { $in: assignedBoardIds } }
-    ];
-  }
 
   // OPTIMIZED: Single aggregation pipeline instead of N+1 queries
   const departments = await Department.aggregate([
-    { $match: matchQuery },
+    { $match: { isActive: true } },
+    // Only authorized projects can introduce a department into Home.
+    {
+      $lookup: {
+        from: 'boards',
+        let: { deptId: '$_id' },
+        pipeline: [
+          { $match: projectMatchFilter },
+          { $sort: { createdAt: -1, _id: -1 } },
+          { $lookup: { from: ProjectDropdownOption.collection.name, localField: 'technologies', foreignField: '_id', pipeline: [{ $match: { workspaceId: new mongoose.Types.ObjectId(req.workspaceId), type: 'technology' } }, { $project: { label: 1, value: 1 } }], as: 'technologies' } },
+          { $project: { name: 1, description: 1, background: 1, owner: 1, members: 1, managers: 1, status: 1, coverImage: 1, coverImageHistory: 1, startDate: 1, dueDate: 1, technologies: 1, projectType: 1, createdAt: 1 } }
+        ],
+        as: 'projects'
+      }
+    },
+    ...(user.role === 'admin' ? [] : [{ $match: { $or: [
+      { _id: { $in: ownDepartments } }, { 'projects.0': { $exists: true } }
+    ] } }]),
+    ...(user.role === 'admin' ? [] : [{ $set: {
+      members: { $cond: [{ $in: ['$_id', ownDepartments] }, '$members', []] },
+      managers: { $cond: [{ $in: ['$_id', ownDepartments] }, '$managers', []] }
+    } }]),
     // Lookup managers
     {
       $lookup: {
@@ -262,31 +247,24 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
         as: 'members'
       }
     },
-    // Lookup projects (boards) — filtered by user's accessType
-    {
-      $lookup: {
-        from: 'boards',
-        let: { deptId: '$_id' },
-        pipeline: [
-          { $match: projectMatchFilter },
-          { $sort: { createdAt: -1, _id: -1 } },
-          { $lookup: { from: ProjectDropdownOption.collection.name, localField: 'technologies', foreignField: '_id', pipeline: [{ $match: { workspaceId: new mongoose.Types.ObjectId(req.workspaceId), type: 'technology' } }, { $project: { label: 1, value: 1 } }], as: 'technologies' } },
-          { $project: { name: 1, description: 1, background: 1, members: 1, managers: 1, status: 1, coverImage: 1, coverImageHistory: 1, startDate: 1, dueDate: 1, technologies: 1, projectType: 1, createdAt: 1 } }
-        ],
-        as: 'projects'
-      }
-    },
     // Lookup all cards for this department's projects (include status and isArchived for progress calculation)
     // For 'assigned_tasks' users: restrict to cards assigned to them so progress reflects their own tasks
     {
       $lookup: {
         from: 'cards',
-        let: { projectIds: '$projects._id' },
+        let: { projectIds: '$projects._id', memberProjectIds: { $map: {
+          input: { $filter: { input: '$projects', as: 'project', cond: {
+            $or: [{ $eq: ['$$project.owner', userId] }, { $in: [userId, { $ifNull: ['$$project.members', []] }] }]
+          } } }, as: 'project', in: '$$project._id'
+        } } },
         pipeline: [
-          { $match: { $expr: { $and: [
+          { $match: { workspaceId, $expr: { $and: [
             { $in: ['$board', '$$projectIds'] },
-            ...(userAccessType === 'assigned_tasks'
-              ? [{ $in: [new mongoose.Types.ObjectId(user.id), { $ifNull: ['$assignees', []] }] }]
+            ...(assignedOnly
+              ? [{ $or: [
+                { $in: [userId, { $ifNull: ['$assignees', []] }] },
+                { $in: ['$board', '$$memberProjectIds'] }
+              ] }]
               : [])
           ] } } },
           { $project: { board: 1, assignees: 1, members: 1, status: 1, isArchived: 1 } }

@@ -1,5 +1,6 @@
 import WorkspaceMembership from '../models/WorkspaceMembership.js';
 import Workspace from '../models/Workspace.js';
+import User from '../models/User.js';
 import Role from '../models/Role.js';
 import Department from '../models/Department.js';
 import Board from '../models/Board.js';
@@ -11,6 +12,8 @@ import { emitToUser, emitToWorkspace, getIO } from '../realtime/emitters.js';
 import { ROOM } from '../realtime/events.js';
 import { syncUserDepartmentRoster } from '../modules/workspaces/departmentRosterSync.js';
 import { activeReportingDepartments, assignedDepartmentIds } from '../modules/attendance/attendanceReportingDepartment.service.js';
+import { getAssignmentBasedBoardIds } from '../services/permissionService.js';
+import { run } from '../modules/workspaces/workspaceContext.js';
 
 // Transitional single writer. V2 grants and ceiling validation are added below
 // as the catalog lands; legacy controllers already stop touching User mirrors.
@@ -94,5 +97,26 @@ export async function updateMemberAccess({ workspaceId, userId, actor, patch, ex
     // rechecks membership and prevents removed users retaining subscriptions.
     getIO().in(ROOM.user(userId, workspaceId)).disconnectSockets(true);
   } catch { /* The service is also used by migrations/tests before sockets start. */ }
+  if (['allowedProjects', 'accessType', 'status', 'role', 'roleId'].some(key => Object.hasOwn(accessPatch, key))) {
+    void run({ workspaceId }, async () => {
+      const { chatHooks } = await import('../utils/chatHooks.js');
+      const { default: dispatcher } = await import('../services/chat/webhookDispatcher.js');
+      if (!await dispatcher.isEnabledForWorkspace(workspaceId)) return;
+      if (member.status === 'active' && (before.role !== member.role || String(before.roleId || '') !== String(member.roleId || ''))) {
+        const user = await User.findById(userId).select('name email avatar updatedAt isActive isVerified').lean();
+        if (user?.isActive) await chatHooks.onUserUpdated(user, { role: { old: before.role, new: member.role } }, actor, workspaceId)
+          .catch(error => console.error('Project admin access sync failed:', error.name));
+      }
+      const explicitProjects = [...(before.allowedProjects || []), ...(member.allowedProjects || []), ...(member.restriction?.projectIds || [])];
+      const assignments = await getAssignmentBasedBoardIds(userId);
+      const projects = Board.find({ workspaceId, visibility: 'private', isDeleted: { $ne: true }, $or: [
+        { _id: { $in: [...explicitProjects, ...assignments] } }, { owner: userId }, { members: userId }, { managers: userId }
+      ] }).select('_id').lean().cursor();
+      for await (const project of projects) {
+        await chatHooks.onProjectMembershipChanged(project._id, actor, 'workspace_project_access_changed')
+          .catch(error => console.error('Project membership sync failed:', error.name));
+      }
+    }).catch(error => console.error('Private project reconciliation failed:', error.name));
+  }
   return member;
 }

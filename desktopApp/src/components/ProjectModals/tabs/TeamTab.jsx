@@ -6,6 +6,7 @@ const TeamTab = memo(({
   managers,
   managersLoading = false,
   managersError = '',
+  title = 'Project manager',
   assignees,
   selectedEmployees,
   errors,
@@ -16,7 +17,7 @@ const TeamTab = memo(({
       <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200">
         <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
           <Shield size={16} className="text-purple-600" />
-          Project manager
+          {title}
           {assignees.length > 0 && (
             <span className="px-2 py-0.5 bg-indigo-100 text-indigo-600 text-xs font-semibold rounded-full">
               {assignees.length} selected
@@ -55,10 +56,10 @@ const TeamTab = memo(({
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-gray-900">{manager.name}</span>
-                    <Shield size={14} className="text-blue-500" />
+                    {!manager.projectMemberOnly && <Shield size={14} className="text-blue-500" />}
                   </div>
                   <p className="text-sm text-gray-500">{manager.email || 'No email'}</p>
-                  <p className="text-xs text-blue-600 font-medium">Manager</p>
+                  <p className="text-xs text-blue-600 font-medium">{manager.projectMemberOnly ? 'Project member' : 'Manager'}</p>
                 </div>
                 {assignees.includes(manager._id) && (
                   <CheckCircle2 className="h-6 w-6 text-indigo-600" />

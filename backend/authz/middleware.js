@@ -16,9 +16,9 @@ export function requirePermission(permission, { load, param = 'id' } = {}) {
       const ctx = await context(req);
       let resource;
       if (load) {
-        if (ctx.restriction?.type === 'assigned_only') await loadAssignments(ctx);
         resource = req.resource || await loadResource(ctx, load, req.params[param]);
         if (!resource) return res.status(404).json({ success: false, code: 'NOT_FOUND', message: 'Resource not found' });
+        if (ctx.restriction?.type === 'assigned_only' || (resource.project || resource).visibility === 'private' && ctx.kind !== 'guest') await loadAssignments(ctx);
       }
       const decision = explain(ctx, permission, resource);
       if (!decision.allowed) {

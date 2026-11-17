@@ -9,6 +9,12 @@ const assigned = (ctx, resource) => includes(resource.assignees, ctx.userId) || 
 const projectOf = resource => resource?.project || (resource?.board && typeof resource.board === 'object' && resource.board.visibility ? resource.board : null) || (resource?.visibility ? resource : null);
 const projectId = resource => id(projectOf(resource)?._id || resource.board || resource.projectId);
 const departmentId = resource => id(projectOf(resource)?.department || resource.department || resource._id);
+const directProjectMember = (ctx, project) => id(project?.owner) === id(ctx.userId) || includes(project?.members, ctx.userId);
+const publicAdminProject = (ctx, project) => project.visibility === 'public' && (ctx.isOwner || ctx.role?.key === 'admin');
+const explicitPrivateAccess = (ctx, project) => project?.visibility === 'private' && (
+  includes(project.managers, ctx.userId) || includes(ctx.allowedProjectIds, project._id) ||
+  ctx.restriction?.type === 'selected_projects' && includes(ctx.restriction.projectIds, project._id)
+);
 
 function scopeMatches(ctx, record, resource, permission) {
   const { scope, scopeIds } = record;
@@ -19,7 +25,8 @@ function scopeMatches(ctx, record, resource, permission) {
     const owner = resource.visibility ? resource.owner : resource.createdBy || resource.uploadedBy || resource.user || resource.owner;
     return id(owner) === id(ctx.userId) || (resource.visibility && permission !== 'project.change_visibility' && includes(resource.managers, ctx.userId));
   }
-  if (scope === 'assigned') return assigned(ctx, resource.taskResource || resource);
+  if (scope === 'assigned') return resource.visibility ? directProjectMember(ctx, resource) ||
+    includes(resource.managers, ctx.userId) || includes(ctx.assignedProjectIds, resource._id) : assigned(ctx, resource.taskResource || resource);
   if (scope === 'project') return Boolean(projectId(resource)) && (!restrictedIds || includes(scopeIds, projectId(resource)));
   if (scope === 'department') {
     if (restrictedIds && !includes(scopeIds, departmentId(resource)) && !(resource.departments || []).some(d => includes(scopeIds, d))) return false;
@@ -33,17 +40,20 @@ export function canViewProject(ctx, project, { includeDeleted = false } = {}) {
   const now = ctx?.now ?? Date.now();
   if (!ctx || ctx.status !== 'active' || !project || id(project.workspaceId) !== id(ctx.workspaceId) || ctx.kind === 'guest' && !current({ expiresAt: ctx.guestExpiresAt }, now)) return false;
   if (project.isDeleted && !includeDeleted) return false;
-  const member = id(project.owner) === id(ctx.userId) || includes(project.members, ctx.userId) || includes(project.managers, ctx.userId);
+  const directMember = ctx.kind !== 'guest' && directProjectMember(ctx, project);
+  const member = directMember || includes(project.managers, ctx.userId);
   let visible;
   if (ctx.kind === 'guest') visible = project.visibility === 'private' && (project.guests || []).some(g => id(g.user) === id(ctx.userId) && current(g, now));
   else if (member) visible = true;
-  else if (project.visibility === 'private') visible = false;
+  else if (project.visibility === 'private') visible = explicitPrivateAccess(ctx, project) || includes(ctx.assignedProjectIds, project._id);
   else if (project.visibility === 'workspace') visible = true;
+  else if (publicAdminProject(ctx, project)) visible = true;
   else if (project.visibility === 'department') visible = includes([...(ctx.departments || []), ...(ctx.managedDepartments || [])], project.department) || records(mapGet(ctx.grants, 'project.view')).some(g => g.scope === 'workspace' && current(g, now));
-  else visible = false; // Legacy public must be migrated explicitly first.
+  else visible = false;
   if (!visible) return false;
   if (ctx.restriction?.type === 'selected_projects') return includes(ctx.restriction.projectIds, project._id);
-  if (ctx.restriction?.type === 'assigned_only') return includes(ctx.assignedProjectIds, project._id);
+  if (ctx.restriction?.type === 'assigned_only') return directMember ||
+    (ctx.kind !== 'guest' && explicitPrivateAccess(ctx, project)) || includes(ctx.assignedProjectIds, project._id);
   return true;
 }
 
@@ -71,7 +81,9 @@ export function explain(ctx, permission, resource) {
   for (const dependency of entry.dependsOn) if (!can(ctx, dependency, resource)) return stop('missing_dependency');
   const matching = grants.filter(g => (ctx.kind !== 'guest' || g.scope === 'project') && (!resource || scopeMatches(ctx, g, resource, permission)));
   if (!matching.length) return stop('out_of_scope');
-  if (resource && ctx.restriction?.type === 'assigned_only' && ['task', 'comment', 'attachment'].includes(entry.resourceType) && !resource.visibility && !assigned(ctx, resource.taskResource || resource)) return stop('restricted');
+  if (resource && ctx.restriction?.type === 'assigned_only' && ['task', 'comment', 'attachment'].includes(entry.resourceType) && !resource.visibility &&
+      !(permission === 'task.view' && ctx.kind !== 'guest' && (directProjectMember(ctx, project) || explicitPrivateAccess(ctx, project))) &&
+      !assigned(ctx, resource.taskResource || resource)) return stop('restricted');
   if (ctx.kind === 'guest' && resource) {
     const share = project?.guests?.find(g => id(g.user) === id(ctx.userId) && current(g, now));
     const level = { viewer: ['project.view', 'task.view'], commenter: ['project.view', 'task.view', 'comment.create'], editor: ['project.view', 'task.view', 'comment.create', 'task.create', 'task.update', 'task.move', 'attachment.upload'] };
@@ -90,9 +102,17 @@ export function projectVisibilityFilter(ctx) {
   let alternatives;
   if (ctx.kind === 'guest') alternatives = [{ visibility: 'private', guests: { $elemMatch: { user: ctx.userId, $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }] } } }];
   else alternatives = [{ owner: ctx.userId }, { members: ctx.userId }, { managers: ctx.userId }, { visibility: 'workspace' }, { visibility: 'department', ...(records(mapGet(ctx.grants, 'project.view')).some(g => g.scope === 'workspace' && current(g, now.getTime())) || ctx.isOwner ? {} : { department: { $in: [...(ctx.departments || []), ...(ctx.managedDepartments || [])] } }) }];
+  if (ctx.kind !== 'guest' && (ctx.isOwner || ctx.role?.key === 'admin')) alternatives.push({ visibility: 'public' });
+  const explicitPrivate = { visibility: 'private', $or: [{ managers: ctx.userId }, { _id: { $in: [
+    ...(ctx.allowedProjectIds || []), ...(ctx.restriction?.type === 'selected_projects' ? ctx.restriction.projectIds || [] : [])
+  ] } }] };
+  if (ctx.kind !== 'guest') alternatives.push(explicitPrivate, { visibility: 'private', _id: { $in: ctx.assignedProjectIds || [] } });
   const conditions = [{ workspaceId: ctx.workspaceId, isDeleted: { $ne: true }, $or: alternatives }];
   if (ctx.restriction?.type === 'selected_projects') conditions.push({ _id: { $in: ctx.restriction.projectIds } });
-  if (ctx.restriction?.type === 'assigned_only') conditions.push({ _id: { $in: ctx.assignedProjectIds || [] } });
+  if (ctx.restriction?.type === 'assigned_only') conditions.push({ $or: [
+    { _id: { $in: ctx.assignedProjectIds || [] } },
+    ...(ctx.kind === 'guest' ? [] : [{ owner: ctx.userId }, { members: ctx.userId }, explicitPrivate])
+  ] });
   return { $and: conditions };
 }
 
@@ -104,7 +124,7 @@ export function projectAccessFilter(ctx) {
     const ids = record.scopeIds || [];
     if (record.scope === 'workspace') return {};
     if (record.scope === 'own') return { $or: [{ owner: ctx.userId }, { managers: ctx.userId }] };
-    if (record.scope === 'assigned') return { $or: [{ members: ctx.userId }, { assignees: ctx.userId }, { _id: { $in: ctx.assignedTaskIds || [] } }] };
+    if (record.scope === 'assigned') return { $or: [{ owner: ctx.userId }, { members: ctx.userId }, { managers: ctx.userId }, { _id: { $in: ctx.assignedProjectIds || [] } }] };
     if (record.scope === 'project') return ids.length ? { _id: { $in: ids } } : {};
     if (record.scope === 'department') {
       const departments = [...(ctx.departments || []), ...(ctx.managedDepartments || [])];
@@ -142,6 +162,10 @@ export function scopeFilter(ctx, permission, resourceType, visibleProjects = [])
   const grants = ctx.isOwner ? [{ scope: 'workspace' }] : records(mapGet(ctx.grants, permission)).filter(g => current(g, ctx.now ?? Date.now()));
   const filters = [{ workspaceId: ctx.workspaceId }, { $or: grants.map(relation) }];
   if (!ctx.isOwner) for (const deny of records(mapGet(ctx.denies, permission)).filter(d => current(d, ctx.now ?? Date.now()))) filters.push({ $nor: [relation(deny)] });
-  if (ctx.restriction?.type === 'assigned_only') filters.push(assignment());
+  if (ctx.restriction?.type === 'assigned_only') {
+    const memberBoards = permission === 'task.view' && ctx.kind !== 'guest'
+      ? projects.filter(project => directProjectMember(ctx, project) || explicitPrivateAccess(ctx, project)).map(project => project._id) : [];
+    filters.push(memberBoards.length ? { $or: [assignment(), { board: { $in: memberBoards } }] } : assignment());
+  }
   return { $and: filters };
 }

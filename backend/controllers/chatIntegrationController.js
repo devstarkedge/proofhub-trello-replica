@@ -13,6 +13,7 @@ import chatHooks from '../utils/chatHooks.js';
 import { resolveWorkspaceIdFromRequest } from '../services/chat/workspaceMappingService.js';
 import * as entitlementService from '../modules/plans/entitlementService.js';
 import { resolveFlowTaskAccessSnapshot } from '../services/chat/flowTaskAccessService.js';
+import { authorizeProjectResource } from '../services/projectAuthorization.js';
 
 export const getReportingStatus = asyncHandler(async (req, res) => {
   const workspaceId = resolveWorkspaceIdFromRequest(req);
@@ -307,7 +308,7 @@ export const triggerSync = asyncHandler(async (req, res, next) => {
   let dispatchedProjects = 0;
   const cursor = Board.find({
     workspaceId,
-    visibility: 'public',
+    visibility: { $in: ['public', 'workspace', 'department'] },
     isArchived: { $ne: true },
     isDeleted: { $ne: true },
   }).cursor();
@@ -330,20 +331,10 @@ export const triggerSync = asyncHandler(async (req, res, next) => {
  * Return the exact project, task, subtask, and nano-subtask participant union.
  */
 export const getProjectParticipants = asyncHandler(async (req, res, next) => {
+  await authorizeProjectResource(req, 'project', req.params.projectId, 'project.view');
   const snapshot = await getProjectMembershipSnapshot(req.params.projectId);
   if (!snapshot) {
     return next(new ErrorResponse('Project not found', 404));
-  }
-
-  const requesterId = req.user.id || req.user._id?.toString();
-  const isParticipant = snapshot.participants.some(
-    (participant) => participant.flowTaskUserId === requesterId,
-  );
-  const canViewPublicProject = snapshot.project.sourceVisibility === 'public';
-  const isAdmin = req.user.role === 'admin';
-
-  if (!isParticipant && !canViewPublicProject && !isAdmin) {
-    return next(new ErrorResponse('Not authorized to access this project', 403));
   }
 
   res.json({ success: true, data: snapshot });

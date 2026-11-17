@@ -45,7 +45,8 @@ export async function loadResource(ctx, type, resourceId) {
 export async function loadAssignments(ctx) {
   if (ctx.assignmentsLoaded) return ctx;
   const query = { workspaceId: ctx.workspaceId, $or: [{ assignees: ctx.userId }, { members: ctx.userId }] };
-  const [tasks, subtasks, nanos] = await Promise.all([Card.find(query).select('_id board').lean(), Subtask.find(query).select('_id task board').lean(), SubtaskNano.find(query).select('_id task subtask board').lean()]);
+  const childQuery = { workspaceId: ctx.workspaceId, assignees: ctx.userId };
+  const [tasks, subtasks, nanos] = await Promise.all([Card.find({ ...query, isArchived: { $ne: true } }).select('_id board').lean(), Subtask.find(childQuery).select('_id task board').lean(), SubtaskNano.find(childQuery).select('_id task subtask board').lean()]);
   ctx.assignedTaskIds = [...new Set([...tasks.map(t => id(t._id)), ...subtasks.map(t => id(t.task)), ...nanos.map(t => id(t.task))])];
   ctx.assignedProjectIds = [...new Set([...tasks, ...subtasks, ...nanos].map(t => id(t.board)))];
   ctx.assignmentsLoaded = true;

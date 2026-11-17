@@ -637,6 +637,20 @@ useEffect(() => {
     });
   }, [updateBoard]);
 
+  const handleProjectMemberAdded = useCallback((member) => {
+    const state = useWorkflowStore.getState();
+    if (String(state.board?._id) !== projectId || state.board.members?.some(row => row._id === member._id)) return;
+    state.updateBoard({ members: [...(state.board.members || []), member] });
+  }, [projectId]);
+
+  useEffect(() => {
+    const handleBoardUpdate = ({ detail }) => {
+      if (detail?.boardId === projectId && detail.addedMember) handleProjectMemberAdded(detail.addedMember);
+    };
+    window.addEventListener('socket-board-updated', handleBoardUpdate);
+    return () => window.removeEventListener('socket-board-updated', handleBoardUpdate);
+  }, [projectId, handleProjectMemberAdded]);
+
   const handleOpenCardModal = useCallback((card) => {
     if (!card || !/^[a-f\d]{24}$/i.test(String(card._id || card.id || ''))) return;
     
@@ -966,6 +980,7 @@ useEffect(() => {
         activeFilterCount={getActiveFilterCount()}
         onNavigateBack={handleNavigateBack}
         onEditProject={handleOpenEditModal}
+        onProjectMemberAdded={handleProjectMemberAdded}
         onDownloadCSV={handleDownloadCSV}
         onShowFields={() => {
           setShowFieldsPanel(prev => !prev);

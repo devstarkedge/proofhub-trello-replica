@@ -9,6 +9,8 @@ const Board = memo(({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, 
   const [newListTitle, setNewListTitle] = useState('');
   const [isListInputFocused, setIsListInputFocused] = useState(false);
   const listInputRef = useRef(null);
+  const visibleLists = lists.filter(list => list?._id);
+  const columnCount = visibleLists.length + 1;
   
   // Handle drag end for both lists and cards
   const onDragEnd = useCallback(async (result) => {
@@ -116,17 +118,18 @@ const Board = memo(({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, 
 
   return (
     <DragDropContext onDragEnd={onDragEnd}>
-      <div className="h-full overflow-x-auto" style={{ scrollbarWidth: 'thin' }}>
+      <div className="h-full overflow-x-auto [container-type:inline-size]" style={{ scrollbarWidth: 'thin' }}>
       <Droppable droppableId="all-lists" direction="horizontal" type="list">
         {(provided) => (
           <div 
-            className="p-4 h-full inline-flex min-w-full"
+            className="p-4 h-full inline-flex min-w-full [--board-column-width:280px] md:[--board-column-width:320px] xl:[--board-column-width:clamp(240px,var(--board-fit-width),320px)]"
+            style={{ '--board-fit-width': `calc((100cqw - ${32 + (columnCount - 1) * 16}px) / ${columnCount})` }}
             ref={provided.innerRef}
             {...provided.droppableProps}
           >
             <div className="flex gap-4 h-full items-start">
               {/* Lists */}
-              {lists.filter(l => l && l._id).map((list, index) => (
+              {visibleLists.map((list, index) => (
                 <Draggable key={list._id} draggableId={list._id} index={index}>
                   {(provided, snapshot) => (
                     <div
@@ -159,7 +162,7 @@ const Board = memo(({ lists, cardsByList, onAddCard, onDeleteCard, onCardClick, 
               {provided.placeholder}
               
               {/* Add List */}
-              <div className="w-[280px] md:w-[320px] shrink-0">
+              <div className="w-[var(--board-column-width)] shrink-0">
                 {isAddingList ? (
                   <div 
                     className="relative overflow-hidden rounded-xl transition-all duration-300 ease-out"

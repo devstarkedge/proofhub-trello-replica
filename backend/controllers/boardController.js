@@ -1,8 +1,11 @@
 import { resourceReadFilter } from '../services/resourceReadFilter.js';
 import { deleteResource } from '../services/resourceDeletion.js';
 import { boundedInteger, pageNumber } from '../utils/pagination.js';
+import { literalSearch } from '../utils/literalSearch.js';
 import { boardAccessFilter } from '../utils/boardAccess.js';
 import { authorizeProjectResource, requireProjectPermission } from '../services/projectAuthorization.js';
+import { buildContext } from '../authz/context.js';
+import { can } from '../authz/engine.js';
 import Board from "../models/Board.js";
 import { canUserAccessBoard as canUserAccessBoardUnified } from "../utils/boardAccess.js";
 import { normalizeClientDetails, validateProjectClient } from '../../shared/projectClient.mjs';
@@ -20,13 +23,15 @@ import Subtask from "../models/Subtask.js";
 import SubtaskNano from "../models/SubtaskNano.js";
 import Comment from "../models/Comment.js";
 import User from "../models/User.js";
+import WorkspaceMembership from '../models/WorkspaceMembership.js';
 import { getAssignmentBasedBoardIds, userHasCapability, CAPABILITIES } from "../services/permissionService.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 import { ErrorResponse } from "../middleware/errorHandler.js";
-import { emitNotification, emitToBoard } from "../realtime/index.js";
+import { emitNotification, emitToBoard, emitToUser } from "../realtime/index.js";
 import notificationService from "../utils/notificationService.js";
 import { slackHooks } from "../utils/slackHooks.js";
 import { chatHooks } from "../utils/chatHooks.js";
+import { runBackground } from '../utils/backgroundTasks.js';
 import { 
   notifyProjectCreatedInBackground, 
   sendProjectEmailsInBackground, 
@@ -94,7 +99,7 @@ export const getBoardsByDepartment = asyncHandler(async (req, res, next) => {
 // @route   GET /api/boards/:id/workflow-complete
 // @access  Private
 export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
-  await authorizeProjectResource(req, 'project', req.params.id, 'project.view');
+  const project = await authorizeProjectResource(req, 'project', req.params.id, 'project.view');
   const { id: projectId } = req.params;
 
   const subtaskScope = await resourceReadFilter(req, 'subtask', projectId);
@@ -117,6 +122,15 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
 
   if (!board || board.isDeleted) {
     return next(new ErrorResponse('Board not found', 404));
+  }
+  if (!board.isArchived) {
+    try {
+      await requireProjectPermission(req, 'project.manage_members', project);
+      board.canManageMembers = true;
+    } catch (error) {
+      if (error.statusCode !== 403) throw error;
+      board.canManageMembers = false;
+    }
   }
 
   const listIds = lists.map(l => l._id);
@@ -238,6 +252,64 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
       lists,
       cardsByList
     }
+  });
+});
+
+export const getProjectMemberOptions = asyncHandler(async (req, res) => {
+  const project = await authorizeProjectResource(req, 'project', req.params.id, 'project.manage_members');
+  if (project.isArchived) throw new ErrorResponse('Project is archived', 409);
+  const page = pageNumber(req.query.page);
+  const limit = 25;
+  const search = typeof req.query.q === 'string' ? req.query.q.trim() : req.query.q;
+  const term = search ? literalSearch(search) : null;
+  const workspace = new mongoose.Types.ObjectId(req.workspaceId);
+  const rows = await WorkspaceMembership.aggregate([
+    { $match: { workspace, status: 'active', kind: { $ne: 'guest' }, user: { $nin: [project.owner, ...(project.members || [])].filter(Boolean) } } },
+    { $lookup: { from: User.collection.name, localField: 'user', foreignField: '_id',
+      pipeline: [{ $match: { isActive: true,
+        ...(term && { $or: [{ name: term }, { email: term }] }) }
+      }, { $project: { name: 1, email: 1, avatar: 1 } }], as: 'person' } },
+    { $unwind: '$person' },
+    { $project: { _id: '$person._id', name: '$person.name', email: '$person.email', avatar: '$person.avatar', role: 1 } },
+    { $sort: { name: 1, _id: 1 } }, { $skip: (page - 1) * limit }, { $limit: limit + 1 }
+  ]);
+  res.json({ success: true, data: rows.slice(0, limit), hasMore: rows.length > limit });
+});
+
+export const addProjectMember = asyncHandler(async (req, res) => {
+  const project = await authorizeProjectResource(req, 'project', req.params.id, 'project.manage_members');
+  if (project.isArchived) throw new ErrorResponse('Project is archived', 409);
+  const { userId } = req.body;
+  if (typeof userId !== 'string' || !/^[a-f\d]{24}$/i.test(userId)) throw new ErrorResponse('Select a valid workspace member', 400);
+  const [membership, user] = await Promise.all([
+    WorkspaceMembership.findOne({ workspace: req.workspaceId, user: userId, status: 'active', kind: { $ne: 'guest' } })
+      .select('role restriction accessType allowedProjects').lean(),
+    User.findOne({ _id: userId, isActive: true }).select('name email avatar').lean()
+  ]);
+  if (!membership || !user) throw new ErrorResponse('Active workspace member not found', 404);
+  if (process.env.AUTHZ_V2 === 'enforce') {
+    const target = await buildContext(userId, req.workspaceId);
+    if (!can(target, 'project.view', { ...project, members: [...(project.members || []), user._id] })) {
+      throw new ErrorResponse('The member’s workspace permissions do not allow access to this project', 409);
+    }
+  } else if ((membership.restriction?.type || membership.accessType) === 'selected_projects' &&
+      !(membership.restriction?.projectIds || membership.allowedProjects || []).some(id => String(id) === String(project._id))) {
+    throw new ErrorResponse('The member’s workspace permissions do not allow access to this project', 409);
+  }
+  const member = { ...user, role: membership.role };
+  const activeProject = { _id: project._id, workspaceId: req.workspaceId, isArchived: { $ne: true }, isDeleted: { $ne: true } };
+  const result = await Board.updateOne({ ...activeProject, owner: { $ne: user._id }, members: { $ne: user._id } }, { $addToSet: { members: user._id } });
+  if (!result.matchedCount && !await Board.exists(activeProject)) throw new ErrorResponse('Project is no longer available', 409);
+  res.json({ success: true, data: member });
+  if (!result.modifiedCount) return;
+  runBackground(async () => {
+    await Promise.allSettled([
+      Activity.create({ type: 'project_member_added', description: 'Added a project member', user: req.user.id,
+        board: project._id, contextType: 'board', metadata: { added: [userId] } }),
+      chatHooks.onProjectMembershipChanged(project, req.user, 'project_members_changed'),
+      Promise.resolve().then(() => emitToBoard(String(project._id), 'board-updated', { boardId: String(project._id), addedMember: member })),
+      Promise.resolve().then(() => emitToUser(userId, 'project-access-updated', { boardId: String(project._id), workspaceId: req.workspaceId }, req.workspaceId)),
+    ]).then(results => results.forEach(result => { if (result.status === 'rejected') console.error('Project member follow-up failed:', result.reason?.name); }));
   });
 });
 
@@ -698,7 +770,13 @@ export const createBoard = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/boards/:id
 // @access  Private
 export const updateBoard = asyncHandler(async (req, res, next) => {
-  await authorizeProjectResource(req, 'project', req.params.id, 'project.update');
+  const project = await authorizeProjectResource(req, 'project', req.params.id, 'project.update');
+  if (Object.hasOwn(req.body, 'visibility') && req.body.visibility !== project.visibility) {
+    await requireProjectPermission(req, 'project.change_visibility', project);
+  }
+  if (Array.isArray(req.body.members) && JSON.stringify(req.body.members.map(String).sort()) !==
+      JSON.stringify((project.members || []).map(String).sort())) await requireProjectPermission(req, 'project.manage_members', project);
+  if (Object.hasOwn(req.body, 'managers')) await requireProjectPermission(req, 'project.manage_members', project);
   let board = await Board.findById(req.params.id);
 
   if (!board) {
@@ -851,6 +929,7 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
   // Activity + notifications
   const changes = [];
   const activityTasks = [];
+  if (board.visibility !== previousBoard.visibility) changes.push(`Visibility changed to ${board.visibility}`);
 
   if (req.body.name && req.body.name !== previousBoard.name) {
     changes.push(`Name updated to "${req.body.name}"`);
@@ -969,15 +1048,19 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
       'project_owner_changed',
     ).catch(console.error);
   }
+  const sortedIds = ids => (ids || []).map(value => String(value?._id || value)).sort().join(',');
+  if (board.visibility !== previousBoard.visibility || sortedIds(board.managers) !== sortedIds(previousBoard.managers)) {
+    chatHooks.onProjectMembershipChanged(board, req.user, 'project_access_changed').catch(console.error);
+  }
 
   if (activityTasks.length > 0) {
     await Promise.all(activityTasks);
   }
 
   if (changes.length > 0) {
+    chatHooks.onProjectUpdated(board, { changes }, req.user).catch(console.error);
     await notificationService.notifyProjectUpdated(board, req.user.id, changes.slice(0, 3).join(', '));
     await slackHooks.onProjectUpdated(board, changes, req.user);
-    chatHooks.onProjectUpdated(board, { changes }, req.user).catch(console.error);
   }
 
   // Emit socket event for real-time updates (e.g., reminders page needs to update client info)

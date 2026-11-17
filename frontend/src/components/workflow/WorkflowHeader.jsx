@@ -1,9 +1,10 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Search, Filter, Users, Pencil, FileText, Crown, Shield, User as UserIcon } from 'lucide-react';
+import { ArrowLeft, Search, Filter, Users, UserPlus, Pencil, FileText, Crown, Shield, User as UserIcon } from 'lucide-react';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../ui/dropdown-menu';
 import Avatar from '../Avatar';
 import WorkflowMenu from './WorkflowMenu';
+import AddProjectMemberDialog from './AddProjectMemberDialog';
 
 const WorkflowHeader = memo(({
   board,
@@ -14,6 +15,7 @@ const WorkflowHeader = memo(({
   activeFilterCount,
   onNavigateBack,
   onEditProject,
+  onProjectMemberAdded,
   onDownloadCSV,
   onShowFields,
   onTrash,
@@ -22,6 +24,7 @@ const WorkflowHeader = memo(({
   showArchived,
 }) => {
   const isAdmin = user?.role === 'admin' || user?.role === 'manager';
+  const [showAddMember, setShowAddMember] = useState(false);
 
   const getRoleIcon = useCallback((role) => {
     switch (role) {
@@ -118,7 +121,12 @@ const WorkflowHeader = memo(({
                   <span className="text-white text-sm font-medium">{board.members?.length || 0}</span>
                 </motion.button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-64 bg-white/95 backdrop-blur-lg border border-white/20">
+              <DropdownMenuContent className="w-64 max-h-80 overflow-y-auto bg-white/95 backdrop-blur-lg border border-white/20">
+                {board.canManageMembers && (
+                  <DropdownMenuItem onSelect={() => setShowAddMember(true)} className="flex items-center gap-2 px-3 py-3 font-semibold text-indigo-700">
+                    <UserPlus size={16} /> Add member
+                  </DropdownMenuItem>
+                )}
                 {board.members && board.members.length > 0 ? (
                   board.members.map((member) => (
                     <DropdownMenuItem key={member._id} className="flex items-center gap-3 px-3 py-3">
@@ -159,6 +167,9 @@ const WorkflowHeader = memo(({
           </div>
         </div>
       </div>
+      {showAddMember && board.canManageMembers && (
+        <AddProjectMemberDialog projectId={board._id} onClose={() => setShowAddMember(false)} onAdded={onProjectMemberAdded} />
+      )}
     </header>
   );
 });

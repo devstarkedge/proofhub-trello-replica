@@ -1766,6 +1766,7 @@ export const archiveCard = asyncHandler(async (req, res, next) => {
   // Auto-delete after 30 days
   card.autoDeleteAt = new Date(now.getTime() + (30 * 24 * 60 * 60 * 1000));
   await card.save();
+  chatHooks.onProjectMembershipChanged(card.board, req.user, 'task_archived').catch(console.error);
 
   // Log activity
   await Activity.create({
@@ -1829,6 +1830,7 @@ export const restoreCard = asyncHandler(async (req, res, next) => {
   
   card.position = (maxPositionCard?.position ?? -1) + 1;
   await card.save();
+  chatHooks.onProjectMembershipChanged(card.board, req.user, 'task_restored').catch(console.error);
 
   // Log activity
   await Activity.create({

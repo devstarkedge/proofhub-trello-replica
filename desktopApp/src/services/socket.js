@@ -281,6 +281,9 @@ class SocketService {
       if (import.meta.env.DEV) console.log('Board updated:', data);
       window.dispatchEvent(new CustomEvent('socket-board-updated', { detail: data }));
     });
+    this.socket.on('project-access-updated', data => {
+      window.dispatchEvent(new CustomEvent('socket-project-access-updated', { detail: data }));
+    });
 
     // Notification events
     this.socket.on('notification-state-changed', (data) => window.dispatchEvent(new CustomEvent('socket-notification-state-changed', { detail: data })));

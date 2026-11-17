@@ -9,10 +9,10 @@ import { loadAssignments } from '../authz/loaders.js';
 import { projectAccessFilter, scopeFilter } from '../authz/engine.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 
-const idFields = new Set(['_id', 'workspaceId', 'board', 'card', 'task', 'subtask', 'nanoSubtask', 'comment', 'contextRef', 'user', 'createdBy', 'uploadedBy', 'owner', 'members', 'assignees', 'department']);
-function cast(value, field) {
-  if (Array.isArray(value)) return value.map(item => cast(item, field));
-  if (value && typeof value === 'object' && !value._bsontype) return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, cast(child, key.startsWith('$') ? field : key)]));
+const idFields = new Set(['_id', 'workspaceId', 'board', 'card', 'task', 'subtask', 'nanoSubtask', 'comment', 'contextRef', 'user', 'createdBy', 'uploadedBy', 'owner', 'members', 'managers', 'assignees', 'department', 'team']);
+export function castResourceFilter(value, field) {
+  if (Array.isArray(value)) return value.map(item => castResourceFilter(item, field));
+  if (value && typeof value === 'object' && !value._bsontype && !(value instanceof Date)) return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, castResourceFilter(child, key.startsWith('$') ? field : key)]));
   return idFields.has(field) && typeof value === 'string' && /^[a-f\d]{24}$/i.test(value) ? new mongoose.Types.ObjectId(value) : value;
 }
 async function boundedIds(query) {
@@ -31,7 +31,7 @@ export async function resourceReadFilter(req, type = 'task', projectId) {
   req.projectAuthz ||= await buildContext(req.user._id || req.user.id, req.workspaceId);
   const ctx = req.projectAuthz;
   const assigned = ctx.restriction?.type === 'assigned_only' || [...Object.values(ctx.grants || {}), ...Object.values(ctx.denies || {})].flat().some(record => record.scope === 'assigned');
-  if (assigned) await loadAssignments(ctx);
+  if (ctx.kind !== 'guest' || assigned) await loadAssignments(ctx);
   req.readProjects ||= new Map();
   const projectKey = String(projectId || 'all');
   if (!req.readProjects.has(projectKey)) req.readProjects.set(projectKey, await Board.find({ $and: [projectAccessFilter(ctx), projectId ? { _id: projectId } : {}] }).select('workspaceId owner members managers department visibility isDeleted guests').lean());
@@ -58,5 +58,5 @@ export async function resourceReadFilter(req, type = 'task', projectId) {
     };
     filter = await rewrite(filter);
   }
-  const result = cast(filter); req.readFilters.set(cacheKey, result); return result;
+  const result = castResourceFilter(filter); req.readFilters.set(cacheKey, result); return result;
 }

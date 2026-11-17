@@ -23,7 +23,7 @@ export async function trackingContext(workspaceId,userId,{includeProjects=true,p
   if(projects)ctx.trackingProjectRecords=projects;
   const readPermissions=['project.view','tracking.view_reports','tracking.view_screenshots'];
   const assignmentsRequired=!readOnly||ctx.restriction?.type==='assigned_only'||readPermissions.some(permission=>[...(ctx.grants[permission]||[]),...(ctx.denies[permission]||[])].some(record=>record.scope==='assigned'));
-  if(includeProjects&&assignmentsRequired)await loadAssignments(ctx);
+  if(includeProjects&&(assignmentsRequired||process.env.AUTHZ_V2==='enforce'&&(projectRecords||projects||[]).some(project=>project.visibility==='private')))await loadAssignments(ctx);
   if(process.env.AUTHZ_V2==='enforce'||ctx.status!=='active'||ctx.kind==='guest')return ctx;
   const membership=ctx.resolvedRecords.membership;
   if(!membership)return ctx;
@@ -56,7 +56,7 @@ export async function trackingContext(workspaceId,userId,{includeProjects=true,p
 // Resolve only the candidate page using the already authenticated request
 // context. This avoids rebuilding membership, role and override state twice.
 export async function withTrackingProjects(ctx,projects,{loadAssignmentData=true}={}){
-  if(loadAssignmentData)await loadAssignments(ctx);
+  if(loadAssignmentData||process.env.AUTHZ_V2==='enforce'&&projects.some(project=>project.visibility==='private'))await loadAssignments(ctx);
   if(process.env.AUTHZ_V2==='enforce'||ctx.status!=='active'||ctx.kind==='guest')return ctx;
   const principal=ctx.trackingPrincipal,workspaceId=ctx.workspaceId,userId=ctx.userId;
   if(!principal)return ctx;
@@ -65,10 +65,10 @@ export async function withTrackingProjects(ctx,projects,{loadAssignmentData=true
   // Reuse the authoritative board access helper without repeating department
   // and three assignment scans for every project in the workspace.
   if(!ctx.trackingBoardAccessFacts){
-    const [departments,assigned,legacyAssignments]=membership.role==='admin'?[[],[],[]]:await Promise.all([
+    const [departments,assigned,legacyAssignments]=membership.role==='admin'?[[],projects.some(project=>project.visibility==='private')?await getAssignmentBasedBoardIds(userId):[],[]]:await Promise.all([
       Department.find({workspaceId,$or:[{members:userId},{managers:userId}]}).select('_id').lean(),getAssignmentBasedBoardIds(userId),Card.distinct('board',{workspaceId,assignees:userId})
     ]);
-    ctx.trackingBoardAccessFacts={departmentIds:new Set(departments.map(p=>id(p))),assignedBoardIds:new Set([...assigned,...legacyAssignments].map(id))};
+    ctx.trackingBoardAccessFacts={departmentIds:new Set(departments.map(p=>id(p))),assignedBoardIds:new Set([...assigned,...legacyAssignments].map(id)),activeAssignedBoardIds:new Set(assigned.map(id))};
   }
   projects=projects.filter(p=>id(p.workspaceId)===id(workspaceId));
   ctx.trackingProjectRecords=projects;

@@ -34,7 +34,7 @@ import { getAssignmentBasedBoardIds, userHasCapability, CAPABILITIES } from '../
 async function userCanAccessBoard({ userId, boardId }) {
   if (!boardId || !mongoose.Types.ObjectId.isValid(boardId)) return false;
 
-  const board = await Board.findById(boardId).select('workspaceId owner members visibility isDeleted department team').lean();
+  const board = await Board.findById(boardId).select('workspaceId owner members managers visibility isDeleted department team').lean();
   if (!board || board.isDeleted) return false;
 
   const membership = await WorkspaceMembership.findOne({ user: userId, workspace: getActiveWorkspaceId(), status: 'active' })
