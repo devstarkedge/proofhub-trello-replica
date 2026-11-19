@@ -17,7 +17,8 @@ export function reportDates(query,timezone){
   else if(query.period==='7days'||query.period==='last7days'){start=now.minus({days:6}).startOf('day');end=now.endOf('day');}
   else if(query.period==='week')start=now.startOf('week');else if(query.period==='month')start=now.startOf('month');else start=now.startOf('day');
   if(query.period==='custom'){start=DateTime.fromISO(query.fromDate||'',{zone:timezone}).startOf('day');end=DateTime.fromISO(query.toDate||'',{zone:timezone}).endOf('day');}
-  if(!start.isValid||!end.isValid||end<start||end.diff(start,'days').days>366)fail('Choose a valid date range up to 366 days');
+  if (end > now.endOf('day')) end = now.endOf('day');
+  if(!start.isValid||!end.isValid||start > now.endOf('day')||end<start||end.diff(start,'days').days>366)fail('Choose a valid date range up to 366 days');
   return {fromDate:start.toISODate(),toDate:end.toISODate(),start:start.toJSDate(),end:end.toJSDate()};
 }
 export function segmentFilter(query){

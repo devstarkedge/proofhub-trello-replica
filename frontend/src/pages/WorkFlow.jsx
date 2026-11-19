@@ -174,17 +174,15 @@ const WorkFlow = memo(() => {
   // Redirect to correct URL if deptId is invalid (e.g. "undefined" from legacy Slack links)
   useEffect(() => {
     if (!board || loading) return;
-    const isInvalidDeptId = !deptId || deptId === 'undefined';
-    if (!isInvalidDeptId) return;
     const boardDeptId = typeof board.department === 'object'
       ? board.department?._id?.toString()
       : board.department?.toString();
-    if (!boardDeptId) return;
+    if (!boardDeptId || String(board._id) !== projectId || boardDeptId === deptId) return;
     const correctUrl = taskId
-      ? `/workflow/${boardDeptId}/${projectId}/${taskId}`
+      ? `/workflow/${boardDeptId}/${projectId}/${taskId}${subtaskId ? "/" + subtaskId : ""}${nenoId ? "/" + nenoId : ""}`
       : `/workflow/${boardDeptId}/${projectId}`;
     navigate(correctUrl, { replace: true });
-  }, [board, loading, deptId, projectId, taskId, navigate]);
+  }, [board, loading, deptId, projectId, taskId, subtaskId, nenoId, navigate]);
 
   useEffect(() => {
     if (user && board) {
@@ -633,7 +631,9 @@ useEffect(() => {
   const handleProjectUpdated = useCallback((updatedProject) => {
     updateBoard({
       name: updatedProject.name,
-      description: updatedProject.description
+      description: updatedProject.description,
+      department: updatedProject.department,
+      team: updatedProject.team
     });
   }, [updateBoard]);
 
@@ -645,7 +645,9 @@ useEffect(() => {
 
   useEffect(() => {
     const handleBoardUpdate = ({ detail }) => {
-      if (detail?.boardId === projectId && detail.addedMember) handleProjectMemberAdded(detail.addedMember);
+      if (detail?.boardId !== projectId) return;
+      if (detail.addedMember) handleProjectMemberAdded(detail.addedMember);
+      if (detail.updates?.department) useWorkflowStore.getState().updateBoard(detail.updates);
     };
     window.addEventListener('socket-board-updated', handleBoardUpdate);
     return () => window.removeEventListener('socket-board-updated', handleBoardUpdate);

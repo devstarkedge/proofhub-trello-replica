@@ -49,6 +49,7 @@ const CalendarView = () => {
   const [showEventModal, setShowEventModal] = useState(false);
   const [filterPriority, setFilterPriority] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [summaryFilter, setSummaryFilter] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
   const [stats, setStats] = useState({ total: 0, high: 0, medium: 0, low: 0, overdue: 0 });
   
@@ -108,7 +109,7 @@ const CalendarView = () => {
 
   useEffect(() => {
     applyFilters();
-  }, [events, filterPriority, filterStatus]);
+  }, [events, filterPriority, filterStatus, summaryFilter]);
 
   // Hide tooltip on scroll to prevent stale positioning
   useEffect(() => {
@@ -259,7 +260,7 @@ const CalendarView = () => {
 
     if (filterPriority !== 'all') {
       filtered = filtered.filter(event => 
-        event.extendedProps.priority?.toLowerCase() === filterPriority.toLowerCase()
+        summaryFilter === 'high' ? ['high', 'critical'].includes(event.extendedProps.priority?.toLowerCase()) : event.extendedProps.priority?.toLowerCase() === filterPriority.toLowerCase()
       );
     }
 
@@ -267,6 +268,7 @@ const CalendarView = () => {
       filtered = filtered.filter(event => event.extendedProps.status === filterStatus);
     }
 
+    if (summaryFilter === 'overdue') filtered = filtered.filter(event => event.extendedProps.isOverdue);
     setFilteredEvents(filtered);
   };
 
@@ -632,70 +634,19 @@ const CalendarView = () => {
               exit={{ opacity: 0, y: -20 }}
               className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6"
             >
-              <motion.div
-                whileHover={{ scale: 1.05, y: -5 }}
-                className="bg-white rounded-xl shadow-md p-4 border-l-4 border-blue-500"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 mb-1">Total Tasks</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
-                  </div>
-                  <BarChart3 className="w-8 h-8 text-blue-500" />
-                </div>
-              </motion.div>
-
-              <motion.div
-                whileHover={{ scale: 1.05, y: -5 }}
-                className="bg-white rounded-xl shadow-md p-4 border-l-4 border-red-500"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 mb-1">High Priority</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.high}</p>
-                  </div>
-                  <AlertCircle className="w-8 h-8 text-red-500" />
-                </div>
-              </motion.div>
-
-              <motion.div
-                whileHover={{ scale: 1.05, y: -5 }}
-                className="bg-white rounded-xl shadow-md p-4 border-l-4 border-yellow-500"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 mb-1">Medium</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.medium}</p>
-                  </div>
-                  <TrendingUp className="w-8 h-8 text-yellow-500" />
-                </div>
-              </motion.div>
-
-              <motion.div
-                whileHover={{ scale: 1.05, y: -5 }}
-                className="bg-white rounded-xl shadow-md p-4 border-l-4 border-green-500"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 mb-1">Low Priority</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.low}</p>
-                  </div>
-                  <CheckCircle2 className="w-8 h-8 text-green-500" />
-                </div>
-              </motion.div>
-
-              <motion.div
-                whileHover={{ scale: 1.05, y: -5 }}
-                className="bg-white rounded-xl shadow-md p-4 border-l-4 border-orange-500"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 mb-1">Overdue</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.overdue}</p>
-                  </div>
-                  <Clock className="w-8 h-8 text-orange-500" />
-                </div>
-              </motion.div>
+              {[
+                ['Total Tasks', 'all', stats.total, BarChart3, '#3b82f6'],
+                ['High Priority', 'high', stats.high, AlertCircle, '#ef4444'],
+                ['Medium', 'medium', stats.medium, TrendingUp, '#eab308'],
+                ['Low Priority', 'low', stats.low, CheckCircle2, '#22c55e'],
+                ['Overdue', 'overdue', stats.overdue, Clock, '#f97316']
+              ].map(([label, filter, value, Icon, color]) => (
+                <motion.button key={filter} type="button" whileHover={{ scale: 1.05, y: -5 }} aria-pressed={summaryFilter === filter}
+                  onClick={() => { setSummaryFilter(filter); setFilterPriority(['high', 'medium', 'low'].includes(filter) ? filter : 'all'); setFilterStatus('all'); }}
+                  style={{ borderLeftColor:color }} className={'bg-white rounded-xl shadow-md p-4 border-l-4 text-left ' + (summaryFilter === filter ? 'ring-2 ring-blue-300' : '')}>
+                  <div className="flex items-center justify-between"><div><p className="text-sm text-gray-600 mb-1">{label}</p><p className="text-2xl font-bold text-gray-900">{value}</p></div><Icon className="w-8 h-8" style={{ color }}/></div>
+                </motion.button>
+              ))}
             </motion.div>
           )}
         </AnimatePresence>
@@ -751,7 +702,7 @@ const CalendarView = () => {
                       <div className="relative">
                         <select
                           value={filterPriority}
-                          onChange={(e) => setFilterPriority(e.target.value)}
+                          onChange={(e) => { setSummaryFilter('all'); setFilterPriority(e.target.value); }}
                           className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-700 font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white transition-all appearance-none cursor-pointer hover:border-gray-300"
                         >
                           <option value="all">All Priorities</option>
@@ -773,7 +724,7 @@ const CalendarView = () => {
                       <div className="relative">
                         <select
                           value={filterStatus}
-                          onChange={(e) => setFilterStatus(e.target.value)}
+                          onChange={(e) => { setSummaryFilter('all'); setFilterStatus(e.target.value); }}
                           className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-700 font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white transition-all appearance-none cursor-pointer hover:border-gray-300"
                         >
                           <option value="all">All Statuses</option>
@@ -787,7 +738,7 @@ const CalendarView = () => {
                   </div>
 
                   {/* Active Filters & Clear Button */}
-                  {(filterPriority !== 'all' || filterStatus !== 'all') && (
+                  {(filterPriority !== 'all' || filterStatus !== 'all' || summaryFilter === 'overdue') && (
                     <motion.div
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -810,6 +761,7 @@ const CalendarView = () => {
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
                         onClick={() => {
+                          setSummaryFilter('all');
                           setFilterPriority('all');
                           setFilterStatus('all');
                         }}

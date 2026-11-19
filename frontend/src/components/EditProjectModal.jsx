@@ -1,7 +1,11 @@
+import { projectSaveActions } from '../utils/projectSaveActions';
+import { projectUpdatePatch } from '../../../shared/projectUpdatePatch.mjs';
+import useDepartmentStore from '../store/departmentStore';
+import { useLocation, useNavigate } from 'react-router-dom';
 import useProjectManagers from '../hooks/useProjectManagers';
 "use client";
 
-import React, { useState, useEffect, useCallback, useContext, useId, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useContext, useId, useMemo, useRef, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -62,6 +66,12 @@ const EnterpriseEditProjectModal = React.memo(({
   draftScope
 }) => {
   const { user } = useContext(AuthContext);
+  const { departments, loadDepartments } = useDepartmentStore();
+  useEffect(() => {
+    if (isOpen && !useDepartmentStore.getState().departments.length && !useDepartmentStore.getState().loading) void loadDepartments().catch(() => {});
+  }, [isOpen, loadDepartments]);
+  const navigate = useNavigate();
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState('details');
   const [teamOpened, setTeamOpened] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -71,6 +81,8 @@ const EnterpriseEditProjectModal = React.memo(({
   const [loadAttempt, setLoadAttempt] = useState(0);
   const titleId = useId();
   const projectId = project?.id || project?._id;
+  const backgroundPending = useSyncExternalStore(projectSaveActions.subscribe,
+    () => projectSaveActions.isPending(projectId), () => false);
   const ready = loadedProject?.canEdit === true;
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
   const [priorityDropdownOpen, setPriorityDropdownOpen] = useState(false);
@@ -81,6 +93,7 @@ const EnterpriseEditProjectModal = React.memo(({
   // Form state
   const [formData, setFormData] = useState({
     title: '',
+    department: '',
     description: '',
     projectUrl: '',
     startDate: '',
@@ -107,16 +120,18 @@ const EnterpriseEditProjectModal = React.memo(({
     projectType: 'Hired Client'
   });
 
-  const managerChoices = useProjectManagers(loadedProject?.department?._id || loadedProject?.department, isOpen && ready && teamOpened, projectId);
+  const managerChoices = useProjectManagers(formData.department || loadedProject?.department?._id || loadedProject?.department, isOpen && ready && teamOpened, formData.department === String(loadedProject?.department?._id || loadedProject?.department) ? projectId : undefined);
   const managers = useMemo(() => [...new Map([
-    ...(loadedProject?.members || []).filter(member => member?._id).map(member => [String(member._id), { ...member, projectMemberOnly: true }]),
+    ...[...(loadedProject?.members || []), ...(loadedProject?.managers || [])].filter(member => member?._id).map(member => [String(member._id), { ...member, projectMemberOnly: true }]),
     ...managerChoices.users.map(manager => [String(manager._id), manager])
-  ]).values()], [loadedProject?.members, managerChoices.users]);
+  ]).values()], [loadedProject?.members, loadedProject?.managers, managerChoices.users]);
   const selectedEmployees = useMemo(() =>
     formData.assignees.map(id => managers.find(m => m._id === id)).filter(Boolean),
     [formData.assignees, managers]
   );
   const [loading, setLoading] = useState(false);
+  const savingRef = useRef(false);
+  const baselineForm = useRef(null);
   const [errors, setErrors] = useState({});
   
   // File management state
@@ -237,7 +252,7 @@ const EnterpriseEditProjectModal = React.memo(({
 
   // Auto-save draft using interval + ref (avoids re-render cascade on every keystroke)
   useEffect(() => {
-    if (!isOpen || !loadedProject?.canEdit) return;
+    if (!isOpen || !loadedProject?.canEdit || backgroundPending) return;
 
     const timer = setInterval(() => {
       try {
@@ -253,12 +268,13 @@ const EnterpriseEditProjectModal = React.memo(({
     }, 5000);
 
     return () => clearInterval(timer);
-  }, [isOpen, draftKey, loadedProject?.canEdit]);
+  }, [isOpen, draftKey, loadedProject?.canEdit, backgroundPending]);
 
   // Load project data
   useEffect(() => {
     const controller = new AbortController();
-    if (isOpen && projectId) {
+    if (isOpen && projectId && !backgroundPending) {
+      baselineForm.current = null;
       const fetchFullProject = async () => {
         try {
           const response = await Database.getProject(projectId, { signal: controller.signal });
@@ -269,8 +285,9 @@ const EnterpriseEditProjectModal = React.memo(({
             onClose();
             return;
           }
-          setFormData({
+          const initialForm = {
             title: fullProject.name || '',
+            department: String(fullProject.department?._id || fullProject.department || ''),
             description: fullProject.description || '',
             projectUrl: fullProject.projectUrl || '',
             startDate: fullProject.startDate ? new Date(fullProject.startDate).toISOString().split('T')[0] : '',
@@ -299,7 +316,9 @@ const EnterpriseEditProjectModal = React.memo(({
             priority: fullProject.priority || 'medium',
             visibility: fullProject.visibility || 'public',
             projectType: fullProject.projectType || 'Hired Client'
-          });
+          };
+          baselineForm.current = initialForm;
+          setFormData(initialForm);
           // Restore after loading the server record, so the fetch does not
           // overwrite autosaved selections or checkbox changes.
           try {
@@ -324,7 +343,7 @@ const EnterpriseEditProjectModal = React.memo(({
       fetchFullProject();
     }
     return () => controller.abort();
-  }, [isOpen, projectId, draftKey, loadAttempt]);
+  }, [isOpen, projectId, draftKey, loadAttempt, backgroundPending]);
 
   // Track which tabs have had their data fetched
   const fetchedTabsRef = useRef({});
@@ -479,7 +498,7 @@ const EnterpriseEditProjectModal = React.memo(({
   // Submit handler
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!loadedProject?.canEdit) return;
+    if (!loadedProject?.canEdit || !baselineForm.current || savingRef.current || backgroundPending) return;
     const validation = validateForm();
     if (!validation.isValid) {
       const errorMessages = Object.values(validation.errors).filter(Boolean);
@@ -496,50 +515,19 @@ const EnterpriseEditProjectModal = React.memo(({
       return;
     }
 
+    savingRef.current = true;
     setLoading(true);
     try {
-      const updates = {
-        name: formData.title,
-        description: formData.description,
-        startDate: formData.startDate,
-        dueDate: formData.dueDate,
-        technologies: formData.technologies,
-        status: formData.status,
-        priority: formData.priority,
-        visibility: formData.visibility,
-        projectType: formData.projectType
-      };
-      const savedMembers = new Set((loadedProject.members || []).map(member => String(member?._id || member)));
-      if (formData.assignees.length !== savedMembers.size || formData.assignees.some(id => !savedMembers.has(String(id)))) {
-        updates.members = formData.assignees;
+      const updates = projectUpdatePatch(formData, baselineForm.current);
+      const hasPendingUploads = pendingFiles.some(item => item.status === 'queued' || item.status === 'error' || item.status === 'uploading');
+      if (updates.department && !hasPendingUploads) {
+        projectSaveActions.start({ projectId, updates, draftKey, draft:formData });
+        onClose();
+        return;
       }
-
-      // Only include client/billing fields for Hired Client projects
-      if (formData.projectType !== 'Inhouse') {
-        updates.projectUrl = formData.projectUrl;
-        updates.projectSource = formData.projectSource;
-        updates.upworkId = formData.upworkId;
-        updates.billingCycle = formData.billingCycle;
-        if (formData.billingCycle === 'fixed') updates.fixedPrice = formData.fixedPrice;
-        if (['hr', 'hourly'].includes(formData.billingCycle)) updates.hourlyPrice = formData.hourlyPrice;
-        if (formData.billingCycle === 'milestone') {
-          updates.totalProjectBudget = formData.totalProjectBudget;
-          updates.milestoneWorkflow = formData.milestoneWorkflow;
-          updates.milestones = formData.milestones.map((milestone, order) => ({
-            _id: milestone._id,
-            title: milestone.title,
-            amount: milestone.amount,
-            dueDate: milestone.dueDate,
-            order
-          }));
-        }
-        updates.estimatedTime = formData.estimatedTime;
-        updates.clientDetails = {
-          ...clientDetailsFromForm(formData),
-        };
-      }
-
-      const response = await Database.updateProject(project.id || project._id, updates);
+      const response = Object.keys(updates).length
+        ? await Database.updateProject(project.id || project._id, updates)
+        : { success:true, data:loadedProject };
 
       // Upload pending files (only queued/failed)
       const filesToUpload = pendingFiles.filter(
@@ -574,6 +562,13 @@ const EnterpriseEditProjectModal = React.memo(({
       if (response.success) {
         localStorage.removeItem(draftKey);
         onProjectUpdated(response.data);
+        if (updates.department) {
+          void loadDepartments().catch(() => {});
+          const prefix = '/workflow/' + String(loadedProject.department?._id || loadedProject.department) + '/' + projectId;
+          if (location.pathname === prefix || location.pathname.startsWith(prefix + '/')) {
+            navigate('/workflow/' + updates.department + '/' + projectId + location.pathname.slice(prefix.length), { replace: true });
+          }
+        }
         toast.success('Project updated successfully!');
         onClose();
       } else {
@@ -584,6 +579,7 @@ const EnterpriseEditProjectModal = React.memo(({
       if (error.fieldErrors) { setErrors(prev => ({ ...prev, ...error.fieldErrors })); setActiveTab('details'); }
       toast.error(error.message || 'Failed to update project');
     } finally {
+      savingRef.current = false;
       setLoading(false);
     }
   };
@@ -595,6 +591,15 @@ const EnterpriseEditProjectModal = React.memo(({
   };
 
   if (!isOpen || !projectId) return null;
+  if (backgroundPending) return createPortal(
+    <div className="fixed inset-0 z-[61] flex items-center justify-center bg-black/50" role="dialog" aria-modal="true" aria-label="Project move in progress">
+      <div className="max-w-md rounded-2xl bg-white p-6 shadow-xl">
+        <p className="flex items-center gap-2 font-semibold"><Loader size={18} className="animate-spin"/>Moving project…</p>
+        <p className="mt-3 text-sm text-gray-600">Your move is saving in the background. You can keep using FlowTask.</p>
+        <button type="button" className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-white" onClick={onClose}>Close</button>
+      </div>
+    </div>, document.body);
+
 
   const drawerWidth = isFullScreen ? 'w-full' : 'w-full max-w-5xl';
 
@@ -854,6 +859,12 @@ const EnterpriseEditProjectModal = React.memo(({
                   {/* Details Tab */}
                   {ready && activeTab === 'details' && (
                     <form onSubmit={handleSubmit} className="space-y-6">
+                      <FormField label="Department" required error={errors.department}>
+                        <select name="department" aria-label="Project department" required value={formData.department} onChange={handleInputChange} className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm">
+                          <option value="">Select a department</option>
+                          {departments.map(department => <option key={department._id} value={department._id}>{department.name}</option>)}
+                        </select>
+                      </FormField>
                       {/* Cover Image */}
                       <section className="bg-gray-50 rounded-2xl p-5 border border-gray-200">
                         <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
@@ -1040,7 +1051,7 @@ const EnterpriseEditProjectModal = React.memo(({
                         {formData.projectType !== 'Inhouse' && (
                           <ClientSection
                             marketingContact={formData.marketingContact}
-                            required={formData.projectType === 'Hired Client'}
+                            required={false}
                             clientName={formData.clientName}
                             clientEmail={formData.clientEmail}
                             clientCountryCode={formData.clientCountryCode}

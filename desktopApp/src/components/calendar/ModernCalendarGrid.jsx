@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, memo, useMemo } from 'react';
+import { useState, useEffect, useCallback, memo, useMemo, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Loader, RefreshCw } from 'lucide-react';
 import Database from '../../services/database';
@@ -17,6 +17,9 @@ import { useClientInfo } from '../../context/ClientInfoContext';
  */
 const ModernCalendarGrid = memo(({ 
   departmentId,
+  viewFilter = 'all',
+  refreshRevision = 0,
+  query = '',
   onSelectReminder,
   className = '' 
 }) => {
@@ -54,14 +57,15 @@ const ModernCalendarGrid = memo(({
   const remindersWithLiveClient = useMemo(() => {
     const next = {};
     Object.keys(reminders).forEach(dateKey => {
-      next[dateKey] = (reminders[dateKey] || []).map(resolveReminderClient);
+      next[dateKey] = (reminders[dateKey] || []).map(resolveReminderClient).filter(reminder =>
+        !query || [reminder.project?.name, reminder.client?.name, reminder.client?.email, reminder.notes].some(value => value?.toLowerCase().includes(query.toLowerCase())));
     });
     return next;
-  }, [reminders, resolveReminderClient]);
+  }, [reminders, resolveReminderClient, query]);
 
   const allRemindersWithLiveClient = useMemo(() => (
-    allReminders.map(resolveReminderClient)
-  ), [allReminders, resolveReminderClient]);
+    Object.values(remindersWithLiveClient).flat()
+  ), [remindersWithLiveClient]);
 
   const selectedReminderWithLiveClient = useMemo(() => (
     selectedReminder ? resolveReminderClient(selectedReminder) : null
@@ -113,8 +117,11 @@ const ModernCalendarGrid = memo(({
     return [...prevMonthDays, ...currentMonthDays, ...nextMonthDays];
   }, [currentDate]);
 
+  const requestGeneration = useRef(0);
+
   // Fetch reminders for the current view (with extended range for timeline)
   const fetchReminders = useCallback(async (showRefreshIndicator = false) => {
+    const generation = ++requestGeneration.current;
     try {
       if (showRefreshIndicator) {
         setRefreshing(true);
@@ -129,7 +136,7 @@ const ModernCalendarGrid = memo(({
       const startDate = new Date(year, month - 1, 1);
       const endDate = new Date(year, month + 2, 0);
       
-      const filters = {};
+      const filters = { view: viewFilter };
       // Use departmentId from props (controlled by header)
       if (departmentId && departmentId !== 'all') {
         filters.department = departmentId;
@@ -154,6 +161,7 @@ const ModernCalendarGrid = memo(({
         filters
       );
       
+      if (generation !== requestGeneration.current) return;
       if (response.success) {
         const groupedData = response.data.groupedByDate || {};
         
@@ -186,18 +194,19 @@ const ModernCalendarGrid = memo(({
         }
         
         setReminders(groupedData);
-        setAllReminders(response.data.reminders || []);
+        setAllReminders(Object.values(groupedData).flat());
       }
     } catch (error) {
+      if (generation !== requestGeneration.current) return;
       console.error('Error fetching calendar reminders:', error);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (generation === requestGeneration.current) { setLoading(false); setRefreshing(false); }
     }
-  }, [currentDate, departmentId, searchFilters]);
+  }, [currentDate, departmentId, viewFilter, refreshRevision, searchFilters]);
 
   useEffect(() => {
     fetchReminders();
+    return () => { requestGeneration.current++; };
   }, [fetchReminders]);
 
   // Navigation handlers

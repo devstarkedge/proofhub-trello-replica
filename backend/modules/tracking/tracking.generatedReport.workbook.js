@@ -72,7 +72,26 @@ export async function trackingWorkbook(report, data) {
   details.columns=[{header:'Employee',key:'employee',width:26},{header:'Department',key:'department',width:28},{header:'Date',key:'date',width:14},{header:'Project',key:'project',width:30},{header:'Task / individual work',key:'task',width:40},{header:'Tracked time',key:'duration',width:18},{header:'Sessions',key:'sessions',width:14}];
   for(const row of data.rows)details.addRow({...row,duration:row.seconds/86400});
   details.getColumn('duration').numFmt='[h]:mm:ss';
-  for(const [sheet,header] of [[summary,9],[details,1]]) {
+  const daily = workbook.addWorksheet('Daily summary');
+  daily.columns = [
+    {header:'Employee',key:'employee',width:26}, {header:'Department',key:'department',width:24},
+    {header:'Date',key:'date',width:14}, {header:'Check-In Time',key:'checkInTime',width:24},
+    {header:'Check-Out Time',key:'checkOutTime',width:24}, {header:'Office Hours',key:'office',width:18},
+    {header:'Worked Hours',key:'worked',width:18}, {header:'Activity Level',key:'activityLevel',width:18}
+  ];
+  const days = new Map();
+  for (const row of data.rows) {
+    const key = row.userId + ':' + row.date;
+    if (!days.has(key)) days.set(key, {...row, worked:0});
+    days.get(key).worked += row.seconds / 86400;
+  }
+  for (const row of [...days.values()].sort((a,b) => a.employee.localeCompare(b.employee) || a.date.localeCompare(b.date))) {
+    daily.addRow({...row, checkInTime:row.checkInTime || 'Not recorded', checkOutTime:row.checkOutTime || 'Open / not recorded',
+      office:row.officeSeconds == null ? 'Not recorded' : row.officeSeconds/86400, activityLevel:row.activityLevel || 'Not recorded'});
+  }
+  daily.getColumn('office').numFmt='[h]:mm:ss';
+  daily.getColumn('worked').numFmt='[h]:mm:ss';
+  for(const [sheet,header] of [[summary,9],[details,1],[daily,1]]) {
     sheet.views=[{state:'frozen',ySplit:header}];
     sheet.getRow(header).eachCell(cell=>{cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF4F46E5'}};cell.font={bold:true,color:{argb:'FFFFFFFF'}};});
     sheet.autoFilter={from:{row:header,column:1},to:{row:sheet.rowCount,column:sheet.columnCount}};

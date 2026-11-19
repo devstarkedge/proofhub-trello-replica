@@ -1,15 +1,21 @@
-import { memo, useState, useEffect, useCallback } from 'react';
+import { getWorkspaceDateRange } from '../../../../shared/trackingReportQuery.mjs';
+import WorkspaceContext from '../../context/WorkspaceContext';
+import { memo, useState, useEffect, useCallback, useContext, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { X, Activity, Filter, Calendar, ChevronRight, Clock, FileText, MessageSquare, Users, Paperclip, AlertCircle, RefreshCw, CheckCircle } from 'lucide-react';
+import { X, Activity, Filter, Calendar, ChevronRight, Clock, FileText, MessageSquare, Users, Paperclip, AlertCircle, RefreshCw, CheckCircle, Loader2 } from 'lucide-react';
 import useMyShortcutsStore from '../../store/myShortcutsStore';
 
 const ActivityModal = ({ isOpen, onClose }) => {
   const navigate = useNavigate();
+  const { currentWorkspace } = useContext(WorkspaceContext);
+  const today = getWorkspaceDateRange('today', currentWorkspace?.timezone || 'Asia/Kolkata').toDate;
   const { activities, activityPagination, loading, errors, fetchActivities, activityFilters } = useMyShortcutsStore();
   
-  const [selectedType, setSelectedType] = useState('all');
-  const [dateRange, setDateRange] = useState({ start: '', end: '' });
+  const applying = useRef(false);
+  const [isApplying, setIsApplying] = useState(false);
+  const [selectedType, setSelectedType] = useState(activityFilters.type || 'all');
+  const [dateRange, setDateRange] = useState({ start: activityFilters.startDate || '', end: activityFilters.endDate || '' });
 
   const activityTypes = [
     { value: 'all', label: 'All Activities' },
@@ -74,13 +80,17 @@ const ActivityModal = ({ isOpen, onClose }) => {
     fetchActivities({ type, page: 1 });
   }, [fetchActivities]);
 
-  const handleDateFilter = useCallback(() => {
-    fetchActivities({
+  const handleDateFilter = useCallback(async () => {
+    if (applying.current || useMyShortcutsStore.getState().loading.activities) return;
+    applying.current = true;
+    setIsApplying(true);
+    try { await fetchActivities({
       type: selectedType,
       startDate: dateRange.start,
       endDate: dateRange.end,
       page: 1
     });
+    } finally { applying.current = false; setIsApplying(false); }
   }, [fetchActivities, selectedType, dateRange]);
 
   const handleLoadMore = useCallback(() => {
@@ -165,6 +175,7 @@ const ActivityModal = ({ isOpen, onClose }) => {
             <Calendar size={16} className="text-gray-400" />
             <input
               type="date"
+              max={today}
               value={dateRange.start}
               onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
               className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm"
@@ -172,15 +183,20 @@ const ActivityModal = ({ isOpen, onClose }) => {
             <span className="text-gray-400">to</span>
             <input
               type="date"
+              max={today}
               value={dateRange.end}
               onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
               className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm"
             />
             <button
+              type="button"
               onClick={handleDateFilter}
-              className="px-3 py-1.5 bg-purple-500 text-white rounded-lg text-sm hover:bg-purple-600 transition-colors"
+              disabled={isApplying || loading.activities}
+              aria-busy={isApplying}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-500 text-white rounded-lg text-sm hover:bg-purple-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              Apply
+              {isApplying && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
+              {isApplying ? 'Applying…' : 'Apply'}
             </button>
           </div>
         </div>

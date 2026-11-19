@@ -17,8 +17,13 @@ import config from '../config/index.js';
 import * as workspaceContext from '../modules/workspaces/workspaceContext.js';
 import { isDoneStatus } from '../schedulers/cardDueDateScheduler.js';
 import { evaluateAndDeliverBulk } from '../services/notifications/NotificationDecisionEngine.js';
+import { deliverProjectUpdate } from '../services/projectUpdateDelivery.js';
 
 const JOB_HANDLERS = {
+  async 'notify-project-updated'(job) {
+    await deliverProjectUpdate(job.data);
+    return { notified:true, channel:job.data.channel };
+  },
   /**
    * Create a single in-app notification.
    * Data: same shape as notificationService.createNotification

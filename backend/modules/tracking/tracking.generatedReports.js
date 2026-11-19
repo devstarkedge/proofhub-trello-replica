@@ -1,3 +1,7 @@
+import { effectiveAttendanceSession } from '../attendance/attendanceRegularizationOverlay.js';
+import { evidenceByUser } from './tracking.evidenceRead.js';
+import { officeTimeMilliseconds, readWorkBreak, workBreakWindowsInRange } from '../attendance/attendanceWorkBreak.js';
+import { DateTime } from 'luxon';
 import { randomUUID, createHash } from 'node:crypto';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import mongoose from 'mongoose';
@@ -6,7 +10,6 @@ import { WorkSession } from './tracking.models.js';
 import Board from '../../models/Board.js';
 import Card from '../../models/Card.js';
 import { policyFor } from './tracking.service.js';
-import { readRecentWorkBreakWindows } from '../attendance/attendanceWorkBreak.js';
 import { trackingSessionCutoffStages, dashboardSegmentExpression, projectedTrackingStatus } from './tracking.dashboardRead.js';
 import { generatedReportAccess, validateGeneratedReportFilters, assertGeneratedReportScope, generatedReportRecipients, reportId as id, reportError as fail } from './tracking.generatedReport.access.js';
 import { buildTrackingWorkbook } from './tracking.generatedReport.build.js';
@@ -95,21 +98,49 @@ export async function retryGeneratedReportEmail(workspaceId,userId,reportId,inpu
 async function generate(report,access) {
   assertGeneratedReportScope(access,report);
   const now=new Date(report.createdAt),filters=report.filters;
-  const [policy,workBreakWindows]=await Promise.all([policyFor(report.workspaceId),readRecentWorkBreakWindows(report.workspaceId,now)]);
+  const [policy,workBreakWindows]=await Promise.all([policyFor(report.workspaceId),readWorkBreak(report.workspaceId,new Date(filters.startAt)).then(schedule=>workBreakWindowsInRange(schedule,new Date(filters.startAt),now))]);
   const projects=await Board.find(access.visibleProjectIds?{_id:{$in:[...access.visibleProjectIds]}}:{}).select('name department').lean();
   const collector=aggregateTrackingRows(null,access,report,new Map(projects.map(project=>[id(project._id),project])));
   const pipeline=[{$match:{user:{$in:report.subjectIds},startedAt:{$lt:new Date(filters.endAt)},$or:[{endedAt:null},{endedAt:{$gt:new Date(filters.startAt)}}]}},
-    ...trackingSessionCutoffStages({workspaceId:report.workspaceId,now,policy,workBreakWindows}),
+    ...trackingSessionCutoffStages({workspaceId:report.workspaceId,now,policy,workBreakWindows,attendanceDetails:true}),
     {$set:{_viewStatus:{$cond:[{$and:[{$eq:[{$ifNull:['$endedAt',null]},null]},{$eq:['$_attendance.status','ACTIVE']},{$gte:['$_cutoff',now]}]},workBreakWindows.length?projectedTrackingStatus:'$status','CLOSED']}}},
     ...(filters.status?[{$match:{_viewStatus:filters.status}}]:[]),
     {$set:{segments:{$filter:{input:'$segments',as:'s',cond:dashboardSegmentExpression(filters)}}}},
     {$unwind:'$segments'},
     {$match:{'segments.startedAt':{$lt:new Date(filters.endAt)}}},
-    {$project:{sessionId:'$_id',user:1,departmentIdsAtStart:1,cutoff:'$_cutoff',segment:'$segments'}}];
-  const cursor=WorkSession.aggregate(pipeline).option({maxTimeMS:20000}).cursor({batchSize:100});let scanned=0;
-  try {for await(const row of cursor){if(++scanned>50000)fail('Report exceeds 50,000 tracking segments. Select an employee or project.',413);collector.add(row);}}
+    {$project:{sessionId:'$_id',user:1,departmentIdsAtStart:1,cutoff:'$_cutoff',attendance:'$_attendance',segment:'$segments'}}];
+  const cursor=WorkSession.aggregate(pipeline).option({maxTimeMS:20000}).cursor({batchSize:100});let scanned=0;const sessionRecords=new Map();
+  try {for await(const row of cursor){if(++scanned>50000)fail('Report exceeds 50,000 tracking segments. Select an employee or project.',413);collector.add(row);sessionRecords.set(id(row.sessionId),row);}}
   finally {await cursor.close();}
   const data=collector.finish();
+  const includedSessions = [...new Set(data.rows.flatMap(row => row.sessionIds))];
+  const evidence = await evidenceByUser(report.workspaceId, includedSessions.map(_id => ({_id:new mongoose.Types.ObjectId(_id)})), [], new Date(filters.startAt), new Date(Math.min(+new Date(filters.endAt), +now)), { fromWorkSessions:true, query:filters, groupByDay:true, activityOnly:true, timezone:filters.timezone });
+  const daily = new Map();
+  const formatTime = value => value ? DateTime.fromMillis(+new Date(value), {zone:filters.timezone}).toFormat('yyyy-MM-dd HH:mm:ss') : null;
+  for (const row of data.rows) {
+    const key = row.userId + ':' + row.date;
+    if (!daily.has(key)) daily.set(key, { workSeconds:0, officeSeconds:0, officeKnown:true, first:null, last:null, sessions:new Set() });
+    const day = daily.get(key);
+    day.workSeconds += row.seconds;
+    const dayStart = DateTime.fromISO(row.date, {zone:filters.timezone}).startOf('day');
+    for (const sessionId of row.sessionIds) {
+      if (day.sessions.has(sessionId)) continue;
+      day.sessions.add(sessionId);
+      const record = sessionRecords.get(sessionId);
+      if (!record?.attendance?.checkInAt || access.role === 'manager' && (record.departmentIdsAtStart || []).some(department => !access.allowedDepartments.has(id(department)))) { day.officeKnown = false; continue; }
+      const attendance = effectiveAttendanceSession(record.attendance);
+      const start = Math.max(+new Date(attendance.checkInAt), dayStart.toMillis(), +new Date(filters.startAt));
+      const end = Math.min(+new Date(attendance.checkOutAt || record.cutoff), dayStart.plus({days:1}).toMillis(), +new Date(filters.endAt), +now);
+      day.officeSeconds += officeTimeMilliseconds(start, end, workBreakWindows) / 1000;
+      if (!day.first || +new Date(attendance.checkInAt) < +new Date(day.first)) day.first = attendance.checkInAt;
+      if (attendance.checkOutAt && (!day.last || +new Date(attendance.checkOutAt) > +new Date(day.last))) day.last = attendance.checkOutAt;
+    }
+  }
+  for (const row of data.rows) {
+    const key = row.userId + ':' + row.date, day = daily.get(key), percent = evidence.get(key)?.activityPercent;
+    Object.assign(row, { checkInTime:formatTime(day.first), checkOutTime:formatTime(day.last), officeSeconds:day.officeKnown ? Math.round(day.officeSeconds) : null, dailyWorkSeconds:day.workSeconds,
+      activityPercent:percent ?? null, activityLevel:percent == null ? 'Not recorded' : percent < 40 ? 'Low' : percent <= 70 ? 'Medium' : 'High' });
+  }
   const serialized=JSON.stringify(data.rows);
   if(Buffer.byteLength(serialized)>16*1024*1024)fail('Report details are too large. Select an employee or project.',413);
   const rows=gzipSync(serialized),workbook=await buildTrackingWorkbook(report,data);
@@ -141,7 +172,7 @@ export async function processGeneratedReports() {
     const email=await Report.collection.findOneAndUpdate({status:{$in:['READY','EMPTY']},emailStatus:'PENDING',expiresAt:{$gt:new Date()}},{$set:{emailStatus:'SENDING',leaseOwner:owner,leaseUntil:new Date(Date.now()+120000)}},{sort:{createdAt:1},returnDocument:'after'});
     if(email?.value)await run({workspaceId:email.value.workspaceId},async()=>{
       try{await deliver(email.value);await Report.updateOne({_id:email.value._id,leaseOwner:owner,emailStatus:'SENDING'},{$set:{emailStatus:'SENT',emailError:null,emailSentAt:new Date()}});}
-      catch(error){await Report.updateOne({_id:email.value._id,leaseOwner:owner,emailStatus:'SENDING'},{$set:{emailStatus:'FAILED',emailError:error.statusCode?error.message:'Email could not be confirmed. Check the recipient inbox before retrying.'}});}
+      catch(error){await Report.updateOne({_id:email.value._id,leaseOwner:owner,emailStatus:'SENDING'},{$set:{emailStatus:'FAILED',emailError:error.statusCode ? error.message : 'Email could not be confirmed. Check the recipient inbox before retrying.'}});}
     });
   }finally{processing=false;}
 }

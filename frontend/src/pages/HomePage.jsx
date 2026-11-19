@@ -1,3 +1,4 @@
+import { projectSaveActions } from '../utils/projectSaveActions';
 import { useState, useEffect, useContext, useRef, useMemo, useCallback, memo, useLayoutEffect } from 'react';
 import { useNavigationType, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -226,6 +227,7 @@ const HomePage = () => {
   }, [projectUpdated, fetchDepartments]);
 
   const handleDeleteProject = useCallback((project, departmentId) => {
+    if (projectSaveActions.isPending(project._id || project.id)) { toast.info('Wait for the project move to finish before deleting it.'); return; }
     setProjectToDelete({ project, departmentId });
     setShowDeletePopup(true);
   }, []);
@@ -233,6 +235,7 @@ const HomePage = () => {
   const confirmDeleteProject = useCallback(async () => {
     if (!projectToDelete) return;
     const { project, departmentId } = projectToDelete;
+    if (projectSaveActions.isPending(project._id || project.id)) { toast.info('Wait for the project move to finish before deleting it.'); return; }
 
     setIsDeleting(true);
     try {
@@ -269,13 +272,15 @@ const HomePage = () => {
   }, [departments, selectionDepartmentId, selectedProjectIds]);
 
   const handleBulkDeleteClick = useCallback(() => {
+    if (selectedProjectIds.some(id => projectSaveActions.isPending(id))) { toast.info('Wait for pending project moves before deleting these projects.'); return; }
     if (selectedCount === 0) return;
     setShowBulkDeleteModal(true);
-  }, [selectedCount]);
+  }, [selectedCount, selectedProjectIds]);
 
   const confirmBulkDelete = useCallback(async () => {
     if (selectedProjectIds.length === 0 || !selectionDepartmentId) return;
 
+    if (selectedProjectIds.some(id => projectSaveActions.isPending(id))) { toast.info('Wait for pending project moves before deleting these projects.'); return; }
     const projectsSnapshot = getSelectedProjectsData();
     const idsToDelete = [...selectedProjectIds];
     const deptId = selectionDepartmentId;

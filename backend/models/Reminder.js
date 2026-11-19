@@ -1,3 +1,4 @@
+import { reminderViewQuery } from '../../shared/reminderFilters.mjs';
 import mongoose from 'mongoose';
 import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js';
 
@@ -269,6 +270,8 @@ reminderSchema.statics.getCalendarReminders = async function(startDate, endDate,
     scheduledDate: { $gte: startDate, $lte: endDate }
   };
   
+  if (filters.status && filters.status !== 'all') query.status = filters.status;
+  if (filters.view && filters.view !== 'all') query.$and = [reminderViewQuery(filters.view)];
   if (filters.department) query.department = filters.department;
   if (filters.project) query.project = filters.project;
   

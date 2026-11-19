@@ -1,3 +1,4 @@
+import { workspaceDateKey } from '../utils/workspaceDateRange';
 import { create } from 'zustand';
 import Database from '../services/database';
 import { registerResettable } from './resetRegistry';
@@ -86,6 +87,8 @@ const useMyShortcutsStore = create((set, get) => ({
     
     try {
       const response = await Database.getMyActivities(currentFilters);
+      if (get().activityFilters !== currentFilters) return;
+      if (!response.success) throw new Error(response.message || 'Failed to load activities');
       if (response.success) {
         set(state => ({
           activities: append 
@@ -96,6 +99,7 @@ const useMyShortcutsStore = create((set, get) => ({
         }));
       }
     } catch (error) {
+      if (get().activityFilters !== currentFilters) return;
       console.error('Error fetching activities:', error);
       set(state => ({
         loading: { ...state.loading, activities: false },
@@ -199,11 +203,18 @@ const useMyShortcutsStore = create((set, get) => ({
   /**
    * Add new activity to the top of the list
    */
-  addNewActivity: (activity) => {
-    set(state => ({
-      activities: [activity, ...state.activities],
-      activityCount: state.activityCount + 1
-    }));
+  addNewActivity: (activity, timezone = 'Asia/Kolkata') => {
+    set(state => {
+      if (state.activities.some(row => row._id === activity._id)) return state;
+      const filters = state.activityFilters;
+      const instant = new Date(activity.createdAt);
+      const date = Number.isFinite(+instant) ? workspaceDateKey(instant, timezone) : null;
+      const matches = (!filters.type || filters.type === 'all' || activity.type === filters.type)
+        && (!filters.startDate || (date && date >= filters.startDate))
+        && (!filters.endDate || (date && date <= filters.endDate));
+      return { activities: matches ? [activity, ...state.activities] : state.activities,
+        activityCount: state.activityCount + 1 };
+    });
   },
 
   /**
@@ -234,6 +245,8 @@ const useMyShortcutsStore = create((set, get) => ({
       projectCount: 0,
       announcementCount: 0,
       activities: [],
+      activityFilters: { type: 'all', startDate: null, endDate: null },
+      activityPagination: { page: 1, limit: 20, total: 0, pages: 0 },
       projects: [],
       tasksGrouped: [],
       totalTasks: 0,

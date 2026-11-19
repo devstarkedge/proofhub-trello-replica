@@ -85,7 +85,7 @@ export const getDepartmentStats = asyncHandler(async (req, res, next) => {
 
   try {
     scope = resolveDepartmentScope({
-      role: user.role,
+      role: user.isSuperAdmin ? 'admin' : user.role,
       department: user.department,
       requestedDepartmentId
     });
@@ -112,31 +112,20 @@ export const getDepartmentStats = asyncHandler(async (req, res, next) => {
     matchQuery._id = { $in: departmentIds.map((id) => new mongoose.Types.ObjectId(id)) };
   }
 
-  const [departmentTotals, employeeCount] = await Promise.all([
-    Department.aggregate([
-      { $match: matchQuery },
-      {
-        $project: {
-          managersCount: { $size: { $ifNull: ['$managers', []] } }
-        }
-      },
-      {
-        $group: {
-          _id: null,
-          totalDepartments: { $sum: 1 },
-          totalManagers: { $sum: '$managersCount' }
-        }
-      }
-    ]),
-    WorkspaceMembership.countDocuments({ workspace: req.workspaceId, status: 'active', role: 'employee',
-      ...(Array.isArray(departmentIds)
-        ? { department: { $in: departmentIds.map((id) => new mongoose.Types.ObjectId(id)) } }
-        : {})
-    })
+  const membershipMatch = { workspace: new mongoose.Types.ObjectId(req.workspaceId), status: 'active', kind: { $ne:'guest' }, role: { $in: ['manager', 'employee'] } };
+  if (Array.isArray(departmentIds)) membershipMatch.department = { $in: departmentIds.map(id => new mongoose.Types.ObjectId(id)) };
+  const [totalDepartments, memberCounts] = await Promise.all([
+    Department.countDocuments(matchQuery),
+    WorkspaceMembership.aggregate([
+      { $match: membershipMatch },
+      { $lookup: { from: User.collection.name, localField: 'user', foreignField: '_id', as: 'person' } },
+      { $match: { 'person.isSuperAdmin': { $ne: true }, 'person.isActive':true } },
+      { $group: { _id: '$role', count: { $sum: 1 } } }
+    ])
   ]);
-
-  const totals = departmentTotals[0] || { totalDepartments: 0, totalManagers: 0 };
-  const totalMembers = employeeCount || 0;
+  const counts = new Map(memberCounts.map(row => [row._id, row.count]));
+  const totals = { totalDepartments, totalManagers: counts.get('manager') || 0 };
+  const totalMembers = counts.get('employee') || 0;
   const avgMembersPerDept = totals.totalDepartments > 0
     ? Math.round(totalMembers / totals.totalDepartments)
     : 0;

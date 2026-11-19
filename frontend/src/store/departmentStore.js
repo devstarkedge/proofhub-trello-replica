@@ -25,6 +25,18 @@ const useDepartmentStore = create((set, get) => ({
 
   setError: (error) => set({ error }),
 
+  // The save response is authoritative; department memberships do not change.
+  projectMoved: project => set(state => {
+    const target = String(project.department?._id || project.department);
+    const departments = state.departments.map(department => {
+      const projects = department.projects || [];
+      const without = projects.filter(value => String(value?._id || value) !== String(project._id));
+      if (String(department._id) === target) return { ...department, projects:[...without, project] };
+      return without.length !== projects.length ? { ...department, projects:without } : department;
+    });
+    return { departments, currentDepartment:departments.find(department => department._id === state.currentDepartment?._id) || state.currentDepartment };
+  }),
+
   // Load all departments
   loadDepartments: async () => {
     const scope = readScope();

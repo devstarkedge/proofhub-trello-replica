@@ -1,3 +1,4 @@
+import { toast } from 'react-toastify';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MoreVertical, Share2, Link as LinkIcon, Trash2, ArrowRightLeft, Copy, Archive, ArchiveRestore, ArrowUpCircle } from "lucide-react";
@@ -65,24 +66,41 @@ const CardActionMenu = ({
     if (typeof window === "undefined") return null;
     const projectId = ids.projectId;
     const taskId = ids.taskId;
-    const departmentId = ids.departmentId;
+    const rawDepartment = ids.departmentId || currentDepartmentId;
+    const departmentId = rawDepartment?._id || rawDepartment;
 
     // All three IDs are required for the correct workflow route
     if (!projectId || !taskId || !departmentId) return null;
 
     // Correct format: /workflow/{departmentId}/{projectId}/{taskId}
-    const path = `/workflow/${departmentId}/${projectId}/${taskId}`;
+    const subtaskPath = ids.subtaskId ? '/' + (ids.subtaskId?._id || ids.subtaskId) : '';
+    const nanoPath = ids.nanoId && subtaskPath ? '/' + (ids.nanoId?._id || ids.nanoId) : '';
+    const path = `/workflow/${departmentId}/${projectId?._id || projectId}/${taskId?._id || taskId}${subtaskPath}${nanoPath}`;
 
     return `${window.location.origin}${path}`;
-  }, [ids.projectId, ids.taskId, ids.departmentId]);
+  }, [ids.projectId, ids.taskId, ids.departmentId, ids.subtaskId, ids.nanoId, currentDepartmentId]);
 
   const handleCopyLink = async () => {
     if (!shareLink) return;
     try {
-      await navigator.clipboard.writeText(shareLink);
+      let copied = false;
+      try {
+        if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(shareLink); copied = true; }
+      } catch { /* Fall back when browser clipboard permission is unavailable. */ }
+      if (!copied) {
+        const input = document.createElement('textarea');
+        input.value = shareLink;
+        input.style.position = 'fixed';
+        input.style.opacity = '0';
+        wrapperRef.current.appendChild(input);
+        try { input.select(); copied = document.execCommand('copy'); }
+        finally { input.remove(); }
+      }
+      if (!copied) throw new Error('Clipboard unavailable');
       setCopied(true);
     } catch (error) {
       console.error("Failed to copy link", error);
+      toast.error("Unable to copy the link. Please try again.");
     }
   };
 

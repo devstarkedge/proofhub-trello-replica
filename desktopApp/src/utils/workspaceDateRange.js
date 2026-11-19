@@ -15,10 +15,10 @@ export function periodDateRange(period, { now = new Date(), timezone = 'Asia/Kol
   if (period === 'week') {
     const offset = (date.getUTCDay() - weekStartsOn + 7) % 7;
     const start = new Date(Date.UTC(year, month, date.getUTCDate() - offset));
-    return { startDate: key(start), endDate: key(new Date(start.getTime() + 6 * 86400000)) };
+    return { startDate: key(start), endDate: today };
   }
-  if (period === 'year') return { startDate: `${year}-01-01`, endDate: `${year}-12-31` };
-  return { startDate: key(new Date(Date.UTC(year, month, 1))), endDate: key(new Date(Date.UTC(year, month + 1, 0))) };
+  if (period === 'year') return { startDate: `${year}-01-01`, endDate: today };
+  return { startDate: key(new Date(Date.UTC(year, month, 1))), endDate: today };
 }
 
 export function isValidDateRange(start, end) {

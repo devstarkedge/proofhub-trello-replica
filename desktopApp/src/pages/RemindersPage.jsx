@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useCallback, useMemo, memo } from 'react';
+import { useState, useEffect, useContext, useCallback, useMemo, useRef, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, Calendar, Clock, CheckCircle2, AlertCircle, AlertTriangle, Send, Trash2, Eye, RefreshCw, Filter, ChevronDown, Search, BarChart3, TrendingUp, X, Mail, Phone, User, CalendarDays, List } from 'lucide-react';
 
@@ -34,6 +34,7 @@ const RemindersPage = memo(() => {
   // Filter states
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [refreshRevision, setRefreshRevision] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
   const [selectedDepartment, setSelectedDepartment] = useState('all');
   
@@ -58,9 +59,12 @@ const RemindersPage = memo(() => {
     reminder?.project?._id || reminder?.project?.id || reminder?.project || reminder?.projectId
   ), []);
 
+  const requestGeneration = useRef(0);
+
   // Fetch reminders and stats
   const fetchData = useCallback(async (showRefreshIndicator = false) => {
     if (!canAccess) return;
+    const generation = ++requestGeneration.current;
     
     try {
       if (showRefreshIndicator) {
@@ -70,14 +74,15 @@ const RemindersPage = memo(() => {
       }
       
       const filters = {};
-      if (statusFilter !== 'all') filters.status = statusFilter;
+      if (statusFilter !== 'all') filters.view = statusFilter;
       if (selectedDepartment !== 'all') filters.department = selectedDepartment;
       
       const [remindersRes, statsRes] = await Promise.all([
         Database.getAllReminders(filters),
-        Database.getReminderDashboardStats(filters)
+        Database.getReminderDashboardStats(selectedDepartment !== 'all' ? { department: selectedDepartment } : {})
       ]);
 
+      if (generation !== requestGeneration.current) return;
       const remindersData = remindersRes.data || [];
       setReminders(remindersData);
       upsertClientInfoBatch(
@@ -90,16 +95,17 @@ const RemindersPage = memo(() => {
       // Stats are nested in statsRes.data.stats
       setStats(statsRes.data?.stats || null);
     } catch (error) {
+      if (generation !== requestGeneration.current) return;
       console.error('Error fetching reminders:', error);
       toast.error('Failed to load reminders');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (generation === requestGeneration.current) { setLoading(false); setRefreshing(false); }
     }
   }, [canAccess, statusFilter, selectedDepartment, getProjectId, upsertClientInfoBatch]);
 
   useEffect(() => {
     fetchData();
+    return () => { requestGeneration.current++; };
   }, [fetchData]);
 
   const remindersWithLiveClient = useMemo(() => (
@@ -114,7 +120,7 @@ const RemindersPage = memo(() => {
     const handleBoardUpdate = (event) => {
       const { updates } = event.detail || {};
       // If client details were updated, refresh reminders to get latest data
-      if (updates?.clientDetails) {
+      if (updates?.clientDetails || updates?.department) {
         console.log('Client details updated, refreshing reminders...');
         fetchData(true);
       }
@@ -294,12 +300,12 @@ const RemindersPage = memo(() => {
                 </button>
               </div>
 
-              {viewMode === 'list' && (
+              {(
                 <>
                   <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    onClick={() => fetchData(true)}
+                    onClick={() => { setRefreshRevision(value => value + 1); fetchData(true); }}
                     disabled={refreshing}
                     className="flex items-center gap-2 px-4 py-2.5 bg-white text-gray-700 rounded-xl shadow-md hover:shadow-lg transition-all border border-gray-200"
                   >
@@ -327,77 +333,28 @@ const RemindersPage = memo(() => {
           ) : (
             <>
               {/* Stats Cards */}
-          {stats && viewMode === 'list' && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4"
-            >
-              <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-blue-500">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">Total</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.total || 0}</p>
-                  </div>
-                  <BarChart3 className="w-8 h-8 text-blue-500" />
-                </div>
-              </div>
-
-              <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-indigo-500">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">Pending</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.upcoming || 0}</p>
-                  </div>
-                  <Clock className="w-8 h-8 text-indigo-500" />
-                </div>
-              </div>
-
-              <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-orange-500">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">Due Soon</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.dueSoon || 0}</p>
-                  </div>
-                  <AlertTriangle className="w-8 h-8 text-orange-500" />
-                </div>
-              </div>
-
-              <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-red-500">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">Overdue</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.overdue || 0}</p>
-                  </div>
-                  <AlertCircle className="w-8 h-8 text-red-500" />
-                </div>
-              </div>
-
-              <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-green-500">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">Completed</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.completed || 0}</p>
-                  </div>
-                  <CheckCircle2 className="w-8 h-8 text-green-500" />
-                </div>
-              </div>
-
-              <div className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-purple-500">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">Success Rate</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.successRatio || 0}%</p>
-                  </div>
-                  <TrendingUp className="w-8 h-8 text-purple-500" />
-                </div>
-              </div>
-            </motion.div>
+          {stats && (
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              {[
+                ['Total', 'all', stats.total, BarChart3, 'blue'],
+                ['Pending', 'upcoming', stats.upcoming, Clock, 'indigo'],
+                ['Due Soon', 'dueSoon', stats.dueSoon, AlertTriangle, 'orange'],
+                ['Overdue', 'overdue', stats.overdue, AlertCircle, 'red'],
+                ['Completed', 'completed', stats.completed, CheckCircle2, 'green'],
+                ['Success Rate', 'success', String(stats.successRatio || 0) + '%', TrendingUp, 'purple']
+              ].map(([label, filter, value, Icon, color]) => (
+                <button key={filter} type="button" aria-pressed={statusFilter === filter} onClick={() => setStatusFilter(filter)}
+                  className={'bg-white rounded-xl shadow-sm p-4 border-l-4 text-left ' + (statusFilter === filter ? 'ring-2 ring-indigo-400 ' : '')}
+                  style={{ borderLeftColor: { blue: '#3b82f6', indigo: '#6366f1', orange: '#f97316', red: '#ef4444', green: '#22c55e', purple: '#a855f7' }[color] }}>
+                  <div className="flex items-center justify-between"><div><p className="text-sm text-gray-600">{label}</p><p className="text-2xl font-bold text-gray-900">{value || 0}</p></div><Icon className="w-8 h-8" style={{ color: { blue: '#3b82f6', indigo: '#6366f1', orange: '#f97316', red: '#ef4444', green: '#22c55e', purple: '#a855f7' }[color] }}/></div>
+                </button>
+              ))}
+            </div>
           )}
 
           {/* Filters Section - List View Only */}
           <AnimatePresence>
-            {showFilters && viewMode === 'list' && (
+            {showFilters && (
               <motion.div
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
@@ -426,7 +383,7 @@ const RemindersPage = memo(() => {
                       onChange={(e) => setStatusFilter(e.target.value)}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
                     >
-                      <option value="all">All Status</option>
+                      <option value="all">All Status</option><option value="upcoming">Upcoming</option><option value="dueSoon">Due Soon</option><option value="overdue">Overdue</option><option value="success">Successful</option>
                       <option value="pending">Pending</option>
                       <option value="sent">Sent</option>
                       <option value="completed">Completed</option>
@@ -441,6 +398,7 @@ const RemindersPage = memo(() => {
                       onChange={(e) => setSelectedDepartment(e.target.value)}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
                     >
+                      {!departments.some(dept => dept._id === 'all') && <option value="all">All authorized departments</option>}
                       {departments.map(dept => (
                         <option key={dept._id} value={dept._id}>{dept.name}</option>
                       ))}
@@ -459,6 +417,9 @@ const RemindersPage = memo(() => {
             >
               <ModernCalendarGrid
                 departmentId={selectedDepartment !== 'all' ? selectedDepartment : null}
+                refreshRevision={refreshRevision}
+                viewFilter={statusFilter}
+                query={searchQuery}
                 onSelectReminder={handleViewReminder}
               />
             </motion.div>

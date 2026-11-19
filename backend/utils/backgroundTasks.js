@@ -13,6 +13,7 @@ import { sendEmail } from './email.js';
 import notificationService from './notificationService.js';
 import { sendPushNotification } from './pushNotification.js';
 import User from '../models/User.js';
+import { deliverProjectUpdate } from '../services/projectUpdateDelivery.js';
 import { isQueueActive } from '../queues/queueManager.js';
 import { getActiveWorkspaceId } from '../modules/workspaces/workspaceContext.js';
 import {
@@ -20,6 +21,7 @@ import {
   enqueueProjectEmails,
   enqueueNotification,
   enqueueProjectCreatedNotification,
+  enqueueProjectUpdatedNotification,
   enqueueUserRegisteredNotification,
   enqueueUserCreatedNotification,
   enqueuePush,
@@ -47,6 +49,22 @@ export const runBackground = (fn) => {
     });
   } catch (err) {
     console.error('Failed to schedule background task:', err);
+  }
+};
+
+export const notifyProjectUpdatedInBackground = (board, updaterId, changes) => {
+  const workspaceId = getActiveWorkspaceId();
+  // Keep jobs small: no descriptions, files or billing/client details.
+  const snapshot = { _id:String(board._id), workspaceId, name:board.name,
+    department:String(board.department?._id || board.department),
+    members:(board.members || []).map(member => String(member?._id || member)) };
+  for (const channel of ['inApp', 'slack']) {
+    const data = { workspaceId, board:snapshot, updaterId:String(updaterId), changes, channel };
+    if (isQueueActive()) {
+      enqueueProjectUpdatedNotification(data).catch(error => console.error('Project update enqueue failed:', error.code || error.name));
+    } else {
+      runBackground(() => deliverProjectUpdate(data));
+    }
   }
 };
 

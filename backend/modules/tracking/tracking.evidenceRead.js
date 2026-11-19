@@ -17,8 +17,8 @@ export async function evidenceByUser(workspaceId,sessions,segments,start,end,opt
     ...workLookup,
     {$set:{seconds:{$divide:[{$subtract:['$endedAt','$startedAt']},1000]},overlap:{$sum:{$map:{input:options.fromWorkSessions?'$_eligibleSegments':{$literal:segments},as:'s',in:{$cond:[{$eq:['$$s.session','$session']},{$max:[0,{$divide:[{$subtract:[{$min:['$endedAt','$$s.endedAt']},{$max:['$startedAt','$$s.startedAt']}]},1000]}]},0]}}}}}},
     {$match:{$expr:{$gte:['$overlap',{$subtract:['$seconds',0.001]}]}}},
-    {$lookup:{from:TrackingScreenshot.collection.name,localField:'_id',foreignField:'interval',pipeline:[{$match:{workspaceId:tenant,status:{$ne:'DELETED'},$or:[{expiresAt:null},{expiresAt:{$gt:now}}]}},{$group:{_id:null,ready:{$sum:{$cond:[{$eq:['$status','READY']},1,0]}},pending:{$sum:{$cond:[{$eq:['$status','PENDING']},1,0]}}}}],as:'images'}},
-    {$group:{_id:{user:'$user',coverage:'$coverage'},windows:{$sum:1},seconds:{$sum:'$seconds'},
+    ...(options.activityOnly ? [] : [{$lookup:{from:TrackingScreenshot.collection.name,localField:'_id',foreignField:'interval',pipeline:[{$match:{workspaceId:tenant,status:{$ne:'DELETED'},$or:[{expiresAt:null},{expiresAt:{$gt:now}}]}},{$group:{_id:null,ready:{$sum:{$cond:[{$eq:['$status','READY']},1,0]}},pending:{$sum:{$cond:[{$eq:['$status','PENDING']},1,0]}}}}],as:'images'}}]),
+    {$group:{_id:{user:'$user',coverage:'$coverage',...(options.groupByDay ? {date:{$dateToString:{date:'$startedAt',format:'%Y-%m-%d',timezone:options.timezone || 'UTC'}}} : {})},windows:{$sum:1},seconds:{$sum:'$seconds'},
       captured:{$sum:{$cond:[{$and:[{$not:[excluded]},{$gt:[{$ifNull:[{$first:'$images.ready'},0]},0]}]},1,0]}},
       pending:{$sum:{$ifNull:[{$first:'$images.pending'},0]}},
       inputActive:{$sum:{$cond:[{$and:[{$not:[excluded]},distinct]},'$inputActiveSeconds',0]}},
@@ -28,7 +28,7 @@ export async function evidenceByUser(workspaceId,sessions,segments,start,end,opt
     }}
   ]).option({maxTimeMS:10000,allowDiskUse:true});
   const result=new Map();
-  for(const row of rows){const key=String(row._id.user),coverage=row._id.coverage,skip=['excluded','locked','sleep'].includes(coverage);
+  for(const row of rows){const key=options.groupByDay ? String(row._id.user)+':'+row._id.date : String(row._id.user),coverage=row._id.coverage,skip=['excluded','locked','sleep'].includes(coverage);
     const value=result.get(key)||{activeInputSeconds:0,eligibleInputSeconds:0,mouseCount:null,keyboardCount:null,knownSeconds:0,excludedSeconds:0,eligibleWindows:0,capturedWindows:0,pendingScreenshots:0,outcomes:{}};
     const noImage=skip||['inactive','activity-only'].includes(coverage);
     value.activeInputSeconds+=row.inputActive;value.eligibleInputSeconds+=row.inputEligible;value.knownSeconds+=row.seconds;value.excludedSeconds+=skip?row.seconds:0;value.eligibleWindows+=noImage?0:row.windows;value.capturedWindows+=noImage?0:row.captured;value.pendingScreenshots+=row.pending;value.outcomes[coverage]=row.windows;

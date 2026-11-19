@@ -1,3 +1,4 @@
+import { versionedTaskUpdate } from '../services/versionedTaskUpdate.js';
 import { resourceReadFilter } from '../services/resourceReadFilter.js';
 import { copyTaskHierarchy } from '../services/taskCopy.js';
 import { authorizeDestination } from '../services/taskMovement.js';
@@ -316,11 +317,10 @@ export const updateSubtask = asyncHandler(async (req, res, next) => {
     (field) => !CHAT_TRACKED_TIME_FIELDS.has(field)
   );
 
-  subtask = await Subtask.findByIdAndUpdate(
-    req.params.id,
-    updates,
-    { returnDocument: 'after', runValidators: true, expectedRevision: req.expectedRevision }
-  ).populate(basePopulate);
+  subtask = await versionedTaskUpdate(Subtask, {
+    entityId: req.params.id, updates, previous: oldSubtask, entityType: 'subtask_description',
+    actorId: req.user.id, populate: basePopulate, expectedRevision: req.expectedRevision
+  });
 
   // Send response immediately for better UX
   res.status(200).json({

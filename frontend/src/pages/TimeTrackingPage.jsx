@@ -1,3 +1,4 @@
+import { workspaceDateKey } from '../utils/workspaceDateRange';
 import GeneratedTrackingReports from '../components/Tracking/GeneratedTrackingReports';
 import { filterTrackingRows } from '../../../shared/trackingFilterState.mjs';
 import { formatPersonalPause } from '../../../shared/personalPauseDuration.mjs';
@@ -640,7 +641,7 @@ export default function TimeTrackingPage() {
                       From Date
                     </label>
                     <input
-                      type="date"
+                      type="date" max={workspaceDateKey(new Date(), currentWorkspace?.timezone)}
                       value={filters.fromDate}
                       onChange={e => change('fromDate', e.target.value)}
                       className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 py-2 px-3 text-xs md:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
@@ -651,7 +652,7 @@ export default function TimeTrackingPage() {
                       To Date
                     </label>
                     <input
-                      type="date"
+                      type="date" max={workspaceDateKey(new Date(), currentWorkspace?.timezone)}
                       value={filters.toDate}
                       onChange={e => change('toDate', e.target.value)}
                       className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 py-2 px-3 text-xs md:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"

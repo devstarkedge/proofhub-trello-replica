@@ -8,12 +8,15 @@ export const TEAM_SORTS = ['name', 'email', 'department', 'present', 'halfDays',
 const identifier = value => typeof value === 'string' && /^[a-f\d]{24}$/i.test(value);
 export function validateTeamQuery(query, timezone, now = new Date()) {
   const month = DateTime.fromJSDate(now).setZone(timezone);
-  const q = { startDate: month.startOf('month').toISODate(), endDate: month.endOf('month').toISODate(),
+  const q = { startDate: month.startOf('month').toISODate(), endDate: month.toISODate(),
     status: '', workMode: '', departmentId: '', userId: '', search: '', sort: 'name', direction: 'asc', page: 1, pageSize: 25, ...query };
   for (const key of ['startDate', 'endDate', 'status', 'workMode', 'departmentId', 'userId', 'search', 'sort', 'direction']) {
     if (typeof q[key] !== 'string') throw new ErrorResponse(`Invalid ${key}`, 400);
   }
   validateDateRange(q.startDate, q.endDate);
+  const today = month.toISODate();
+  if (q.startDate > today) throw new ErrorResponse('Future dates are unavailable in attendance reports', 400);
+  if (q.endDate > today) q.endDate = today;
   for (const key of ['departmentId', 'userId']) if (q[key] && !identifier(q[key])) throw new ErrorResponse(`Invalid ${key}`, 400);
   if (q.status && !TEAM_STATUSES.includes(q.status)) throw new ErrorResponse('Invalid attendance status', 400);
   if (q.workMode && !TEAM_WORK_MODES.includes(q.workMode)) throw new ErrorResponse('Invalid work mode', 400);

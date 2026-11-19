@@ -131,7 +131,7 @@ export function prepareTaskCreation(req) {
 }
 
 export async function authorizeVersion(req, mutation = false) {
-  const type = { card_description: 'task', subtask_description: 'subtask', comment: 'comment' }[req.params.entityType];
+  const type = { card_description: 'task', subtask_description: 'subtask', nano_description: 'nano', comment: 'comment' }[req.params.entityType];
   if (!type) throw new ErrorResponse('Invalid entity type', 400);
   const permission = mutation ? type === 'comment' ? 'comment.create' : 'task.update' : 'task.view';
   const resource = await authorizeProjectResource(req, type, req.params.entityId, permission);

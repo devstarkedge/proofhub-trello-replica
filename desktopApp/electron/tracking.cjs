@@ -22,6 +22,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
   let latestAttendanceInput=null, attendanceActivityAllowed=false, lastAttendanceInputMono=-Infinity;
   let locked=false,suspended=false,lastBoundary=0,lastState='unavailable',lastError='',lastErrorCode='',lastCaptureAllowed=false;
   let leaseDeadlineMono=0;
+  const pressedKeys = new Set();
   let realtime=null,haltRevision=0,captureEpoch=0,resyncRequested=false,stateChangeRetried=false;
   let updateHold=false,shutdownTask=null;
   let syncTask=null,captureTask=null,reconnectTimer=null,reconnectFailures=0,nextReconnectAt=null,checkpointError=null;
@@ -107,6 +108,7 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
   const isIdle = ()=>locked||suspended||powerMonitor.getSystemIdleTime()>=(policy?.idleThresholdSeconds||60);
   function stopInput(keepHook = false) {
     captureSchedule.stop();checkpointPending=false;
+    if (!keepHook) pressedKeys.clear();
     if(sampler)clearInterval(sampler);sampler=null;
     if(!keepHook&&hookStarted){try{hook.stop();}catch{/* OS hook already stopped */}hookStarted=false;}
   }
@@ -170,8 +172,8 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
           inputModule = require(path.join(process.resourcesPath,'node_modules','uiohook-napi'));
         }
         hook=inputModule.uIOhook;
-        // Deliberately ignore the entire event payload, including keycodes,
-        // modifiers, button IDs and coordinates. Only counters cross this API.
+        // Retain key codes only until key-up to suppress OS key-repeat events.
+        // Only aggregate counters leave the main process.
         const activity=kind=>{if(locked||suspended)return;
           if (attendanceActivityAllowed && work?._id && anchorMono !== null) {
             const observedAt = performance.now();
@@ -188,7 +190,13 @@ function installDesktopTracking(getWindow,getOrigin,getBackendURL, deferQuit = (
             if (now >= scheduledActivityResumeFrom && now < activityWatchUntil) updateActivityState();
           }
           activityWork.input();if(capturing){captureInput();if(kind==='keyboard')counters.keyDown();else if(kind==='mouse')counters.mouseDown();else counters.input();}else if(activityWatchUntil>performance.now())captureSchedule.input();};
-        hook.on('keydown',()=>activity('keyboard'));
+        hook.on('keydown', event => {
+          const code = event?.keycode;
+          if (code != null && pressedKeys.has(code)) return;
+          if (code != null) pressedKeys.add(code);
+          activity('keyboard');
+        });
+        hook.on('keyup', event => pressedKeys.delete(event?.keycode));
         hook.on('mousedown',()=>activity('mouse'));
         hook.on('mousemove',()=>activity('move'));
         hook.on('wheel',()=>activity('wheel'));

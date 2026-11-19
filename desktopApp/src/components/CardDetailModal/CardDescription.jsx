@@ -20,6 +20,9 @@ const CardDescription = memo(({
   onVersionRollback,
   enableCloudinaryAttachments = true // Enable new Cloudinary attachment system
 }) => {
+  const historyEntityId = entityId || cardId;
+  const historyEntityType = entityType === 'subtask' ? 'subtask_description'
+    : ['nanoSubtask', 'subtaskNano', 'nano'].includes(entityType) ? 'nano_description' : 'card_description';
   const [isExpanded, setIsExpanded] = useState(false);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [versionCount, setVersionCount] = useState(0);
@@ -70,9 +73,9 @@ const CardDescription = memo(({
   // Fetch version count on mount
   useEffect(() => {
     const fetchVersionCount = async () => {
-      if (cardId) {
+      if (historyEntityId) {
         try {
-          const count = await versionService.getVersionCount('card_description', cardId);
+          const count = await versionService.getVersionCount(historyEntityType, historyEntityId);
           setVersionCount(count);
         } catch (error) {
           console.error('Error fetching version count:', error);
@@ -80,7 +83,7 @@ const CardDescription = memo(({
       }
     };
     fetchVersionCount();
-  }, [cardId, description]);
+  }, [historyEntityId, historyEntityType, showVersionHistory]);
 
   // Handle clicking outside to collapse (scoped to modal)
   useEffect(() => {
@@ -117,10 +120,11 @@ const CardDescription = memo(({
 
   // Handle version rollback
   const handleVersionRollback = useCallback(async (version) => {
+    const restored = typeof version === 'string' ? version : version.htmlContent ?? version.content ?? '';
     if (onVersionRollback) {
-      onVersionRollback(version.htmlContent || version.content);
+      onVersionRollback(restored);
     } else if (onChange) {
-      onChange(version.htmlContent || version.content);
+      onChange(restored);
     }
     setShowVersionHistory(false);
   }, [onChange, onVersionRollback]);
@@ -235,15 +239,15 @@ const CardDescription = memo(({
       </div>
 
       {/* Version History Modal */}
-      {showVersionHistory && cardId && (
+      {showVersionHistory && historyEntityId && (
         <Suspense fallback={
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <Loader2 className="w-8 h-8 animate-spin text-white" />
           </div>
         }>
           <VersionHistoryModal
-            entityType="card"
-            entityId={cardId}
+            entityType={historyEntityType}
+            entityId={historyEntityId}
             isOpen={showVersionHistory}
             onClose={() => setShowVersionHistory(false)}
             onRollback={handleVersionRollback}

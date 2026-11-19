@@ -1100,7 +1100,9 @@ const SubtaskNanoModal = ({
                     projectId: resolvedProjectId,
                     taskId: resolvedTaskId,
                     subtaskId: resolvedSubtaskId,
+                    nanoId: entityId,
                     nenoId: entityId,
+                    departmentId: initialData?.board?.department || currentProject?.department,
                   }}
                   onDelete={runDelete}
                   isDeleting={deleteLoading}

@@ -16,7 +16,7 @@ const versionHistorySchema = new mongoose.Schema({
   entityType: {
     type: String,
     required: true,
-    enum: ['card_description', 'comment', 'subtask_description'],
+    enum: ['card_description', 'comment', 'subtask_description', 'nano_description'],
     index: true
   },
   entityId: {

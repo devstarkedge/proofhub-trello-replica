@@ -3,6 +3,7 @@ import React, { useEffect, useCallback, memo, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckSquare, Clock, Activity, RefreshCw, TrendingUp } from 'lucide-react';
+import WorkspaceContext from '../context/WorkspaceContext';
 import useMyShortcutsStore from '../store/myShortcutsStore';
 import socketService from '../services/socket';
 import { useAnnouncementActions } from '../hooks/useAnnouncementActions';
@@ -21,6 +22,7 @@ import MyShortcutsSkeleton from '../components/MyShortcuts/MyShortcutsSkeleton';
 
 const MyShortcutsPage = () => {
   const navigate = useNavigate();
+  const { currentWorkspace } = React.useContext(WorkspaceContext);
   
   // Store state
   const {
@@ -70,7 +72,7 @@ const MyShortcutsPage = () => {
     };
 
     const handleNewActivity = (e) => {
-      addNewActivity(e.detail);
+      addNewActivity(e.detail, currentWorkspace?.timezone);
     };
 
     const handleTaskCountChange = (e) => {
@@ -98,7 +100,7 @@ const MyShortcutsPage = () => {
       window.removeEventListener('socket-my-shortcuts-time', handleTimeLogged);
       window.removeEventListener('socket-my-shortcuts-announcement', handleNewAnnouncement);
     };
-  }, [updateTaskCount, updateLoggedTime, addNewActivity, addNewAnnouncement]);
+  }, [updateTaskCount, updateLoggedTime, addNewActivity, addNewAnnouncement, currentWorkspace?.timezone]);
 
   // Listen for real-time announcement updates (comments, reactions)
   useEffect(() => {
@@ -173,9 +175,8 @@ const MyShortcutsPage = () => {
   }, [navigate]);
 
   const handleActivityClick = useCallback(() => {
-    fetchActivities();
     setActivityModalOpen(true);
-  }, [fetchActivities]);
+  }, []);
 
   const handleRefresh = useCallback(() => {
     fetchDashboardSummary();

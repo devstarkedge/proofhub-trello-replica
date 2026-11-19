@@ -141,6 +141,8 @@ function App() {
                 <Route path="/workspace-settings/configs" element={<WorkspaceConfigsPage />} />
                 <Route path="/workflow/:deptId/:projectId" element={<ProjectWorkspaceGate><WorkFlow /></ProjectWorkspaceGate>} />
                 <Route path="/workflow/:deptId/:projectId/:taskId" element={<ProjectWorkspaceGate><WorkFlow /></ProjectWorkspaceGate>} />
+                <Route path="/workflow/:deptId/:projectId/:taskId/:subtaskId" element={<ProjectWorkspaceGate><WorkFlow /></ProjectWorkspaceGate>} />
+                <Route path="/workflow/:deptId/:projectId/:taskId/:subtaskId/:nenoId" element={<ProjectWorkspaceGate><WorkFlow /></ProjectWorkspaceGate>} />
                 <Route path="/workflow/:deptId/:projectId/trash" element={<ProjectTrash />} />
 
                 {/* Leave Management — self-service (dashboard/my-leave/calendar)

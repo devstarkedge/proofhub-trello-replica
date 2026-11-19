@@ -102,6 +102,10 @@ export function enqueueProjectCreatedNotification(data, opts = {}) {
   return notificationQueue.add('notify-project-created', data, { priority: 3, ...opts });
 }
 
+export function enqueueProjectUpdatedNotification(data, opts = {}) {
+  return notificationQueue.add('notify-project-updated', data, { priority: 3, ...opts });
+}
+
 /**
  * Enqueue: notify admins about new user registration.
  */

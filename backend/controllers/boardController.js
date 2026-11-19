@@ -31,7 +31,7 @@ import { emitNotification, emitToBoard, emitToUser } from "../realtime/index.js"
 import notificationService from "../utils/notificationService.js";
 import { slackHooks } from "../utils/slackHooks.js";
 import { chatHooks } from "../utils/chatHooks.js";
-import { runBackground } from '../utils/backgroundTasks.js';
+import { runBackground, notifyProjectUpdatedInBackground } from '../utils/backgroundTasks.js';
 import { 
   notifyProjectCreatedInBackground, 
   sendProjectEmailsInBackground, 
@@ -833,6 +833,25 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
     updateBody.estimatedTime = null;
     updateBody.clientDetails = { clientName: null, clientEmail: null, clientWhatsappNumber: null, marketingContact: false };
   }
+  const departmentChanged = Object.hasOwn(updateBody, 'department') && String(updateBody.department) !== String(previousBoard.department);
+  if (departmentChanged) {
+    if (!mongoose.isValidObjectId(updateBody.department)) return next(new ErrorResponse('Invalid department', 400));
+    const target = await Department.findOne({ _id: updateBody.department, workspaceId: req.workspaceId, isActive: { $ne: false } });
+    if (!target) return next(new ErrorResponse('Department not found in this workspace', 404));
+    await requireProjectPermission(req, 'project.create', { department: target._id });
+    const assignedToTarget = (req.user.department || []).some(value => String(value?._id || value) === String(target._id));
+    const managesTarget = (target.managers || []).some(value => String(value?._id || value) === String(req.user.id || req.user._id));
+    if (req.user.role === 'manager' && !assignedToTarget && !managesTarget) {
+      return next(new ErrorResponse('You cannot move a project into this department', 403));
+    }
+    updateBody.team = null;
+  }
+  const moveDepartmentReferences = async session => {
+    if (!departmentChanged) return;
+    await Department.updateOne({ _id: previousBoard.department, workspaceId: req.workspaceId }, { $pull: { projects: previousBoard._id } }, { session });
+    await Department.updateOne({ _id: updateBody.department, workspaceId: req.workspaceId }, { $addToSet: { projects: previousBoard._id } }, { session });
+    await Reminder.updateMany({ project: previousBoard._id, workspaceId: req.workspaceId }, { $set: { department: updateBody.department } }, { session });
+  };
   delete updateBody.totalProjectBudgetCents;
 
   const previousBillingCycle = String(previousBoard.billingCycle || '').toLowerCase();
@@ -898,11 +917,13 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
         }
         delete updateBody.totalProjectBudget;
         delete updateBody.milestones;
-        await Board.findByIdAndUpdate(req.params.id, updateBody, {
+        const updated = await Board.findOneAndUpdate({ _id:req.params.id, ...(departmentChanged ? {department:previousBoard.department} : {}) }, updateBody, {
           new: true,
           runValidators: true,
           session
         });
+        if (!updated) throw new ErrorResponse('Project changed. Reload it before updating.', 409);
+        await moveDepartmentReferences(session);
       }, {
         readConcern: { level: 'snapshot' },
         writeConcern: { w: 'majority' }
@@ -914,6 +935,18 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
       .populate('owner', 'name email avatar')
       .populate('members', 'name email avatar')
       .lean();
+  } else if (departmentChanged) {
+    delete updateBody.totalProjectBudget;
+    delete updateBody.milestones;
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const updated = await Board.findOneAndUpdate({ _id: req.params.id, department: previousBoard.department }, updateBody, { new: true, runValidators: true, session });
+        if (!updated) throw new ErrorResponse('Project changed. Reload it before moving departments.', 409);
+        await moveDepartmentReferences(session);
+      });
+    } finally { await session.endSession(); }
+    board = await Board.findById(req.params.id).populate('owner', 'name email avatar').populate('members', 'name email avatar').lean();
   } else {
     delete updateBody.totalProjectBudget;
     delete updateBody.milestones;
@@ -929,6 +962,10 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
   // Activity + notifications
   const changes = [];
   const activityTasks = [];
+  if (departmentChanged) {
+    changes.push('Project department updated');
+    activityTasks.push(Activity.create({ type: 'project_updated', description: 'Moved project to another department', user: req.user.id, board: board._id, contextType: 'board', metadata: { oldDepartment: previousBoard.department, newDepartment: board.department } }));
+  }
   if (board.visibility !== previousBoard.visibility) changes.push(`Visibility changed to ${board.visibility}`);
 
   if (req.body.name && req.body.name !== previousBoard.name) {
@@ -1049,7 +1086,7 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
     ).catch(console.error);
   }
   const sortedIds = ids => (ids || []).map(value => String(value?._id || value)).sort().join(',');
-  if (board.visibility !== previousBoard.visibility || sortedIds(board.managers) !== sortedIds(previousBoard.managers)) {
+  if (departmentChanged || board.visibility !== previousBoard.visibility || sortedIds(board.managers) !== sortedIds(previousBoard.managers)) {
     chatHooks.onProjectMembershipChanged(board, req.user, 'project_access_changed').catch(console.error);
   }
 
@@ -1059,14 +1096,12 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
 
   if (changes.length > 0) {
     chatHooks.onProjectUpdated(board, { changes }, req.user).catch(console.error);
-    await notificationService.notifyProjectUpdated(board, req.user.id, changes.slice(0, 3).join(', '));
-    await slackHooks.onProjectUpdated(board, changes, req.user);
   }
 
   // Emit socket event for real-time updates (e.g., reminders page needs to update client info)
   emitToBoard(board._id, 'board-updated', {
     boardId: board._id.toString(),
-    updates: { name: board.name, status: board.status, visibility: board.visibility },
+    updates: { name: board.name, status: board.status, visibility: board.visibility, department: board.department, team: board.team },
     projectName: board.name
   });
 
@@ -1079,6 +1114,7 @@ export const updateBoard = asyncHandler(async (req, res, next) => {
     success: true,
     data: board,
   });
+  if (changes.length > 0) notifyProjectUpdatedInBackground(board, req.user.id, changes);
 });
 
 // @desc    Get project activity timeline

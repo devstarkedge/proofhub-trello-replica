@@ -61,7 +61,7 @@ const TeamManagement = () => {
     loading: departmentsLoading
   } = useDepartmentStore();
 
-  const isAdmin = user && user.role === 'admin';
+  const isAdmin = user && (user.role === 'admin' || user.isSuperAdmin);
   // Permission-driven, not role-name-driven — this page's own route guard
   // (App.jsx) already lets Manager/Admin/HR through, but this internal gate
   // used to hardcode admin/manager only, silently excluding HR (despite the
@@ -186,8 +186,8 @@ const TeamManagement = () => {
       if (controller.signal.aborted) return;
       const allUsers = userList.data || [];
       dispatch({ type: ACTION_TYPES.SET_USERS, payload: allUsers });
-      dispatch({ type: ACTION_TYPES.SET_MANAGERS, payload: allUsers.filter(u => u.role === 'manager' || u.role === 'admin') });
-      dispatch({ type: ACTION_TYPES.SET_EMPLOYEES, payload: allUsers.filter(u => u.isVerified && u.role === 'employee') });
+      dispatch({ type: ACTION_TYPES.SET_MANAGERS, payload: allUsers.filter(u => u.role === 'manager' && !u.isSuperAdmin) });
+      dispatch({ type: ACTION_TYPES.SET_EMPLOYEES, payload: allUsers.filter(u => u.role === 'employee' && !u.isSuperAdmin) });
     } catch (error) {
       if (controller.signal.aborted) return;
       dispatch({ type: ACTION_TYPES.SET_USERS, payload: [] });
@@ -273,14 +273,9 @@ const TeamManagement = () => {
   const loadStats = useCallback(async () => {
     if (!user) return;
 
-    const role = (user.role || '').toLowerCase();
-    const isAdmin = role === 'admin';
-    const departmentId = isAdmin ? null : state.currentDepartment?._id;
-
-    if (!isAdmin && !departmentId) return;
 
     try {
-      const statsResponse = await Database.getDepartmentStats(departmentId);
+      const statsResponse = await Database.getDepartmentStats();
       const statsData = statsResponse.data || statsResponse || {};
 
       dispatch({
@@ -296,11 +291,17 @@ const TeamManagement = () => {
       console.error('Error loading stats:', error);
       showToast('Failed to load stats', 'error');
     }
-  }, [user, state.currentDepartment, showToast]);
+  }, [user, departments, showToast]);
 
   useEffect(() => {
     loadStats();
   }, [loadStats]);
+
+  const countedDepartments = useMemo(() => departments.map(department => {
+    const includes = (person, field) => (department[field] || []).some(value => String(value?._id || value) === String(person._id)) || (person.department || []).some(value => String(value?._id || value) === String(department._id));
+    return { ...department, displayManagerCount:state.managers.filter(person=>includes(person,'managers')).length,
+      displayEmployeeCount:state.employees.filter(person=>includes(person,'members')).length };
+  }), [departments, state.managers, state.employees]);
 
   const stats = state.stats;
 
@@ -631,7 +632,7 @@ const TeamManagement = () => {
                   {/* Left Column - Department List */}
                   <div className="md:col-span-1">
                     <DepartmentList
-                      departments={departments}
+                      departments={countedDepartments}
                       currentDepartment={state.currentDepartment}
                       isLoading={state.isLoading}
                       onSelectDepartment={handleSelectDepartment}

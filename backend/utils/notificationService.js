@@ -833,54 +833,16 @@ class NotificationService {
       : board.department?.toString?.() || null;
     const boardId = board._id.toString();
 
-    // Notify project members
-    if (board.members && board.members.length > 0) {
-      board.members.forEach(memberId => {
-        if (memberId.toString() !== updaterId) {
-          notifications.push({
-            type: 'project_updates',
-            title: 'Project Updated',
-            message,
-            user: memberId,
-            sender: updaterId,
-            relatedBoard: board._id,
-            departmentId: deptId,
-            projectId: boardId,
-            metadata: {
-              departmentId: deptId,
-              projectId: boardId,
-              projectName: board.name,
-              url: deptId ? `/workflow/${deptId}/${boardId}` : '/'
-            }
-          });
-        }
-      });
-    }
-
-    // Notify department managers
-    const department = await Department.findById(board.department).populate('managers');
-    if (department && department.managers) {
-      department.managers.forEach(manager => {
-        if (manager._id.toString() !== updaterId) {
-          notifications.push({
-            type: 'project_updates',
-            title: 'Project Updated',
-            message,
-            user: manager._id,
-            sender: updaterId,
-            relatedBoard: board._id,
-            departmentId: deptId,
-            projectId: boardId,
-            metadata: {
-              departmentId: deptId,
-              projectId: boardId,
-              projectName: board.name,
-              url: deptId ? `/workflow/${deptId}/${boardId}` : '/'
-            }
-          });
-        }
-      });
-    }
+    const recipients = new Set((board.members || []).map(member => String(member?._id || member)));
+    const department = await Department.findById(board.department).select('managers').lean();
+    for (const manager of department?.managers || []) recipients.add(String(manager?._id || manager));
+    recipients.delete(String(updaterId));
+    for (const recipient of recipients) notifications.push({
+      type:'project_updates', title:'Project Updated', message, user:recipient,
+      sender:updaterId, relatedBoard:board._id, departmentId:deptId, projectId:boardId,
+      metadata:{ departmentId:deptId, projectId:boardId, projectName:board.name,
+        url:deptId ? `/workflow/${deptId}/${boardId}` : '/' }
+    });
 
     return this.createBulkNotifications(notifications);
   }

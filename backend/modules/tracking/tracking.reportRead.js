@@ -22,11 +22,15 @@ const oid=v=>new mongoose.Types.ObjectId(id(v));
 // Reports are projections. Durable lifecycle repair belongs to maintenance,
 // never to a list GET. No audit, operations, capture policy or image bytes.
 export async function readTrackingReports(workspaceId,viewerId,query){
-  const {fromDate,toDate,userId,team,cursor}=query;
+  let {fromDate,toDate}=query;
+  const {userId,team,cursor}=query;
   for(const date of [fromDate,toDate])if(date&&(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!DateTime.fromISO(date).isValid))fail('Invalid report dates');
   if(fromDate&&toDate&&(toDate<fromDate||DateTime.fromISO(toDate).diff(DateTime.fromISO(fromDate),'days').days>366))fail('Choose a valid date range up to 366 days');
   if(userId)objectId(userId);if(cursor)objectId(cursor);
   const sf=segmentFilter(query),[ctx,policy]=await Promise.all([contextFor(workspaceId,viewerId,{readOnly:true}),policyFor(workspaceId)]);
+  const today = DateTime.now().setZone(ctx.resolvedRecords.workspace?.timezone || 'Asia/Kolkata').toISODate();
+  if (fromDate && fromDate > today) fail('Future dates are unavailable in reports');
+  if (!toDate || toDate > today) toDate = today;
   if(team==='true'&&!can(ctx,'tracking.view_reports'))fail('Team report permission required',403);
   const scope=await readVisibilityScope(ctx);
   if((userId||team!=='true')&&!scope.canOwner(userId||viewerId))fail('Record not found',404);

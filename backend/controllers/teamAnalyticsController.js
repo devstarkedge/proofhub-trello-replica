@@ -25,9 +25,12 @@ const savedLoggedMinutes = { $ifNull: [
 async function analyticsDateBounds(workspaceId, query, defaultDays = 7) {
   const workspace = await Workspace.findById(workspaceId).select('timezone').lean();
   const timezone = getWorkspaceTimezone(workspace);
-  const endKey = query.endDate || instantToDateOnlyKey(new Date(), timezone);
+  const today = instantToDateOnlyKey(new Date(), timezone);
+  if (query.startDate || query.endDate) validateDateRange(query.startDate || query.endDate, query.endDate || query.startDate);
+  const endKey = query.endDate && query.endDate < today ? query.endDate : today;
   const startKey = query.startDate || DateTime.fromISO(endKey, { zone: timezone }).minus({ days: defaultDays }).toISODate();
   validateDateRange(startKey, endKey);
+  if (startKey > today) throw new ErrorResponse('Future dates are unavailable in reports', 400);
   const start = dateOnlyToInstant(startKey, timezone);
   const nextDate = DateTime.fromISO(endKey, { zone: timezone }).plus({ days: 1 }).startOf('day').toUTC().toJSDate();
   return { start, end: new Date(+nextDate - 1), nextDate, timezone,
@@ -61,9 +64,9 @@ async function getExpectedMinutesByUser(args) {
 }
 
 async function workspaceAnalyticsUsers(workspaceId, userIds) {
-  const members = await WorkspaceMembership.find({ workspace: workspaceId, user: { $in: userIds }, status: 'active' })
-    .select('user role department').populate('user', 'name email avatar title').populate('department', 'name').lean();
-  return members.filter((member) => member.user).map((member) => ({ ...member.user, role: member.role, department: member.department }));
+  const members = await WorkspaceMembership.find({ workspace: workspaceId, user: { $in: userIds }, status: 'active', role: { $nin: ['admin', 'superadmin', 'super-admin', 'super_admin'] } })
+    .select('user role department').populate('user', 'name email avatar title isSuperAdmin').populate('department', 'name').lean();
+  return members.filter((member) => member.user && !member.user.isSuperAdmin).map((member) => ({ ...member.user, role: member.role, department: member.department }));
 }
 
 /** A user's primary department id (first entry) — User.department is inconsistently an array or a single ref in legacy data, same tolerance this file's role-based-access code above already applies. */

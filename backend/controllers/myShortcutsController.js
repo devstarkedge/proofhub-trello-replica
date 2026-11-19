@@ -1,3 +1,6 @@
+import { DateTime } from 'luxon';
+import Workspace from '../models/Workspace.js';
+import { getWorkspaceTimezone } from '../modules/leave/leaveTimezone.util.js';
 
 import Card from '../models/Card.js';
 import Subtask from '../models/Subtask.js';
@@ -6,7 +9,7 @@ import Activity from '../models/Activity.js';
 import Board from '../models/Board.js';
 import '../models/Department.js';
 import Announcement from '../models/Announcement.js';
-import '../middleware/errorHandler.js';
+import { ErrorResponse } from '../middleware/errorHandler.js';
 import { formatLoggedMinutes } from '../../shared/loggedTimeCell.mjs';
 
 // Async handler wrapper to avoid try/catch in every controller
@@ -89,9 +92,17 @@ export const getMyActivities = asyncHandler(async (req, res, next) => {
   }
   
   if (startDate || endDate) {
-    query.createdAt = {};
-    if (startDate) query.createdAt.$gte = new Date(startDate);
-    if (endDate) query.createdAt.$lte = new Date(endDate);
+    const workspace = await Workspace.findById(req.workspaceId).select('timezone').lean();
+    const zone = getWorkspaceTimezone(workspace);
+    const today = DateTime.now().setZone(zone).startOf('day');
+    const start = startDate ? DateTime.fromISO(startDate, { zone }).startOf('day') : null;
+    const end = endDate ? DateTime.fromISO(endDate, { zone }).startOf('day') : today;
+    if ((startDate && !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) || (endDate && !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) ||
+        start && (!start.isValid || start > today) || !end.isValid || start && start > end) {
+      return next(new ErrorResponse('Select a valid historical date range', 400));
+    }
+    query.createdAt = { $lt: (end > today ? today : end).plus({ days: 1 }).toUTC().toJSDate() };
+    if (start) query.createdAt.$gte = start.toUTC().toJSDate();
   }
 
   // Get activities with population for navigation context

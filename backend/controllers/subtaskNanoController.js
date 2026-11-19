@@ -1,3 +1,4 @@
+import { versionedTaskUpdate } from '../services/versionedTaskUpdate.js';
 import { resourceReadFilter } from '../services/resourceReadFilter.js';
 import { deleteResource } from '../services/resourceDeletion.js';
 import { boundedInteger, pageNumber } from '../utils/pagination.js';
@@ -274,11 +275,10 @@ export const updateNano = asyncHandler(async (req, res, next) => {
 
   const hasTrackedTimeUpdates = req.body.loggedTime !== undefined || req.body.estimationTime !== undefined;
 
-  nano = await SubtaskNano.findByIdAndUpdate(
-    req.params.id,
-    updates,
-    { returnDocument: 'after', runValidators: true, expectedRevision: req.expectedRevision }
-  ).populate(populateConfig);
+  nano = await versionedTaskUpdate(SubtaskNano, {
+    entityId: req.params.id, updates, previous: oldNano, entityType: 'nano_description',
+    actorId: req.user.id, populate: populateConfig, expectedRevision: req.expectedRevision
+  });
 
   // Send response immediately for better UX
   res.status(200).json({

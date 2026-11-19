@@ -1,3 +1,5 @@
+import WorkspaceContext from '../../context/WorkspaceContext';
+import { workspaceDateKey } from '../../utils/workspaceDateRange';
 /**
  * AuditLogViewer — Enterprise-grade, infinite-scroll audit log UI.
  *
@@ -16,7 +18,7 @@
  * uses offset, never re-fetches previously loaded records.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   ChevronUp,
@@ -433,6 +435,8 @@ const LogEntryCard = ({ entry, detailCache }) => {
 // ─── Filter Bar ───────────────────────────────────────────────────────────────
 
 const FilterBar = ({ filters, onFiltersChange, users, registry }) => {
+  const { currentWorkspace } = useContext(WorkspaceContext);
+  const today = workspaceDateKey(new Date(), currentWorkspace?.timezone);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const resourceKeys = Object.keys(registry?.resources || {});
@@ -518,7 +522,7 @@ const FilterBar = ({ filters, onFiltersChange, users, registry }) => {
           <div className="space-y-1">
             <label className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>From date</label>
             <input
-              type="date"
+              type="date" max={today}
               value={filters.startDate}
               onChange={set('startDate')}
               className="w-full px-2 py-1.5 text-xs rounded-lg border outline-none"
@@ -532,7 +536,7 @@ const FilterBar = ({ filters, onFiltersChange, users, registry }) => {
           <div className="space-y-1">
             <label className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>To date</label>
             <input
-              type="date"
+              type="date" max={today}
               value={filters.endDate}
               onChange={set('endDate')}
               className="w-full px-2 py-1.5 text-xs rounded-lg border outline-none"

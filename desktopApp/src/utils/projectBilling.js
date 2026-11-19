@@ -15,8 +15,10 @@ export function resolveBilledTimeAccess(project, role, { loading = false, error 
   if (!['admin', 'manager'].includes(String(role || '').toLowerCase())) {
     return { canAccessBilledTime: false, hiddenReason: 'You do not have permission to view billed time.' };
   }
-  const client = project?.clientDetails;
-  return client?.clientName || client?.clientEmail || client?.clientWhatsappNumber
-    ? { canAccessBilledTime: true, hiddenReason: null }
-    : { canAccessBilledTime: false, hiddenReason: 'Billed time is unavailable because no client information is associated with this project.' };
+  if (!projectIdentity(project)) return { canAccessBilledTime: false, hiddenReason: 'A valid parent project is required.' };
+  if (project.projectType !== 'Hired Client') return { canAccessBilledTime: false, hiddenReason: 'Billed time is unavailable for inhouse projects.' };
+  if (!['hr', 'hourly', 'fixed', 'fixed price'].includes(String(project.billingCycle || '').toLowerCase())) {
+    return { canAccessBilledTime: false, hiddenReason: 'Billed time is unavailable for this billing cycle.' };
+  }
+  return { canAccessBilledTime: true, hiddenReason: null };
 }

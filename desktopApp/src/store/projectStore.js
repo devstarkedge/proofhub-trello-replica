@@ -122,29 +122,18 @@ const useProjectStore = create(
       },
 
       projectUpdated: (updatedProject) => {
-         set(state => ({
-          departments: state.departments.map(dept => {
-            // Find if this dept contains the project
-             // Note: project doesn't always have departmentId populated in the object itself if returned from certain endpoints,
-             // but `updatedProject` from `handleProjectUpdated` in HomePage usually is the full object.
-             // But we need to find the dept.
-             // We can just map all depts and check projects.
-             const hasProject = dept.projects?.some(p => p._id === updatedProject._id);
-             if (hasProject) {
-                return {
-                 ...dept,
-                 projects: dept.projects.map(p => {
-                   if (p._id === updatedProject._id) {
-                     // Merge updates, preserving existing data
-                     return { ...p, ...updatedProject };
-                   }
-                   return p;
-                 })
-                };
-             }
-             return dept;
-          })
-        }));
+        set(state => {
+          const existing = state.departments.flatMap(department => department.projects || []).find(project => project._id === updatedProject._id);
+          if (!existing) return state;
+          const target = updatedProject.department?._id || updatedProject.department;
+          const merged = { ...existing, ...updatedProject };
+          return { departments:state.departments.map(department => {
+            if (!target) return { ...department, projects:department.projects?.map(project => project._id === updatedProject._id ? merged : project) };
+            if (department._id !== String(target) && !(department.projects || []).some(project => project._id === updatedProject._id)) return department;
+            const remaining = (department.projects || []).filter(project => project._id !== updatedProject._id);
+            return { ...department, projects:department._id === String(target) ? newestProjects([...remaining, merged]) : remaining };
+          }) };
+        });
       },
 
       // Update project cover image specifically (optimistic update)

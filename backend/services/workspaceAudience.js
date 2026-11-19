@@ -30,7 +30,7 @@ export async function workspacePeople(filter = {}, workspaceId = getActiveWorksp
   const userIds = memberships.map(m => m.user);
 
   const [users, departments] = await Promise.all([
-    User.find({ _id: { $in: userIds }, isActive: true }).select('_id name email avatar title isVerified').lean(),
+    User.find({ _id: { $in: userIds }, isActive: true }).select('_id name email avatar title isVerified isSuperAdmin').lean(),
     workspaceContext.runUnscoped(async () => Department.find({ workspaceId, isActive: true }).select('_id name').lean())
   ]);
 

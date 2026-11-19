@@ -65,8 +65,8 @@ const VersionHistoryModal = ({
       const result = await versionService.rollbackToVersion(entityType, entityId, version.versionNumber);
       toast.success(`Rolled back to version ${version.versionNumber}`);
       // Notify parent - handle both old and new response shapes
-      const restored = result?.data?.restoredContent ?? result?.restoredContent ?? result?.data?.restoredHtmlContent ?? result?.restoredHtmlContent ?? null;
-      if (restored) onRollback?.(restored);
+      const restored = result?.data?.restoredHtmlContent ?? result?.restoredHtmlContent ?? result?.data?.restoredContent ?? result?.restoredContent ?? null;
+      if (restored !== null) onRollback?.(restored);
       
       // Reload versions
       loadVersions();

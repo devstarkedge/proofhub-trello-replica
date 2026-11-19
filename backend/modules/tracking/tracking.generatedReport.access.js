@@ -60,7 +60,9 @@ export async function validateGeneratedReportFilters(access, input) {
   } else if (input.period === 'monthly' && /^\d{4}-\d{2}$/.test(input.month || '')) {
     start = DateTime.fromISO(`${input.month}-01`,{zone:access.timezone}); end=start.plus({months:1}); filters.month=input.month;
   } else reportError('Select a weekly start date or a monthly reporting month');
-  if (!start.isValid || !end.isValid || start.year < 2020 || start > DateTime.now().setZone(access.timezone).endOf('day')) reportError('Invalid reporting period');
+  const tomorrow = DateTime.now().setZone(access.timezone).plus({ days: 1 }).startOf('day');
+  if (!start.isValid || !end.isValid || start.year < 2020 || start >= tomorrow) reportError('Invalid reporting period');
+  if (end > tomorrow) end = tomorrow;
   Object.assign(filters,{startDate:start.toISODate(),endDate:end.minus({days:1}).toISODate(),startAt:start.toUTC().toISO(),endAt:end.toUTC().toISO()});
   for (const field of ['departmentId','userId','projectId','taskId']) if (input[field]) {
     if (!mongoose.isValidObjectId(input[field])) reportError('Invalid report filter'); filters[field]=String(input[field]);
@@ -85,8 +87,12 @@ export function assertGeneratedReportScope(access, report) {
   if ((report.subjectIds||[]).some(value=>!subjects.has(reportId(value))) || (report.departmentIds||[]).some(value=>!access.allowedDepartments.has(reportId(value)))) reportError('Report scope changed. Generate a new report with your current permissions.',403);
 }
 export async function generatedReportRecipients(access, values) {
-  if (!Array.isArray(values) || !values.length || values.length>10 || values.some(value=>typeof value!=='string' || value.length>254 || !/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(value))) reportError('Provide between 1 and 10 valid recipient email addresses');
-  const emails=[...new Set(values.map(value=>value.trim().toLowerCase()))];
-  await validateReportRecipients(access.userId,access.workspaceId,emails);
-  return emails;
+  const email = String(access.user.email || '').trim().toLowerCase();
+  if (!/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(email)) reportError('Your account needs a valid email address before this report can be emailed.');
+  if (values && (!Array.isArray(values) || values.length !== 1 || typeof values[0] !== 'string' || !/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(values[0].trim()))) reportError('Provide your account email address.');
+  if (values && values[0].trim().toLowerCase() !== email) {
+    reportError('Reports can only be emailed to your signed-in account.', 403);
+  }
+  await validateReportRecipients(access.userId, access.workspaceId, [email]);
+  return [email];
 }

@@ -831,7 +831,7 @@ const EnterpriseAddProjectModal = memo(({ isOpen, onClose, departmentId, onProje
                     {formData.projectType !== 'Inhouse' && (
                       <ClientSection
                         marketingContact={formData.marketingContact}
-                        required={formData.projectType === 'Hired Client'}
+                        required={false}
                         clientName={formData.clientName}
                         clientEmail={formData.clientEmail}
                         clientCountryCode={formData.clientCountryCode}

@@ -1,3 +1,7 @@
+import mongoose from 'mongoose';
+import { resolveDepartmentScope } from '../utils/departmentStats.js';
+import { ErrorResponse } from '../middleware/errorHandler.js';
+import { reminderViewQuery } from '../../shared/reminderFilters.mjs';
 import Reminder from '../models/Reminder.js';
 import Board from '../models/Board.js';
 import '../models/User.js';
@@ -5,6 +9,15 @@ import asyncHandler from '../middleware/asyncHandler.js';
 import '../realtime/index.js';
 import { sendReminderNotificationInBackground, checkAndTagAwaitingResponse } from '../utils/reminderScheduler.js';
 import { scheduleReminderJobs, cancelReminderJobs } from '../schedulers/reminderScheduler.js';
+
+function reminderDepartmentQuery(req) {
+  const requested = req.query.department;
+  if (requested && requested !== 'all' && !mongoose.isValidObjectId(requested)) throw new ErrorResponse('Invalid department', 400);
+  let scope;
+  try { scope = resolveDepartmentScope({ role:req.user.role, department:req.user.department, requestedDepartmentId:requested }); }
+  catch { throw new ErrorResponse('Department access required', 403); }
+  return scope.departmentIds ? { department:{$in:scope.departmentIds.map(value => new mongoose.Types.ObjectId(String(value)))} } : {};
+}
 
 // @desc    Create a new reminder
 // @route   POST /api/reminders
@@ -85,6 +98,7 @@ export const getProjectReminders = asyncHandler(async (req, res) => {
 
   const query = { project: projectId };
   if (status) query.status = status;
+  if (req.query.view && req.query.view !== 'all') query.$and = [reminderViewQuery(req.query.view)];
 
   const reminders = await Reminder.find(query)
     .populate('createdBy', 'name avatar')
@@ -306,8 +320,7 @@ export const syncClientFromProject = asyncHandler(async (req, res) => {
 export const getDashboardStats = asyncHandler(async (req, res) => {
   const { department, project, manager, startDate, endDate, status } = req.query;
 
-  const filters = {};
-  if (department) filters.department = department;
+  const filters = reminderDepartmentQuery(req);
   if (project) filters.project = project;
   if (manager) filters.createdBy = manager;
   if (status) filters.status = status;
@@ -344,9 +357,10 @@ export const getCalendarReminders = asyncHandler(async (req, res) => {
     });
   }
 
-  const filters = {};
+  const filters = reminderDepartmentQuery(req);
+  if (req.query.view) filters.view = req.query.view;
+  if (req.query.status && req.query.status !== 'all') filters.status = req.query.status;
   // Only add department filter if it's a valid ObjectId (not 'all')
-  if (department && department !== 'all') filters.department = department;
   // Only add project filter if it's a valid ObjectId (not 'all')
   if (project && project !== 'all') filters.project = project;
 
@@ -393,10 +407,10 @@ export const getAllReminders = asyncHandler(async (req, res) => {
     sortOrder = 'asc'
   } = req.query;
 
-  const query = {};
+  const query = reminderDepartmentQuery(req);
   
   if (status) query.status = status;
-  if (department) query.department = department;
+  if (req.query.view && req.query.view !== 'all') query.$and = [reminderViewQuery(req.query.view)];
   if (project) query.project = project;
   if (client) query['client.name'] = { $regex: client, $options: 'i' };
   if (manager) query.createdBy = manager;

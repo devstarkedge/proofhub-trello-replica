@@ -1,3 +1,4 @@
+import SubtaskNano from '../models/SubtaskNano.js';
 import mongoose from 'mongoose';
 import { boundedInteger, pageNumber } from '../utils/pagination.js';
 import Subtask from '../models/Subtask.js';
@@ -22,7 +23,7 @@ export const getVersionHistory = asyncHandler(async (req, res) => {
   const skip = (pageNum - 1) * limitNum;
 
   // Validate entity type
-  const validTypes = ['card_description', 'comment', 'subtask_description'];
+  const validTypes = ['card_description', 'comment', 'subtask_description', 'nano_description'];
   if (!validTypes.includes(entityType)) {
     throw new ErrorResponse('Invalid entity type', 400);
   }
@@ -72,7 +73,7 @@ export const rollbackToVersion = asyncHandler(async (req, res) => {
   const { entityType, entityId, versionNumber } = req.params;
 
   // Validate entity type
-  const validTypes = ['card_description', 'comment', 'subtask_description'];
+  const validTypes = ['card_description', 'comment', 'subtask_description', 'nano_description'];
   if (!validTypes.includes(entityType)) {
     throw new ErrorResponse('Invalid entity type', 400);
   }
@@ -91,6 +92,11 @@ export const rollbackToVersion = asyncHandler(async (req, res) => {
     if (!subtask) throw new ErrorResponse('Subtask not found', 404);
     card = subtask.task;
     board = subtask.board;
+  } else if (entityType === 'nano_description') {
+    const nano = await SubtaskNano.findById(entityId);
+    if (!nano) throw new ErrorResponse('Nano subtask not found', 404);
+    card = nano.task;
+    board = nano.board;
   } else if (entityType === 'comment') {
     const comment = await Comment.findById(entityId).populate('card');
     if (!comment) {
@@ -107,8 +113,8 @@ export const rollbackToVersion = asyncHandler(async (req, res) => {
   try {
     await session.withTransaction(async () => {
       ({ rollbackVersion, restoredContent, restoredHtmlContent } = await VersionHistory.rollbackToVersion(entityType, entityId, targetNumber, req.user.id, board, card, { session }));
-      const Model = entityType === 'card_description' ? Card : entityType === 'subtask_description' ? Subtask : Comment;
-      const patch = entityType === 'comment' ? { htmlContent: restoredHtmlContent || restoredContent, text: restoredContent, isEdited: true, editedAt: new Date() } : { description: restoredHtmlContent || restoredContent };
+      const Model = entityType === 'card_description' ? Card : entityType === 'subtask_description' ? Subtask : entityType === 'nano_description' ? SubtaskNano : Comment;
+      const patch = entityType === 'comment' ? { htmlContent: restoredHtmlContent ?? restoredContent, text: restoredContent, isEdited: true, editedAt: new Date() } : { description: restoredHtmlContent ?? restoredContent };
       const updated = await Model.findByIdAndUpdate(entityId, patch, { session, new: true });
       if (!updated) throw new ErrorResponse('Entity no longer exists', 404);
     });
@@ -120,7 +126,7 @@ export const rollbackToVersion = asyncHandler(async (req, res) => {
       entityType,
       entityId,
       versionNumber: rollbackVersion.versionNumber,
-      restoredContent: restoredHtmlContent || restoredContent,
+      restoredContent: restoredHtmlContent ?? restoredContent,
       rolledBackBy: {
         id: req.user.id,
         name: req.user.name

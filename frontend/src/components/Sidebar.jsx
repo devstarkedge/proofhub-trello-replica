@@ -68,7 +68,7 @@ const Sidebar = ({ isMobile = false, collapsed = false, onToggleCollapse, onClos
     // Base navigation visible to all authenticated users
     const baseItems = [
       { path: '/', icon: Home, label: 'Home' },
-      { path: '/my-shortcuts', icon: Zap, label: 'My Shortcuts' },
+      { path: '/my-shortcuts', icon: Zap, label: 'My Shortcuts', matchPrefix: ['/my-shortcuts', '/list-view', '/calendar', '/analytics'] },
       { path: '/announcements', icon: Bell, label: 'Announcements' },
       { path: leavePath, icon: CalendarDays, label: 'Leave', matchPrefix: '/leave', iconKey: '/leave', badge: leavePendingCount || null },
       {
@@ -157,7 +157,7 @@ const Sidebar = ({ isMobile = false, collapsed = false, onToggleCollapse, onClos
     const { path, icon: Icon, label, badge, matchPrefix, iconKey } = item;
     const iconConfig = getIconConfig(iconKey || path);
     const isHovered = hoveredItem === path;
-    const isItemActive = (routerActive) => matchPrefix ? location.pathname.startsWith(matchPrefix) : routerActive;
+    const isItemActive = (routerActive) => matchPrefix ? [matchPrefix].flat().some(prefix => location.pathname === prefix || location.pathname.startsWith(prefix + '/')) : routerActive;
     // Tooltip's slot merges style objects, so resolve route styling before
     // passing the link through it (a NavLink style callback would be lost).
     const active = isItemActive(Boolean(matchPath({ path, end: path === '/' }, location.pathname)));

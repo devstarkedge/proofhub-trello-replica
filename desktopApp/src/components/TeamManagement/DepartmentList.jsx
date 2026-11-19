@@ -177,11 +177,11 @@ const DepartmentListItem = memo(({
           <div className="flex flex-wrap items-center gap-3 text-xs">
             <span className={`flex items-center gap-1 px-2 py-1 ${isDarkMode ? 'bg-purple-500/20 text-purple-400' : 'bg-purple-100 text-purple-700'} rounded-lg font-medium`}>
               <Shield size={12} />
-              {dept.managers?.length ? `${dept.managers.length} manager${dept.managers.length > 1 ? 's' : ''}` : 'No manager'}
+              {dept.displayManagerCount ? `${dept.displayManagerCount} manager${dept.displayManagerCount > 1 ? 's' : ''}` : 'No manager'}
             </span>
             <span className={`flex items-center gap-1 px-2 py-1 ${isDarkMode ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-700'} rounded-lg font-medium`}>
               <Users size={12} />
-              {dept.members?.length || 0} employees
+              {dept.displayEmployeeCount || 0} employees
             </span>
             <span className={`flex items-center gap-1 px-2 py-1 ${isDarkMode ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-700'} rounded-lg font-medium`}>
               <Building2 size={12} />

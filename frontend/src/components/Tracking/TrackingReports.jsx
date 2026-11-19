@@ -232,6 +232,7 @@ export default function TrackingReports({ team = false, initialFilters = {} }) {
             <input
               aria-label="Work reports from"
               type="date"
+              max={getWorkspaceDateRange("today", effectiveTimezone).toDate}
               value={fromDate}
               onChange={(e) => {
                 setActivePreset('custom');
@@ -246,6 +247,7 @@ export default function TrackingReports({ team = false, initialFilters = {} }) {
             <input
               aria-label="Work reports to"
               type="date"
+              max={getWorkspaceDateRange("today", effectiveTimezone).toDate}
               value={toDate}
               onChange={(e) => {
                 setActivePreset('custom');
