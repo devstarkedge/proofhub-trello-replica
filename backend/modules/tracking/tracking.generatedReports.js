@@ -13,7 +13,7 @@ import { policyFor } from './tracking.service.js';
 import { trackingSessionCutoffStages, dashboardSegmentExpression, projectedTrackingStatus } from './tracking.dashboardRead.js';
 import { generatedReportAccess, validateGeneratedReportFilters, assertGeneratedReportScope, generatedReportRecipients, reportId as id, reportError as fail } from './tracking.generatedReport.access.js';
 import { buildTrackingWorkbook } from './tracking.generatedReport.build.js';
-import { aggregateTrackingRows } from './tracking.generatedReport.workbook.js';
+import { aggregateTrackingRows, trackingActivityLevel, trackingDailyRows, trackingDetailsByDate } from './tracking.generatedReport.workbook.js';
 import { run } from '../workspaces/workspaceContext.js';
 import { sendEmail } from '../../utils/email.js';
 const bytes=value=>Buffer.isBuffer(value)?value:Buffer.from(value.value(true));
@@ -69,11 +69,15 @@ async function loadReport(workspaceId,userId,reportId,bytes='') {
   if(!report)fail('Report not found',404);assertGeneratedReportScope(access,report);
   return {access,report};
 }
-export async function viewGeneratedReport(workspaceId,userId,reportId,pageInput=1) {
+export async function viewGeneratedReport(workspaceId,userId,reportId,pageInput=1,view='') {
   const page=Number(pageInput);if(!Number.isInteger(page)||page<1||page>200)fail('Invalid report page');
+  if (!['','daily','details'].includes(view)) fail('Invalid report view');
   const {report}=await loadReport(workspaceId,userId,reportId,'+rows');
   const rows=report.rows?JSON.parse(gunzipSync(bytes(report.rows),{maxOutputLength:16*1024*1024}).toString('utf8')):[];
-  return {...publicReport(report),details:rows.slice((page-1)*100,page*100).map(({sessionIds,...row})=>row),page,pages:Math.max(1,Math.ceil(rows.length/100))};
+  // Group the complete saved snapshot before paging so one day's task rows
+  // cannot produce partial daily totals at a page boundary.
+  const details=view==='daily'?trackingDailyRows(rows):view==='details'?trackingDetailsByDate(rows):rows;
+  return {...publicReport(report),details:details.slice((page-1)*100,page*100).map(({sessionIds,...row})=>row),page,pages:Math.max(1,Math.ceil(details.length/100))};
 }
 export async function downloadGeneratedReport(workspaceId,userId,reportId) {
   const {report}=await loadReport(workspaceId,userId,reportId,'+workbook');
@@ -139,7 +143,7 @@ async function generate(report,access) {
   for (const row of data.rows) {
     const key = row.userId + ':' + row.date, day = daily.get(key), percent = evidence.get(key)?.activityPercent;
     Object.assign(row, { checkInTime:formatTime(day.first), checkOutTime:formatTime(day.last), officeSeconds:day.officeKnown ? Math.round(day.officeSeconds) : null, dailyWorkSeconds:day.workSeconds,
-      activityPercent:percent ?? null, activityLevel:percent == null ? 'Not recorded' : percent < 40 ? 'Low' : percent <= 70 ? 'Medium' : 'High' });
+      activityPercent:percent ?? null, activityLevel:trackingActivityLevel(percent) });
   }
   const serialized=JSON.stringify(data.rows);
   if(Buffer.byteLength(serialized)>16*1024*1024)fail('Report details are too large. Select an employee or project.',413);

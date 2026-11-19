@@ -1,4 +1,5 @@
 import { getWorkspaceDateRange } from '../../../../shared/trackingReportQuery.mjs';
+import { formatTrackingReportDuration } from '../../../../shared/trackingReportPresentation.mjs';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, FileSpreadsheet, Loader2, Mail, Trash2, Eye } from 'lucide-react';
@@ -6,11 +7,11 @@ import { addDays, endOfMonth, format, parseISO } from 'date-fns';
 import api from '../../services/api';
 import AuthContext from '../../context/AuthContext';
 import TrackingDialog from './TrackingDialog';
+import GeneratedTrackingReportPreview from './GeneratedTrackingReportPreview';
 import useTrackingScope from './useTrackingScope';
 
 const initial = () => ({period:'weekly',startDate:'',month:'',departmentId:'',userId:'',projectId:'',taskId:'',status:'',method:'download',emails:''});
 const readableError = error => error?.response?.data?.message || error?.message || 'Please try again.';
-const clock = seconds => `${Math.floor(seconds/3600)}:${String(Math.floor(seconds/60)%60).padStart(2,'0')}:${String(seconds%60).padStart(2,'0')}`;
 const control='w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100';
 const action='inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm font-medium disabled:opacity-50';
 export default function GeneratedTrackingReports() {
@@ -19,14 +20,14 @@ export default function GeneratedTrackingReports() {
   return <ReportSection key={scope} scope={scope}/>;
 }
 function ReportSection({scope}) {
-  const queryClient=useQueryClient(),[open,setOpen]=useState(false),[form,setForm]=useState(initial),[error,setError]=useState(''),[view,setView]=useState(null),[page,setPage]=useState(1),[busy,setBusy]=useState({}),[autoDownload,setAutoDownload]=useState('');
+  const queryClient=useQueryClient(),[open,setOpen]=useState(false),[form,setForm]=useState(initial),[error,setError]=useState(''),[view,setView]=useState(null),[page,setPage]=useState(1),[viewMode,setViewMode]=useState('daily'),[busy,setBusy]=useState({}),[autoDownload,setAutoDownload]=useState('');
   const { user } = useContext(AuthContext) || {};
   const recipientEmail = user?.email || '';
   const live=useRef(true),scopeRef=useRef(scope),attempt=useRef(null);
   useEffect(()=>{live.current=true;return()=>{live.current=false;};},[]);
   const options=useQuery({queryKey:['generated-report-options',scope,form.departmentId,form.projectId],enabled:open,queryFn:async({signal})=>(await api.get('/api/tracking/generated-reports/options',{params:{departmentId:form.departmentId,projectId:form.projectId},signal})).data.data,retry:false,staleTime:15000,placeholderData:previous=>previous});
   const list=useQuery({queryKey:['generated-reports',scope],enabled:open,queryFn:async({signal})=>(await api.get('/api/tracking/generated-reports',{signal})).data.data,refetchInterval:query=>query.state.data?.some(row=>['QUEUED','PROCESSING'].includes(row.status)||['PENDING','SENDING'].includes(row.emailStatus))?3000:false});
-  const detail=useQuery({queryKey:['generated-report-detail',scope,view,page],enabled:!!view,queryFn:async({signal})=>(await api.get(`/api/tracking/generated-reports/${view}`,{params:{page},signal})).data.data});
+  const detail=useQuery({queryKey:['generated-report-detail',scope,view,viewMode,page],enabled:!!view,queryFn:async({signal})=>(await api.get(`/api/tracking/generated-reports/${view}`,{params:{page,view:viewMode},signal})).data.data});
   const invalidate=()=>queryClient.invalidateQueries({queryKey:['generated-reports',scope]});
   const generation=useMutation({mutationFn:async request=>{
     return (await api.post('/api/tracking/generated-reports',request,{skipOfflineQueue:true,timeout:15000})).data.data;
@@ -86,13 +87,23 @@ function ReportSection({scope}) {
     {open&&<>
       {(error||list.error)&&<p role="alert" className="text-sm text-red-600">{error||readableError(list.error)}</p>}
       <div className="border-t border-gray-100 dark:border-gray-800 pt-4"><h3 className="font-semibold mb-3">Generated reports</h3>
-        {list.isPending?<p className="text-sm text-gray-500" role="status">Loading reports...</p>:!list.data?.length?<p className="text-sm text-gray-500">No reports generated for your current access scope.</p>:<div className="space-y-3">{list.data.map(row=><article key={row._id} className="rounded-xl border border-gray-200 dark:border-gray-700 p-4 flex flex-wrap items-center justify-between gap-3"><div className="space-y-1"><p className="font-medium">{row.name}</p><p className="text-xs text-gray-500">{row.filters.startDate} to {row.filters.endDate} · {row.generatedBy} · {new Date(row.createdAt).toLocaleString()}</p><p className="text-sm">{['QUEUED','PROCESSING'].includes(row.status)&&<Loader2 size={14} className="inline animate-spin mr-1"/>}{row.status==='READY'?`${clock(row.totalSeconds)} tracked · ${row.sessionCount} sessions`:row.status==='EMPTY'?'No matching tracking records':row.status==='FAILED'?row.error:row.status==='QUEUED'?'Queued':'Generating report...'}</p>{row.emailStatus!=='NONE'&&<p className={`text-xs ${['FAILED','UNKNOWN'].includes(row.emailStatus)?'text-red-600':'text-gray-500'}`}>Email: {row.emailStatus.toLowerCase()}{row.emailError?` · ${row.emailError}`:''}</p>}</div><div className="flex flex-wrap gap-2">
-          {['READY','EMPTY'].includes(row.status)&&<><button className={action} disabled={busy[row._id]} onClick={()=>{setView(row._id);setPage(1);}}><Eye size={14}/>View</button><button className={action} disabled={busy[row._id]} onClick={()=>download(row)}>{busy[row._id]?<Loader2 size={14} className="animate-spin"/>:<Download size={14}/>}Download</button></>}
+        {list.isPending?<p className="text-sm text-gray-500" role="status">Loading reports...</p>:!list.data?.length?<p className="text-sm text-gray-500">No reports generated for your current access scope.</p>:<div className="space-y-3">{list.data.map(row=><article key={row._id} className="rounded-xl border border-gray-200 dark:border-gray-700 p-4 flex flex-wrap items-center justify-between gap-3"><div className="space-y-1"><p className="font-medium">{row.name}</p><p className="text-xs text-gray-500">{row.filters.startDate} to {row.filters.endDate} · {row.generatedBy} · {new Date(row.createdAt).toLocaleString()}</p><p className="text-sm">{['QUEUED','PROCESSING'].includes(row.status)&&<Loader2 size={14} className="inline animate-spin mr-1"/>}{row.status==='READY'?`${formatTrackingReportDuration(row.totalSeconds)} tracked · ${row.sessionCount} sessions`:row.status==='EMPTY'?'No matching tracking records':row.status==='FAILED'?row.error:row.status==='QUEUED'?'Queued':'Generating report...'}</p>{row.emailStatus!=='NONE'&&<p className={`text-xs ${['FAILED','UNKNOWN'].includes(row.emailStatus)?'text-red-600':'text-gray-500'}`}>Email: {row.emailStatus.toLowerCase()}{row.emailError?` · ${row.emailError}`:''}</p>}</div><div className="flex flex-wrap gap-2">
+          {['READY','EMPTY'].includes(row.status)&&<><button className={action} disabled={busy[row._id]} onClick={()=>{setView(row._id);setPage(1);setViewMode('daily');}}><Eye size={14}/>View</button><button className={action} disabled={busy[row._id]} onClick={()=>download(row)}>{busy[row._id]?<Loader2 size={14} className="animate-spin"/>:<Download size={14}/>}Download</button></>}
           {['FAILED','UNKNOWN'].includes(row.emailStatus)&&<button className={action} disabled={busy[row._id]} onClick={()=>emailAgain(row)}><Mail size={14}/>{row.emailStatus==='UNKNOWN'?'Send another copy':'Retry email'}</button>}
           {!row.active&&row.emailStatus!=='SENDING'&&<button aria-label={`Delete ${row.name}`} className={action} disabled={busy[row._id]} onClick={()=>remove(row)}><Trash2 size={14}/></button>}
         </div></article>)}</div>}
       </div>
     </>}
-    {view&&<TrackingDialog title="Time tracking report" drawer onClose={()=>setView(null)}>{detail.isPending?<p role="status">Loading report...</p>:detail.error?<p role="alert">{readableError(detail.error)}</p>:<div className="space-y-4"><p className="font-semibold">{detail.data.name}</p><p className="text-sm text-gray-500">{detail.data.filters.startDate} to {detail.data.filters.endDate} · {detail.data.filters.timezone} · {clock(detail.data.totalSeconds||0)} total</p><div className="overflow-auto"><table className="w-full text-sm text-left"><thead><tr>{['Employee','Department','Date','Check-in','Check-out','Office hours / day','Project','Task','Worked','Activity level','Sessions'].map(title=><th key={title} className="p-2 border-b">{title}</th>)}</tr></thead><tbody>{detail.data.details.map((row,index)=><tr key={index}>{[row.employee,row.department,row.date,row.checkInTime || 'Not recorded',row.checkOutTime || 'Open / not recorded',row.officeSeconds == null ? 'Not recorded' : clock(row.officeSeconds),row.project,row.task,clock(row.seconds),row.activityLevel || 'Not recorded',row.sessions].map((value,index)=><td key={index} className="p-2 border-b align-top">{value}</td>)}</tr>)}</tbody></table>{!detail.data.details.length&&<p className="py-4">No matching tracking records.</p>}</div><div className="flex gap-3 items-center"><button className={action} disabled={page===1} onClick={()=>setPage(value=>value-1)}>Previous</button><span className="text-sm">Page {page} of {detail.data.pages}</span><button className={action} disabled={page>=detail.data.pages} onClick={()=>setPage(value=>value+1)}>Next</button><button className={action} disabled={busy[view]} onClick={()=>download(detail.data)}><Download size={14}/>Download</button></div></div>}</TrackingDialog>}
+    {view&&<TrackingDialog title="Time tracking report" drawer onClose={()=>setView(null)}>
+      {detail.isPending?<p role="status">Loading report...</p>:detail.error?<p role="alert">{readableError(detail.error)}</p>:<div className="space-y-4">
+        <GeneratedTrackingReportPreview report={detail.data} mode={viewMode} onModeChange={mode=>{setViewMode(mode);setPage(1);}}/>
+        <div className="flex flex-wrap gap-3 items-center">
+          <button className={action} disabled={page===1||detail.isFetching} onClick={()=>setPage(value=>value-1)}>Previous</button>
+          <span className="text-sm">Page {page} of {detail.data.pages}</span>
+          <button className={action} disabled={page>=detail.data.pages||detail.isFetching} onClick={()=>setPage(value=>value+1)}>Next</button>
+          <button className={action} disabled={busy[view]} onClick={()=>download(detail.data)}>{busy[view]?<Loader2 size={14} className="animate-spin"/>:<Download size={14}/>}Download</button>
+        </div>
+      </div>}
+    </TrackingDialog>}
   </section>;
 }

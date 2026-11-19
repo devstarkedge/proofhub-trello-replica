@@ -10,7 +10,7 @@ router.get('/:id/download',asyncHandler(async(req,res)=>{
   const file=await downloadGeneratedReport(req.workspaceId,req.user.id,req.params.id);
   res.set({'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':`attachment; filename="${file.filename}"`,'X-Content-Type-Options':'nosniff'}).send(file.content);
 }));
-router.get('/:id',asyncHandler(async(req,res)=>res.json({success:true,data:await viewGeneratedReport(req.workspaceId,req.user.id,req.params.id,req.query.page||1)})));
+router.get('/:id',asyncHandler(async(req,res)=>res.json({success:true,data:await viewGeneratedReport(req.workspaceId,req.user.id,req.params.id,req.query.page||1,req.query.view)})));
 router.post('/:id/email',asyncHandler(async(req,res)=>res.status(202).json({success:true,data:await retryGeneratedReportEmail(req.workspaceId,req.user.id,req.params.id,req.body||{})})));
 router.delete('/:id',asyncHandler(async(req,res)=>{await deleteGeneratedReport(req.workspaceId,req.user.id,req.params.id);res.json({success:true});}));
 export default router;
