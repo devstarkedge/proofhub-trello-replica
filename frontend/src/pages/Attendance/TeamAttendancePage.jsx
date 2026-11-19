@@ -1,5 +1,5 @@
 import { createElement, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Download, RotateCcw, Search, Users, CheckCircle2, Clock3, UserX, LogOut, CalendarDays } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Download, Loader2, RotateCcw, Search, Users, CheckCircle2, Clock3, UserX, LogOut, CalendarDays } from 'lucide-react';
 import WorkspaceContext from '../../context/WorkspaceContext';
 import AuthContext from '../../context/AuthContext';
 import Avatar from '../../components/Avatar';
@@ -73,16 +73,16 @@ function TeamAttendanceContent({ workspace, identity }) {
   const editDate = field => event => { setPeriod('custom'); setRange(previous => ({ ...previous, [field]: event.target.value })); setPage(1); };
   const reset = () => { setPeriod('month'); setRange(defaultRange()); setStatus(''); setWorkMode(''); setDepartmentId(''); setSearchInput(''); setSearch(''); setSort('name'); setDirection('asc'); setPage(1); close(); };
   const changeSort = key => { if (sort === key) setDirection(value => value === 'asc' ? 'desc' : 'asc'); else { setSort(key); setDirection('asc'); } setPage(1); };
-  const exportCsv = async format => {
-    if (!format || exporting) return;
+  const exportReport = async () => {
+    if (exportController.current || exporting || read.loading || !valid) return;
     if (String(identity.workspaceId) !== localStorage.getItem('workspaceId') || identity.token !== localStorage.getItem('token')) return;
     setExporting(true); setExportError('');
     const controller = new AbortController(); exportController.current = controller;
     try {
-      const blob = await attendanceApi.exportTeamAttendance({ ...query, format }, controller.signal);
+      const blob = await attendanceApi.exportTeamAttendance({ ...query, format:'xlsx' }, controller.signal);
       if (controller.signal.aborted || String(identity.workspaceId) !== localStorage.getItem('workspaceId') || identity.token !== localStorage.getItem('token')) return;
       const url = URL.createObjectURL(blob), link = document.createElement('a');
-      link.href = url; link.download = `attendance-${format}-${range.startDate}-to-${range.endDate}.csv`; document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      link.href = url; link.download = `attendance-${range.startDate}-to-${range.endDate}.xlsx`; document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
       if (!controller.signal.aborted) {
         let message = 'Unable to export attendance. Please retry.';
@@ -94,7 +94,7 @@ function TeamAttendanceContent({ workspace, identity }) {
   return <div className="space-y-5"><section className="overflow-hidden rounded-2xl border shadow-sm" style={panelStyle}>
     <div className="border-b p-4 sm:p-5" style={{ borderColor: 'var(--color-border-subtle)' }}>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3"><div className="flex items-center gap-3"><span className="rounded-xl bg-blue-50 p-2.5 text-blue-600 dark:bg-blue-950"><Users size={23} /></span><div><h1 className="text-lg font-semibold">{data?.scope === 'department' ? 'Department Attendance' : 'Team Attendance'}</h1><p className="mt-1 text-xs sm:text-sm" style={mutedStyle}>A clear view of your team, one member at a time.</p></div></div>
-        <div className="flex items-center gap-2">{data?.permissions?.canViewReports && <label><span className="sr-only">Export attendance CSV</span><span className="relative block"><Download className="pointer-events-none absolute left-3 top-3" size={16} /><select aria-label="Export attendance CSV" className={`${controlClass} max-w-48 pl-9`} style={inputStyle} disabled={read.loading || !valid || exporting} value="" onChange={event => exportCsv(event.target.value)}><option value="">{exporting ? 'Exporting…' : 'Export CSV'}</option><option value="summary">User summary</option><option value="daily">Daily records</option></select></span></label>}
+        <div className="flex items-center gap-2">{data?.permissions?.canViewReports && <button type="button" aria-busy={exporting} title="Download User Summary and Daily Records in one Excel workbook" className={`${controlClass} inline-flex items-center gap-2`} style={inputStyle} disabled={read.loading || !valid || exporting} onClick={exportReport}>{exporting ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Download size={16} aria-hidden="true" />}<span>{exporting ? 'Loading...' : 'Export Excel'}</span></button>}
           <button aria-label="Refresh attendance" title="Refresh attendance" className={controlClass} style={inputStyle} onClick={refresh} disabled={read.loading || !valid}><RotateCcw size={17} className={read.loading || read.refreshing ? 'animate-spin' : ''} /></button></div></div>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
         <label className="text-xs font-medium"><span className="mb-1.5 block" style={mutedStyle}>Period</span><select className={`${controlClass} w-full`} style={inputStyle} value={period} onChange={preset}>{[['today', 'Today'], ['week', 'This Week'], ['month', 'This Month'], ['year', 'This Year'], ['custom', 'Custom Range']].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>

@@ -28,6 +28,7 @@ import { readAttendanceWork, unavailableWork } from './attendanceTrackedWork.ser
 
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import { validateTeamQuery, serializeTeamRow, csvLine, TEAM_STATUSES, TEAM_WORK_MODES } from './attendanceTeamReport.js';
+import { buildAttendanceTeamWorkbook } from './attendanceTeamWorkbook.build.js';
 
 const id = value => String(value?._id || value || '');
 const oid = value => new mongoose.Types.ObjectId(id(value));
@@ -199,7 +200,7 @@ function summarizedPipeline(ctx) {
   ];
 }
 
-async function summaryRows(ctx) {
+async function summaryRows(ctx, {includeWork=false}={}) {
   const groups = ctx.subjects.length ? await AttendanceDay.aggregate(summarizedPipeline(ctx)).option(queryOptions) : [];
   const groupMap = new Map(groups.map(g => [id(g), g]));
   const rows = ctx.subjects.map(subject => serializeTeamRow({ ...subject, ...groupMap.get(id(subject.user)) }, ctx.expectedDates))
@@ -227,7 +228,7 @@ async function summaryRows(ctx) {
     if (bv == null && av != null) return -1;
     return (typeof av === 'string' ? av.localeCompare(bv || '', undefined, { sensitivity: 'base' }) : (av || 0) - (bv || 0)) * sign || id(a.user).localeCompare(id(b.user));
   });
-  return rows;
+  return includeWork ? {rows, work} : rows;
 }
 
 export async function getTeamAttendance(args) {
@@ -339,8 +340,43 @@ export async function exportTeamAttendance(args, response) {
   const ctx = await prepare(args);
   if (!ctx.access.reportPermissions.canViewReports) throw new ErrorResponse('Attendance report permission required', 403);
   const format = args.query?.format || 'summary';
-  if (!['summary', 'daily'].includes(format)) throw new ErrorResponse('Invalid attendance export format', 400);
-  const rows = await summaryRows(ctx);
+  if (!['summary', 'daily', 'xlsx'].includes(format)) throw new ErrorResponse('Invalid attendance export format', 400);
+  const {rows, work:tracked} = await summaryRows(ctx, {includeWork:true});
+  if (format === 'xlsx') {
+    if (response.destroyed) return;
+    if (rows.length > 20000) throw new ErrorResponse('Report exceeds 20,000 members. Select a department or narrower filters.', 413);
+    const controller = new AbortController(), cancel = () => controller.abort();
+    response.once('close', cancel);
+    try {
+      const days = [];
+      if (rows.length) {
+        const pipeline = teamDayPipeline({ ...ctx, userIds:rows.map(row => row.user._id), startDate:ctx.q.startDate, endDate:ctx.q.endDate });
+        if (ctx.q.status) pipeline.push({$match:{displayStatus:ctx.q.status}});
+        if (ctx.q.workMode) pipeline.push({$match:{workMode:ctx.q.workMode}});
+        pipeline.push(...sessionFactsStages(ctx), {$sort:{workDateKey:1, user:1}});
+        const cursor = AttendanceDay.aggregate(pipeline).option(queryOptions).cursor({batchSize:250});
+        try { for await (const day of cursor) {
+          if (controller.signal.aborted) return;
+          if (days.length >= 20000) throw new ErrorResponse('Report exceeds 20,000 daily rows. Select a shorter period or department.', 413);
+          days.push({user:id(day.user), workDateKey:day.workDateKey, hasAttendance:day.hasAttendance, workedMinutes:day.workedMinutes,
+            displayStatus:day.displayStatus, workSeconds:tracked.get(id(day.user) + ':' + day.workDateKey)?.seconds ?? null});
+        } } finally { await cursor.close(); }
+      }
+      const workbookRows = rows.map(row => ({
+        user:{_id:id(row.user), name:row.user.name, email:row.user.email}, departments:row.departments.map(department => ({name:department.name})),
+        present:row.present, halfDays:row.halfDays, absent:row.absent, missingCheckout:row.missingCheckout, leaveDays:row.leaveDays,
+        attendanceMinutes:row.attendanceMinutes, workSeconds:row.workSeconds
+      }));
+      const workbook = await buildAttendanceTeamWorkbook({rows:workbookRows, days, query:ctx.q, timezone:ctx.timezone, asOf:ctx.now}, controller.signal);
+      if (controller.signal.aborted) return;
+      response.set({'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition':`attachment; filename="attendance-${ctx.q.startDate}-to-${ctx.q.endDate}.xlsx"`,
+        'Content-Length':String(workbook.length), 'Cache-Control':'private, no-store', 'X-Content-Type-Options':'nosniff'});
+      response.end(workbook);
+    } catch (error) { if (!controller.signal.aborted) throw error; }
+    finally { response.removeListener('close', cancel); }
+    return;
+  }
   response.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="attendance-${format}-${ctx.q.startDate}-to-${ctx.q.endDate}.csv"`, 'Cache-Control': 'private, no-store' });
   const write = async values => {
     if (response.destroyed) return;
@@ -358,7 +394,6 @@ export async function exportTeamAttendance(args, response) {
     }
   } else {
     await write(['Employee', 'Date', 'Work mode', 'Worked hours', 'Status', 'Tracked work hours']);
-    const tracked = await readAttendanceWork({ ...ctx, userIds: rows.map(row => row.user._id), startDate: ctx.q.startDate, endDate: ctx.q.endDate });
     const names = new Map(rows.map(row => [id(row.user), row.user.name]));
     const pipeline = teamDayPipeline({ ...ctx, userIds: rows.map(row => row.user._id), startDate: ctx.q.startDate, endDate: ctx.q.endDate });
     if (ctx.q.status) pipeline.push({ $match: { displayStatus: ctx.q.status } });
