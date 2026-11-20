@@ -19,7 +19,7 @@ export async function trackingFilterOptions(workspaceId, viewerId, query = {}) {
   if (!owner && !scope.members.some(member => scope.canOwner(member.user))) fail('Report access required', 403);
   const policy = await policyFor(workspaceId);
   return cachedTrackingRead({ workspaceId, viewerId, kind: 'filter-options', query,
-    access: trackingAccessFingerprint(ctx, scope), ttlMs: 15000 }, async () => {
+    access: trackingAccessFingerprint(ctx, scope), ttlMs: 30000 }, async () => {
     let associated = null, historicalTasks = [];
     if (owner) {
       const now = new Date();

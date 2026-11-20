@@ -20,6 +20,11 @@ export async function observeTrackingRead(load) {
 }
 let localRevision = 0;
 export const trackingReadCacheStats = () => ({ ...stats, inFlight: pending.size });
+// initCommand: used only for epoch SET on reconnect; hosted Redis (e.g. RedisLabs Mumbai)
+// can take >250ms on a cold connection so we allow more time here without slowing down
+// actual cache reads that fall back to MongoDB on any delay.
+const initCommand = operation => withTimeout(operation, 1500, 'Tracking cache init');
+// command: used for per-request reads/writes where MongoDB fallback is acceptable.
 const command = operation => withTimeout(operation, 250, 'Tracking cache');
 
 // Reconnect rotates a shared namespace before reads resume. Writes performed
@@ -37,7 +42,7 @@ function readyClient() {
       const sequence = ++state.sequence;
       state.ready = false;
       state.retryAt = Date.now() + 5000;
-      state.initializing = command(client.set(epochKey, randomUUID())).then(() => {
+      state.initializing = initCommand(client.set(epochKey, randomUUID())).then(() => {
         if (sequence === state.sequence && client.status === 'ready') state.ready = true;
       }).catch(error => reportRedisError('tracking-cache', error));
     };

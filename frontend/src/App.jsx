@@ -136,7 +136,14 @@ function App() {
                   }
                 />
                 <Route path="/my-shortcuts" element={<MyShortcutsPage />} />
-                <Route path="/time-tracking" element={<TimeTrackingPage />} />
+                <Route
+                  path="/time-tracking"
+                  element={
+                    <ErrorBoundary>
+                      <TimeTrackingPage />
+                    </ErrorBoundary>
+                  }
+                />
                 <Route path="/workspace-settings" element={<WorkspaceSettingsPage />} />
                 <Route path="/workspace-settings/configs" element={<WorkspaceConfigsPage />} />
                 <Route path="/workflow/:deptId/:projectId" element={<ProjectWorkspaceGate><WorkFlow /></ProjectWorkspaceGate>} />

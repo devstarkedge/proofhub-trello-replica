@@ -28,7 +28,7 @@ export async function gallery(workspaceId,userId,query){
   const visibility=await readVisibilityScope(ctx),scope=visibility.history(session?.user);
   await authorizeRecord(ctx,session?{...session,departmentIdsAtStart:scope??session.departmentIdsAtStart}:null,'tracking.view_screenshots');
   segmentFilter(query);const segments=session.segments.filter(s=>matchesSegment(s,query));
-  return cachedTrackingRead({workspaceId,viewerId:userId,kind:'gallery',query:{...query,revision:session.revision},access:trackingAccessFingerprint(ctx,visibility),ttlMs:60000},async()=>{
+  return cachedTrackingRead({workspaceId,viewerId:userId,kind:'gallery',query:{...query,revision:session.revision},access:trackingAccessFingerprint(ctx,visibility),ttlMs:90000},async()=>{
   const intervalFilter=segments.length?{$or:segments.map(s=>({startedAt:{$lt:s.endedAt||new Date()},endedAt:{$gt:s.startedAt}}))}:{_id:{$in:[]}};
   const history=scope===null?{}:{departmentIdsAtCapture:{$in:scope}};
   // Only query matching interval IDs when work-context filters are active.
@@ -61,7 +61,7 @@ export async function authorizedScreenshot(workspaceId,userId,screenshotId,{read
 export async function screenshotDetails(workspaceId,userId,screenshotId){
   const {s,session,interval}=await authorizedScreenshot(workspaceId,userId,screenshotId,{includeInterval:true});
   // Record authorization remains live even when its public projection is cached.
-  return cachedTrackingRead({workspaceId,viewerId:userId,kind:'details',query:{screenshotId,checksum:s.checksum,status:s.status,sessionRevision:session.revision},access:'authorized-record',ttlMs:60000},async()=>{
+  return cachedTrackingRead({workspaceId,viewerId:userId,kind:'details',query:{screenshotId,checksum:s.checksum,status:s.status,sessionRevision:session.revision},access:'authorized-record',ttlMs:90000},async()=>{
   return {workspaceId,...compact(s,interval,session),originalWidth:s.originalWidth||s.width,originalHeight:s.originalHeight||s.height,quality:s.quality,format:s.format,compressionStrategy:s.compressionStrategy,policyRevision:s.policyRevision,uploadedAt:s.uploadedAt,expiresAt:s.expiresAt,
     thumbnail:{source:'canonical',bytes:s.bytes,width:s.width,height:s.height,quality:s.quality,status:s.status},
     minuteActivityAvailable:false};

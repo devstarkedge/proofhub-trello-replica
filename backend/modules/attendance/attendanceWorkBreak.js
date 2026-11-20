@@ -70,7 +70,7 @@ export async function readWorkBreak(workspaceId, since, session = null) {
   if (session) return { ...(await load()), observedAt };
   // Use a day bucket so current-session reads share one tenant-scoped entry.
   const snapshot = await cachedTrackingRead({ workspaceId, viewerId: 'workspace-break-policy', kind: 'work-break-policy',
-    query: { bucket }, access: 'schedule', ttlMs: 30000 }, load);
+    query: { bucket }, access: 'schedule', ttlMs: 60000 }, load);
   return { ...snapshot, observedAt, rules: snapshot.rules.map(rule => ({ ...rule,
     effectiveFrom: new Date(rule.effectiveFrom), effectiveUntil: rule.effectiveUntil ? new Date(rule.effectiveUntil) : null
   })) };

@@ -34,7 +34,7 @@ export async function readTrackingReports(workspaceId,viewerId,query){
   if(team==='true'&&!can(ctx,'tracking.view_reports'))fail('Team report permission required',403);
   const scope=await readVisibilityScope(ctx);
   if((userId||team!=='true')&&!scope.canOwner(userId||viewerId))fail('Record not found',404);
-  return cachedTrackingRead({workspaceId,viewerId,kind:'reports',query,access:trackingAccessFingerprint(ctx,scope),ttlMs:15000},async()=>{
+  return cachedTrackingRead({workspaceId,viewerId,kind:'reports',query,access:trackingAccessFingerprint(ctx,scope),ttlMs:20000},async()=>{
   const owners=team==='true'&&!userId?scope.members.filter(m=>scope.canOwner(m.user)).map(m=>m.user):[userId||viewerId];
   const now=new Date(),bounds={workspaceId:oid(workspaceId),...(fromDate||toDate?{workDateKey:{...(fromDate?{$gte:fromDate}:{}),...(toDate?{$lte:toDate}:{})}}:{}),...(cursor?{_id:{$lt:oid(cursor)}}:{})};
   const recentStart = new Date(+now - 24 * 3600000);
@@ -75,7 +75,7 @@ export async function readTrackingReportPreviews(workspaceId,viewerId,query){
   const [ctx,sessions]=await Promise.all([contextFor(workspaceId,viewerId,{readOnly:true}),WorkSession.find({workspaceId,_id:{$in:ids}}).select('_id workspaceId user segments departmentIdsAtStart revision').lean()]);
   const scope=await readVisibilityScope(ctx);await scope.markMixed(sessions);
   if(sessions.length!==new Set(ids).size||sessions.some(session=>!scope.canRecord(session)))fail('Record not found',404);
-  return cachedTrackingRead({workspaceId,viewerId,kind:'previews',query:{...query,revisions:sessions.map(s=>[id(s),s.revision])},access:trackingAccessFingerprint(ctx,scope),ttlMs:60000},async()=>{
+  return cachedTrackingRead({workspaceId,viewerId,kind:'previews',query:{...query,revisions:sessions.map(s=>[id(s),s.revision])},access:trackingAccessFingerprint(ctx,scope),ttlMs:90000},async()=>{
   const selected=sessions.map(session=>({...session,segments:session.segments.filter(segment=>matchesSegment(segment,query))}));
   const previews=await readReportPreviews(workspaceId,selected,ctx,scope,query,new Date());
   return {workspaceId,sessions:selected.map(session=>({_id:session._id,previewsLoaded:true,latestScreenshots:previews.get(id(session))?.records||[],totalScreenshots:previews.get(id(session))?.totalCount||0}))};
@@ -115,7 +115,7 @@ export async function readTrackingTimeline(workspaceId,viewerId,sessionId,query)
   const history=scope===null?{}:{departmentIdsAtCapture:{$in:scope}};
   const before = query.before ? new Date(query.before) : null;
   if (before && !Number.isFinite(+before)) fail('Invalid timeline cursor');
-  return cachedTrackingRead({workspaceId,viewerId,kind:'timeline',query:{...query,sessionId,revision:session.revision},access:trackingAccessFingerprint(ctx,visibility),ttlMs:30000},async()=>{
+  return cachedTrackingRead({workspaceId,viewerId,kind:'timeline',query:{...query,sessionId,revision:session.revision},access:trackingAccessFingerprint(ctx,visibility),ttlMs:60000},async()=>{
   const validExpiry={$or:[{expiresAt:null},{expiresAt:{$gt:new Date()}}]};
   const cutoff=new Date(0);
   const dayPause = query.includeDayPause === 'true' && session.workDateKey && !before

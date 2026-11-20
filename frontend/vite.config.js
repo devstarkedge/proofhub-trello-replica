@@ -28,6 +28,25 @@ export default ({ mode }) => {
         'react-is': path.resolve(__dirname, 'node_modules/react-is'),
       },
     },
+    optimizeDeps: {
+      include: [
+        'date-fns',
+        'react',
+        'react-dom',
+        'react-is',
+        'react-router-dom',
+        '@tanstack/react-query',
+        '@tanstack/react-virtual',
+        'lucide-react',
+        'recharts',
+        'axios',
+        'socket.io-client',
+        'react-toastify',
+        'framer-motion',
+        'zustand',
+        'idb',
+      ],
+    },
     server: {
       proxy: {
         '/api': {

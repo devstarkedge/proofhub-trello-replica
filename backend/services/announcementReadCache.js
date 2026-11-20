@@ -20,6 +20,11 @@ export async function observeAnnouncementRead(load) {
 }
 let localRevision = 0;
 export const announcementReadCacheStats = () => ({ ...stats, inFlight: pending.size });
+// initCommand: used only for epoch SET on reconnect; hosted Redis (e.g. RedisLabs Mumbai)
+// can take >250ms on a cold connection so we allow more time here without slowing down
+// actual cache reads that fall back to MongoDB on any delay.
+const initCommand = operation => withTimeout(operation, 1500, 'Announcement cache init');
+// command: used for per-request reads/writes where MongoDB fallback is acceptable.
 const command = operation => withTimeout(operation, 250, 'Announcement cache');
 
 // Reconnect rotates a shared namespace before reads resume. Writes performed
@@ -37,7 +42,7 @@ function readyClient() {
       const sequence = ++state.sequence;
       state.ready = false;
       state.retryAt = Date.now() + 5000;
-      state.initializing = command(client.set(epochKey, randomUUID())).then(() => {
+      state.initializing = initCommand(client.set(epochKey, randomUUID())).then(() => {
         if (sequence === state.sequence && client.status === 'ready') state.ready = true;
       }).catch(error => reportRedisError('announcement-cache', error));
     };
@@ -73,7 +78,7 @@ if (redis.call('GET', KEYS[2]) or '0') ~= ARGV[2] then return 0 end
 redis.call('SET', KEYS[3], ARGV[3], 'PX', ARGV[4])
 return 1`;
 
-export async function cachedAnnouncementRead({ workspaceId, viewerId, kind, query, access, ttlMs = 15000, cache = true }, load) {
+export async function cachedAnnouncementRead({ workspaceId, viewerId, kind, query, access, ttlMs = 30000, cache = true }, load) {
   const ready = cache ? readyClient() : null;
   let versions, key;
   try {
