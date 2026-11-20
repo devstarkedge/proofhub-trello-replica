@@ -84,7 +84,7 @@ const CalendarTaskModal = memo(({
         title: '',
         description: '',
         startDate: selectedDate ? new Date(selectedDate).toISOString().split('T')[0] : '',
-        dueDate: '',
+        dueDate: selectedDate ? new Date(selectedDate).toISOString().split('T')[0] : '',
         departmentId: initialDepartmentId || '',
         projectId: '',
         listId: '',

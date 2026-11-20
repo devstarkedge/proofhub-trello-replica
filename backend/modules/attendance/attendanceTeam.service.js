@@ -359,6 +359,7 @@ export async function exportTeamAttendance(args, response) {
           if (controller.signal.aborted) return;
           if (days.length >= 20000) throw new ErrorResponse('Report exceeds 20,000 daily rows. Select a shorter period or department.', 413);
           days.push({user:id(day.user), workDateKey:day.workDateKey, hasAttendance:day.hasAttendance, workedMinutes:day.workedMinutes,
+            firstCheckInAt:day.firstCheckInAt, lastCheckOutAt:day.lastCheckOutAt,
             displayStatus:day.displayStatus, workSeconds:tracked.get(id(day.user) + ':' + day.workDateKey)?.seconds ?? null});
         } } finally { await cursor.close(); }
       }

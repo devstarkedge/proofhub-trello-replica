@@ -3,8 +3,13 @@ import { DateTime } from 'luxon';
 import { formatTrackingReportDuration, TRACKING_REPORT_DURATION_FORMAT } from '../../../shared/trackingReportPresentation.mjs';
 
 const summaryHeaders = ['Employee', 'Email', 'Department', 'Present days', 'Half days', 'Absent days', 'Missing checkout', 'Full leave days', 'Office hours', 'Working Hours'];
-const dailyHeaders = ['Employee', 'Office hours', 'Working Hours', 'Status'];
+const dailyHeaders = ['Employee', 'Check-In Time', 'Check-Out Time', 'Office hours', 'Working Hours', 'Status'];
 const duration = seconds => typeof seconds === 'number' && Number.isFinite(seconds) && seconds >= 0 ? seconds / 86400 : 'N/A';
+const clock = (value, timezone) => {
+  if (value == null) return 'N/A';
+  const time = DateTime.fromJSDate(new Date(value), {zone:timezone}).setLocale('en');
+  return time.isValid ? time.toFormat('h:mm a') : 'N/A';
+};
 
 function titleRows(sheet, title, metadata, columns) {
   sheet.addRow([title]); sheet.mergeCells(1, 1, 1, columns);
@@ -68,7 +73,8 @@ export async function attendanceTeamWorkbook({rows, days, query, timezone, asOf}
   for (const day of [...days].sort((a,b) => a.workDateKey.localeCompare(b.workDateKey) || (names.get(String(a.user)) || '').localeCompare(names.get(String(b.user)) || '') || String(a.user).localeCompare(String(b.user)))) {
     if (!dates.has(day.workDateKey)) dates.set(day.workDateKey, []);
     dates.get(day.workDateKey).push([
-      names.get(String(day.user)), duration(day.hasAttendance && Number.isFinite(day.workedMinutes) ? day.workedMinutes * 60 : null),
+      names.get(String(day.user)), clock(day.firstCheckInAt, timezone), clock(day.lastCheckOutAt, timezone),
+      duration(day.hasAttendance && Number.isFinite(day.workedMinutes) ? day.workedMinutes * 60 : null),
       duration(day.workSeconds), day.displayStatus
     ]);
   }
@@ -88,8 +94,8 @@ export async function attendanceTeamWorkbook({rows, days, query, timezone, asOf}
     table(daily, 'AttendanceDailyEmpty', 4, dailyHeaders, []);
     daily.getCell('A6').value = 'No daily attendance records match these filters.';
   }
-  daily.getColumn(2).numFmt = TRACKING_REPORT_DURATION_FORMAT;
-  daily.getColumn(3).numFmt = TRACKING_REPORT_DURATION_FORMAT;
+  daily.getColumn(4).numFmt = TRACKING_REPORT_DURATION_FORMAT;
+  daily.getColumn(5).numFmt = TRACKING_REPORT_DURATION_FORMAT;
   // Freeze only report metadata; each date and its table header must scroll
   // together so the first date is never shown above another date's records.
   daily.views = [{state:'frozen', ySplit:3}];

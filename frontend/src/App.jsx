@@ -274,7 +274,14 @@ function App() {
 
                 <Route path="/calendar" element={<CalendarView />} />
                 <Route path="/gantt" element={<GanttView />} />
-                <Route path="/analytics" element={<Analytics />} />
+                <Route
+                  path="/analytics"
+                  element={
+                    <ErrorBoundary>
+                      <Analytics />
+                    </ErrorBoundary>
+                  }
+                />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/announcements" element={<Announcements />} />

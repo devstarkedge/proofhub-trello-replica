@@ -94,9 +94,20 @@ export function explain(ctx, permission, resource) {
 }
 export const can = (ctx, permission, resource) => explain(ctx, permission, resource).allowed;
 
+// Calendar deadlines have an explicit workspace/department read scope. Keep
+// normal project visibility unchanged, and retain restrictions and deny rules.
+function calendarProjectAccess(ctx, project) {
+  if (!ctx || ctx.status !== 'active' || ctx.kind === 'guest' || project.isDeleted || id(project.workspaceId) !== id(ctx.workspaceId)) return false;
+  const role = ctx.role?.key;
+  if (role !== 'admin' && !(role === 'manager' && includes([...(ctx.departments || []), ...(ctx.managedDepartments || [])], project.department)) && !includes(ctx.assignedProjectIds,project._id)) return false;
+  if (ctx.restriction?.type === 'selected_projects' && !includes(ctx.restriction.projectIds, project._id)) return false;
+  if (ctx.restriction?.type === 'assigned_only' && !directProjectMember(ctx, project) && !explicitPrivateAccess(ctx, project) && !includes(ctx.assignedProjectIds, project._id)) return false;
+  return true;
+}
+
 // A query filter is intentionally explicit and tenant-bound. Each visibility
 // expression corresponds to canViewProject; child filters use project IDs.
-export function projectVisibilityFilter(ctx) {
+export function projectVisibilityFilter(ctx, {calendarScope=false}={}) {
   if (!ctx || ctx.status !== 'active' || ctx.kind === 'guest' && !current({ expiresAt: ctx.guestExpiresAt }, ctx.now ?? Date.now())) return { _id: { $in: [] }, workspaceId: ctx?.workspaceId };
   const now = new Date(ctx.now ?? Date.now());
   let alternatives;
@@ -107,6 +118,11 @@ export function projectVisibilityFilter(ctx) {
     ...(ctx.allowedProjectIds || []), ...(ctx.restriction?.type === 'selected_projects' ? ctx.restriction.projectIds || [] : [])
   ] } }] };
   if (ctx.kind !== 'guest') alternatives.push(explicitPrivate, { visibility: 'private', _id: { $in: ctx.assignedProjectIds || [] } });
+  if (calendarScope && ctx.kind !== 'guest') {
+    alternatives.push({_id:{$in:ctx.assignedProjectIds || []}});
+    if (ctx.role?.key === 'admin') alternatives.push({});
+    else if (ctx.role?.key === 'manager') alternatives.push({department:{$in:[...(ctx.departments || []), ...(ctx.managedDepartments || [])]}});
+  }
   const conditions = [{ workspaceId: ctx.workspaceId, isDeleted: { $ne: true }, $or: alternatives }];
   if (ctx.restriction?.type === 'selected_projects') conditions.push({ _id: { $in: ctx.restriction.projectIds } });
   if (ctx.restriction?.type === 'assigned_only') conditions.push({ $or: [
@@ -118,7 +134,7 @@ export function projectVisibilityFilter(ctx) {
 
 // Match the project.view grant and deny scopes as well as visibility. A
 // workspace-visible project alone does not confer a project-scoped grant.
-export function projectAccessFilter(ctx) {
+export function projectAccessFilter(ctx, options) {
   if (!can(ctx, 'project.view')) return { _id: { $in: [] }, workspaceId: ctx?.workspaceId };
   const relation = record => {
     const ids = record.scopeIds || [];
@@ -133,19 +149,19 @@ export function projectAccessFilter(ctx) {
     return { _id: { $in: [] } };
   };
   const grants = ctx.isOwner ? [{ scope: 'workspace' }] : records(mapGet(ctx.grants, 'project.view')).filter(g => current(g, ctx.now ?? Date.now()));
-  const conditions = [projectVisibilityFilter(ctx), { $or: grants.map(relation) }];
+  const conditions = [projectVisibilityFilter(ctx, options), { $or: grants.map(relation) }];
   if (!ctx.isOwner) for (const deny of records(mapGet(ctx.denies, 'project.view')).filter(d => current(d, ctx.now ?? Date.now()))) conditions.push({ $nor: [relation(deny)] });
   return { $and: conditions };
 }
 
-export function scopeFilter(ctx, permission, resourceType, visibleProjects = []) {
+export function scopeFilter(ctx, permission, resourceType, visibleProjects = [], {calendarScope=false}={}) {
   if (!can(ctx, permission)) return { workspaceId: ctx?.workspaceId, _id: { $in: [] } };
   if (resourceType === 'project') {
     // Callers supply visible project fixtures/IDs evaluated with the same
     // engine after the indexed visibility query; query permission narrows it.
     return { workspaceId: ctx.workspaceId, _id: { $in: visibleProjects.filter(p => can(ctx, permission, p)).map(p => p._id) } };
   }
-  const projects = visibleProjects.filter(p => canViewProject(ctx, p));
+  const projects = visibleProjects.filter(p => canViewProject(ctx, p) || calendarScope && calendarProjectAccess(ctx, p));
   const ownerField = ({ comment: 'user', attachment: 'uploadedBy', task: 'createdBy', member: 'user', department: 'owner', team: 'owner' })[resourceType] || 'createdBy';
   const assignment = () => resourceType === 'comment' ? { card: { $in: ctx.assignedTaskIds || [] } }
     : resourceType === 'attachment' ? { $or: [{ card: { $in: ctx.assignedTaskIds || [] } }, { subtask: { $in: ctx.assignedSubtaskIds || [] } }, { nanoSubtask: { $in: ctx.assignedNanoIds || [] } }, { comment: { $in: ctx.assignedCommentIds || [] } }, { contextRef: { $in: [...(ctx.assignedTaskIds || []), ...(ctx.assignedSubtaskIds || []), ...(ctx.assignedNanoIds || []), ...(ctx.assignedCommentIds || [])] } }] }
@@ -160,7 +176,12 @@ export function scopeFilter(ctx, permission, resourceType, visibleProjects = [])
     return parent;
   };
   const grants = ctx.isOwner ? [{ scope: 'workspace' }] : records(mapGet(ctx.grants, permission)).filter(g => current(g, ctx.now ?? Date.now()));
-  const filters = [{ workspaceId: ctx.workspaceId }, { $or: grants.map(relation) }];
+  // Manager templates can derive a department-wide task.view grant from other
+  // permissions. Calendar also includes their own cross-department assignments.
+  // Keep this read-only addition local; explicit denies below still win.
+  const readGrants = calendarScope && resourceType==='task' && permission==='task.view' && ctx.role?.key==='manager'
+    ? [...grants,{scope:'assigned'}] : grants;
+  const filters = [{ workspaceId: ctx.workspaceId }, { $or: readGrants.map(relation) }];
   if (!ctx.isOwner) for (const deny of records(mapGet(ctx.denies, permission)).filter(d => current(d, ctx.now ?? Date.now()))) filters.push({ $nor: [relation(deny)] });
   if (ctx.restriction?.type === 'assigned_only') {
     const memberBoards = permission === 'task.view' && ctx.kind !== 'guest'

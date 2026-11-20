@@ -2286,17 +2286,19 @@ class DatabaseService {
    * @param {string} departmentId - Optional department filter
    * @returns {Promise<Object>} Calendar tasks data
    */
-  async getCalendarTasks(startDate, endDate, departmentId = null) {
+  async getCalendarTasks(startDate, endDate, departmentId = null, {signal,endExclusive=false,includeAssigned=false} = {}) {
     const headers = buildHeaders();
 
     const queryParams = new URLSearchParams();
     queryParams.append('start', startDate);
     queryParams.append('end', endDate);
+    if (endExclusive) queryParams.set('endExclusive','true');
+    if (includeAssigned) queryParams.set('includeAssigned','true');
     if (departmentId && departmentId !== 'all') {
       queryParams.append('departmentId', departmentId);
     }
 
-    const res = await fetch(`${baseURL}/api/calendar/tasks?${queryParams}`, { headers });
+    const res = await fetch(`${baseURL}/api/calendar/tasks?${queryParams}`, { headers, signal });
     if (!res.ok) {
       const error = await res.json();
       throw new Error(error.message || 'Failed to fetch calendar tasks');

@@ -1,6 +1,10 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // https://vite.dev/config/
 export default ({ mode }) => {
@@ -16,6 +20,14 @@ export default ({ mode }) => {
     // served from a non-root URL (e.g., a sub-directory or CDN prefix).
     base: '/',
     plugins: [react(), tailwindcss()],
+    resolve: {
+      dedupe: ['react', 'react-dom', 'react-is'],
+      alias: {
+        'react': path.resolve(__dirname, 'node_modules/react'),
+        'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
+        'react-is': path.resolve(__dirname, 'node_modules/react-is'),
+      },
+    },
     server: {
       proxy: {
         '/api': {
