@@ -53,14 +53,22 @@ export async function movementReceipts(req, operationIds) {
 async function publish(row) {
   const effect = row.effect;
   if (!effect) return;
-  const card = { ...effect.card, _id: row.card, board: row.board, list: row.result.list, status: row.result.status };
+  const card = { ...effect.card, _id: row.card, board: row.board, list: row.result.list, status: row.result.status, workspaceId: row.workspaceId || effect.card?.workspaceId };
   const current = await Card.findById(row.card).select('movementRevision').lean();
   if (!current || (current.movementRevision || 0) > row.result.movementRevision) { await CardMovement.updateOne({_id:row._id},{$set:{published:true}}); return; }
-  const actor = effect.actor;
-  const board = await Board.findById(row.board).select('name department').lean();
+  const actor = { ...effect.actor, workspaceId: row.workspaceId };
+  const board = await Board.findById(row.board).select('name department workspaceId').lean();
   if (!board) { await CardMovement.updateOne({_id:row._id},{$set:{published:true}}); return; }
   const { dispatchTaskStatusChange } = await import('../controllers/cardController.js');
-  const statusChange = await dispatchTaskStatusChange({ card, oldStatus: effect.oldStatus, newStatus: card.status, actor, board });
+  const statusChange = await dispatchTaskStatusChange({
+    card,
+    oldStatus: effect.oldStatus,
+    newStatus: card.status,
+    actor,
+    board,
+    fromList: effect.fromList,
+    toList: effect.toList
+  });
   if (statusChange?.special === 'done') await cancelDueDateJobs(card._id).catch(() => {});
   await Activity.create({ type: 'card_moved', description: `Moved card "${card.title}"`, user: actor.id, board: row.board, card: row.card, list: card.list, contextType: 'task', metadata: { fromList: effect.fromList, toList: effect.toList, newPosition: row.result.position, operationId: row.operationId } });
   await emitToBoard(id(row.board), 'card-moved', { cardId: row.card, sourceListId: effect.sourceListId, destinationListId: card.list, newPosition: row.result.position, status: card.status, revision: row.result.__v, operationId: row.operationId, movedBy: actor });

@@ -8,6 +8,7 @@
  */
 
 import { buildEntityTimeTotals } from './timeEntryUtils.js';
+import { getActiveWorkspaceId } from '../modules/workspaces/workspaceContext.js';
 
 function toId(value) {
   if (!value) return null;
@@ -65,9 +66,11 @@ function buildTimeEntryValue(entry, entryType) {
  */
 function resolveWorkspaceId(...entities) {
   for (const entity of entities) {
-    const id = entity?.workspaceId;
+    const id = entity?.workspaceId || entity?.workspace;
     if (id) return id.toString();
   }
+  const activeWsId = getActiveWorkspaceId?.();
+  if (activeWsId) return activeWsId.toString();
   throw new Error(
     'chatWebhookPayloads: none of the provided entities carry a workspaceId — refusing to build an unroutable payload.',
   );
@@ -429,9 +432,11 @@ export function buildTaskUnassignedPayload(card, removedUserIds, board, actor, a
   };
 }
 
-export function buildTaskStatusChangedPayload(card, oldStatus, newStatus, board, actor) {
+export function buildTaskStatusChangedPayload(card, oldStatus, newStatus, board, actor, options = {}) {
   const workspaceId = resolveWorkspaceId(card, board, actor);
   const boardId = (card.board || board?._id)?.toString();
+  const fromList = options?.fromList || card.fromList || undefined;
+  const toList = options?.toList || card.toList || undefined;
   return {
     workspaceId,
     task: {
@@ -443,6 +448,8 @@ export function buildTaskStatusChangedPayload(card, oldStatus, newStatus, board,
     boardId,
     oldStatus,
     newStatus,
+    ...(fromList && { fromList, oldList: fromList }),
+    ...(toList && { toList, newList: toList }),
     userId: actor ? (actor._id || actor.id)?.toString() : null,
     project: {
       id: board?._id?.toString(),

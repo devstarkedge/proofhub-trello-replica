@@ -54,7 +54,7 @@ export async function moveTaskHierarchy(cardId, { boardId, listId, position, sta
       card.movementRevision = (card.movementRevision || 0) + 1;
       await card.save({ session });
       if (movement) {
-        const saved = await CardMovement.updateOne({_id:movement._id,status:'PROCESSING',leaseOwner:movement.leaseOwner},{$set:{status:'APPLIED',result:{_id:card._id,list:card.list,position:card.position,status:card.status,__v:card.__v,movementRevision:card.movementRevision},effect:{card:{title:card.title,assignees:card.assignees,members:card.members},oldStatus,sourceListId:sourceList,fromList:sourceListRecord?.title||'',toList:movement.toList,actor:movement.actor},completedAt:new Date(),expiresAt:new Date(Date.now()+7*86400000)}},{session});
+        const saved = await CardMovement.updateOne({_id:movement._id,status:'PROCESSING',leaseOwner:movement.leaseOwner},{$set:{status:'APPLIED',result:{_id:card._id,list:card.list,position:card.position,status:card.status,__v:card.__v,movementRevision:card.movementRevision},effect:{card:{title:card.title,assignees:card.assignees,members:card.members,workspaceId:card.workspaceId},oldStatus,sourceListId:sourceList,fromList:sourceListRecord?.title||'',toList:movement.toList,actor:movement.actor},completedAt:new Date(),expiresAt:new Date(Date.now()+7*86400000)}},{session});
         if (!saved.matchedCount) throw new ErrorResponse('Movement processing lease changed',503);
       }
       if (String(sourceBoard) !== String(boardId)) {

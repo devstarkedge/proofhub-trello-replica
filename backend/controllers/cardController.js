@@ -52,15 +52,18 @@ const getTaskStatusBoardContext = async (boardRef) => {
       _id: boardId,
       name: boardRef.name || '',
       department: boardRef.department || null,
+      workspaceId: boardRef.workspaceId || boardRef.workspace || null,
     };
   }
 
-  const board = await Board.findById(boardId).select('name department').lean();
-  return board || { _id: boardId, name: '', department: null };
+  const board = await Board.findById(boardId).select('name department workspaceId').lean();
+  return board || { _id: boardId, name: '', department: null, workspaceId: null };
 };
 
-export const dispatchTaskStatusChange = async ({ card, oldStatus, newStatus, actor, board }) => {
-  if (newStatus === undefined || newStatus === oldStatus) {
+export const dispatchTaskStatusChange = async ({ card, oldStatus, newStatus, actor, board, fromList, toList }) => {
+  const statusChanged = newStatus !== undefined && newStatus !== oldStatus;
+  const listChanged = Boolean(fromList && toList && fromList !== toList);
+  if (!statusChanged && !listChanged) {
     return null;
   }
 
@@ -71,11 +74,11 @@ export const dispatchTaskStatusChange = async ({ card, oldStatus, newStatus, act
 
   if (newStatus === 'done') {
     slackHooks.onTaskCompleted(card, boardData, actor).catch(console.error);
-  } else {
+  } else if (statusChanged) {
     slackHooks.onTaskStatusChanged(card, boardData, oldStatus, newStatus, actor).catch(console.error);
   }
 
-  chatHooks.onTaskStatusChanged(card, oldStatus, newStatus, boardData, actor).catch(console.error);
+  chatHooks.onTaskStatusChanged(card, oldStatus, newStatus, boardData, actor, { fromList, toList }).catch(console.error);
 
   return change;
 };
@@ -1582,6 +1585,8 @@ export const moveCard = asyncHandler(async (req, res, next) => {
     newStatus: card.status,
     actor: req.user,
     board: boardContext,
+    fromList: sourceListTitle,
+    toList: destinationList.title,
   });
 
   if (statusChange?.special === 'done') {
@@ -2409,6 +2414,8 @@ export const crossMoveCard = asyncHandler(async (req, res, next) => {
     newStatus: card.status,
     actor: req.user,
     board: destBoard,
+    fromList: sourceListTitle,
+    toList: destList.title,
   });
 
   if (statusChange?.special === 'done') {

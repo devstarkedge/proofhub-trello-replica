@@ -375,9 +375,9 @@ export const chatHooks = {
    * @param {object} board - Board context
    * @param {object} actor - req.user
    */
-  async onTaskStatusChanged(card, oldStatus, newStatus, board, actor) {
+  async onTaskStatusChanged(card, oldStatus, newStatus, board, actor, options = {}) {
     if (!webhookDispatcher.isEnabled()) return;
-    const payload = buildTaskStatusChangedPayload(card, oldStatus, newStatus, board, actor);
+    const payload = buildTaskStatusChangedPayload(card, oldStatus, newStatus, board, actor, options);
     await webhookDispatcher.dispatch(EVENTS.TASK_STATUS_CHANGED, payload);
   },
 
