@@ -1,3 +1,5 @@
+import { businessCaches } from '../../services/businessReadCache.js';
+import { attendanceReadPolicy } from '../../../shared/moduleReadPolicies.mjs';
 import AttendanceDay from './attendanceDay.model.js';
 import mongoose from 'mongoose';
 import { validateDateRange } from '../../utils/calendarDateRange.js';
@@ -83,12 +85,15 @@ export async function getAttendanceView({ viewer, workspaceId, startDate, endDat
     return { scope: access.scope, records: [] };
   }
 
-  const records = await AttendanceDay.find(filter)
-    .sort({ workDateKey: -1 })
-    .populate('user', 'name email avatar')
-    .lean();
+  return businessCaches.attendance.read({ workspaceId, viewerId, kind: 'history', query: filter, access,
+    ttlMs: data => attendanceReadPolicy.historyTtl(data.records) }, async () => {
+    const records = await AttendanceDay.find(filter)
+      .sort({ workDateKey: -1 })
+      .populate('user', 'name email avatar')
+      .lean();
 
-  return { scope: access.scope, records };
+    return { scope: access.scope, records };
+  });
 }
 
 const SUMMARY_STATES = ['NOT_STARTED', 'PRESENT', 'HALF_PRESENT', 'SHORT_PRESENT', 'ABSENT', 'MISSING_CHECKOUT', 'ON_LEAVE'];
@@ -111,16 +116,18 @@ export async function getAttendanceDashboardSummary({ viewer, workspaceId, start
     return { scope: access.scope, totalMembers: 0, counts };
   }
 
-  const rows = await AttendanceDay.aggregate([
-    { $match: filter },
-    { $group: { _id: { $cond:[{$eq:['$leaveState','FULL_LEAVE']},'ON_LEAVE','$presenceState'] }, count: { $sum: 1 } } }
-  ]);
-  rows.forEach((row) => {
-    if (row._id in counts) counts[row._id] = row.count;
+  return businessCaches.attendance.read({ workspaceId, viewerId, kind: 'dashboard', query: filter, access, ttlMs: 15000 }, async () => {
+    const rows = await AttendanceDay.aggregate([
+      { $match: filter },
+      { $group: { _id: { $cond:[{$eq:['$leaveState','FULL_LEAVE']},'ON_LEAVE','$presenceState'] }, count: { $sum: 1 } } }
+    ]);
+    rows.forEach((row) => {
+      if (row._id in counts) counts[row._id] = row.count;
   });
 
   const totalMembers = await AttendanceDay.distinct('user', filter).then((ids) => ids.length);
   return { scope: access.scope, totalMembers, counts };
+  });
 }
 
 /** Precise GPS/location fields (spec §15) — stripped from any evidence bundle unless the viewer is the session's own subject or holds attendance.view_audit. */

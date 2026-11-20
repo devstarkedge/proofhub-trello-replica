@@ -1,9 +1,10 @@
+import useFinanceRefresh from '../../hooks/useFinanceRefresh';
 import { formatLoggedMinutes } from '../../../../shared/loggedTimeCell.mjs';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import useAccessControl from '../../hooks/useAccessControl';
 import { Users, Building2, Clock, DollarSign, ChevronDown, ChevronRight, AlertCircle, RefreshCw, ArrowUpDown, FolderKanban, Calendar } from 'lucide-react';
-import api from '../../services/api';
+import api from '../../services/financeApi';
 import SummaryCards from '../../components/Finance/SummaryCards';
 import DateFilters from '../../components/Finance/DateFilters';
 import DepartmentFilter from '../../components/Finance/DepartmentFilter';
@@ -44,9 +45,9 @@ const UsersTab = () => {
   const [filters, setFilters] = useState({
     startDate: null,
     endDate: null,
-    departmentId: null,
-    userId: null,
-    billingType: 'all'
+    departmentId: new URLSearchParams(location.search).get('departmentId'),
+    userId: new URLSearchParams(location.search).get('userId'),
+    billingType: new URLSearchParams(location.search).get('billingType') || 'all'
   });
 
   // Week-wise reporting mode state
@@ -74,7 +75,8 @@ const UsersTab = () => {
   }, [location.search]);
 
   // Fetch user finance data
-  const fetchData = async () => {
+  const fetchData = async (event) => {
+    if (event?.type === 'click') api.refresh();
     readController.current?.abort();
     const controller = new AbortController();
     readController.current = controller;
@@ -114,6 +116,8 @@ const UsersTab = () => {
     }
   };
 
+  const liveRevision = useFinanceRefresh(fetchData);
+
   useEffect(() => {
     fetchData();
     return () => readController.current?.abort();
@@ -121,6 +125,7 @@ const UsersTab = () => {
 
   // Fetch week-wise data when mode is enabled
   useEffect(() => {
+    const controller = new AbortController();
     const fetchWeeklyData = async () => {
       if (!weekWiseMode) {
         setWeeklyData(null);
@@ -141,19 +146,22 @@ const UsersTab = () => {
           params.append('billingType', filters.billingType);
         }
         
-        const response = await api.get(`/api/finance/weekly-report/year?${params.toString()}`);
+        const response = await api.get(`/api/finance/weekly-report/year?${params.toString()}`, { signal: controller.signal });
+        if (controller.signal.aborted) return;
         if (response.data.success) {
           setWeeklyData(response.data.data);
         }
       } catch (err) {
+        if (controller.signal.aborted) return;
         console.error('Error fetching weekly data:', err);
       } finally {
-        setWeeklyDataLoading(false);
+        if (!controller.signal.aborted) setWeeklyDataLoading(false);
       }
     };
     
     fetchWeeklyData();
-  }, [weekWiseMode, selectedYear, selectedMonth, filters.departmentId, filters.billingType]);
+    return () => controller.abort();
+  }, [weekWiseMode, selectedYear, selectedMonth, filters.departmentId, filters.billingType, liveRevision]);
 
   // Handle card click for filtering
   const handleCardClick = (action, value) => {

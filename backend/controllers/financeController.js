@@ -1,3 +1,4 @@
+import { observedBusinessRead } from '../middleware/businessReadCache.js';
 import Board from '../models/Board.js';
 import Department from '../models/Department.js';
 import User from '../models/User.js';
@@ -29,7 +30,7 @@ const sendReport = (res, payload, extra = {}) => {
 // ============================================
 export const getFinanceSummary = async (req, res) => {
   try {
-    const data = await buildFinanceSummary(req.query);
+    const data = await observedBusinessRead('finance', res, () => buildFinanceSummary(req.query));
     res.json({ success: true, data });
   } catch (error) {
     console.error('Finance Summary Error:', error);
@@ -42,7 +43,7 @@ export const getFinanceSummary = async (req, res) => {
 // ============================================
 export const getUserFinanceData = async (req, res) => {
   try {
-    const report = await buildUserFinanceReport(req.query);
+    const report = await observedBusinessRead('finance', res, () => buildUserFinanceReport(req.query));
     sendReport(res, {
       data: report.data,
       groupedByDepartment: report.groupedByDepartment,
@@ -59,7 +60,7 @@ export const getUserFinanceData = async (req, res) => {
 // ============================================
 export const getProjectFinanceData = async (req, res) => {
   try {
-    const report = await buildProjectFinanceReport(req.query);
+    const report = await observedBusinessRead('finance', res, () => buildProjectFinanceReport(req.query));
     sendReport(res, {
       data: report.data,
       groupedByDepartment: report.groupedByDepartment,
@@ -147,7 +148,7 @@ export const getFinanceFilterOptions = async (req, res) => {
 // ============================================
 export const getWeeklyReportData = async (req, res) => {
   try {
-    const data = await buildWeeklyFinanceReport(req.query);
+    const data = await observedBusinessRead('finance', res, () => buildWeeklyFinanceReport(req.query));
     res.json({ success: true, data });
   } catch (error) {
     console.error('Weekly Report Error:', error);
@@ -166,7 +167,7 @@ export const getUserContributions = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Project ID required' });
     }
 
-    const data = await buildUserContributionsReport(projectId);
+    const data = await observedBusinessRead('finance', res, () => buildUserContributionsReport(projectId));
     if (!data) {
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
@@ -183,7 +184,7 @@ export const getUserContributions = async (req, res) => {
 // ============================================
 export const getYearWideWeeklyData = async (req, res) => {
   try {
-    const data = await buildYearWideWeeklyReport(req.query);
+    const data = await observedBusinessRead('finance', res, () => buildYearWideWeeklyReport(req.query));
     res.json({ success: true, data });
   } catch (error) {
     console.error('Year-Wide Weekly Data Error:', error);

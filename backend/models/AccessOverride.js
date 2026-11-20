@@ -1,3 +1,4 @@
+import businessReadInvalidation from '../services/businessReadInvalidation.plugin.js';
 import mongoose from 'mongoose';
 import reportingDirectoryInvalidation from '../services/chat/reportingDirectoryInvalidation.plugin.js';
 
@@ -93,4 +94,5 @@ accessOverrideSchema.statics.isExpired = function (doc) {
 };
 
 accessOverrideSchema.plugin(reportingDirectoryInvalidation, { workspaceField: 'workspace', fields: ['resource', 'effect', 'actions', 'scope', 'scopedResourceIds', 'expiresAt', 'isActive'] });
+accessOverrideSchema.plugin(businessReadInvalidation, { workspaceField: 'workspace' });
 export default mongoose.model('AccessOverride', accessOverrideSchema);

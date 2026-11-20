@@ -1,3 +1,4 @@
+import { cachedBusinessJson } from '../../middleware/businessReadCache.js';
 /**
  * SalesTab Routes
  *
@@ -22,7 +23,7 @@ const router = Router();
 router.use(protect, checkSalesPermission);
 
 router.post('/', createSalesTab);
-router.get('/', getSalesTabs);
+router.get('/', cachedBusinessJson('sales', 'saved-tabs', getSalesTabs));
 router.patch('/:id', updateSalesTab);
 router.delete('/:id', deleteSalesTab);
 router.post('/:id/approve', approveSalesTab);

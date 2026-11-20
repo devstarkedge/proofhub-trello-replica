@@ -1,9 +1,11 @@
+import { businessCaches } from '../businessReadCache.js';
+import { financeReadPolicy } from '../../../shared/moduleReadPolicies.mjs';
 import { workspacePeople } from '../workspaceAudience.js';
 import { aggregateFinanceTime, aggregateLastActivity, aggregateMilestoneFinance } from './timeAggregation.js';
 import mongoose from 'mongoose';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
 import { resolveResourceAccessBatch } from '../../modules/permissions/permissionEngine.js';
-import { getActiveWorkspaceId } from '../../modules/workspaces/workspaceContext.js';
+import { getActiveWorkspaceId, getActiveContext } from '../../modules/workspaces/workspaceContext.js';
 import Board from '../../models/Board.js';
 import Card from '../../models/Card.js';
 import Subtask from '../../models/Subtask.js';
@@ -270,53 +272,63 @@ const buildDataContext = async (rawFilters = {}) => {
   if (!Number.isInteger(filters.year) || filters.year < 1970 || filters.year > 2100 || filters.month !== null && (!Number.isInteger(filters.month) || filters.month < 0 || filters.month > 11)) throw new ErrorResponse('Invalid report year or month', 400);
   if (filters.startDate && filters.endDate && filters.startDate > filters.endDate) throw new ErrorResponse('Start date must precede end date', 400);
   const permittedUserIds = await getFinancePermittedUserIds();
-  const baseProjectMatch = buildProjectMatch(filters, false);
-  const projectMatch = buildProjectMatch(filters, true);
+  // Resolve the permission-dependent audience on EVERY read, including hits.
+  // Context is shared by summary, users, projects and weekly views.
+  const { viewType: _view, year: _year, month: _month, fixedRevenueMode: _mode, ...sourceFilters } = filters;
+  const packed = await businessCaches.finance.read({ workspaceId: getActiveWorkspaceId(), viewerId: getActiveContext()?.actorId || 'internal-report',
+    kind: 'context', query: sourceFilters, access: [...permittedUserIds].sort(), ttlMs: financeReadPolicy.serverTtl('context') }, async () => {
+    const baseProjectMatch = buildProjectMatch(filters, false);
+    const projectMatch = buildProjectMatch(filters, true);
 
-  const [totalProjectsBeforeFiltering, projects] = await Promise.all([
-    Board.countDocuments(baseProjectMatch),
-    Board.find(projectMatch)
-      .populate('department', 'name')
-      .populate('members', 'name email avatar')
-      .populate('owner', 'name email avatar')
-      .select('name department members owner startDate dueDate createdAt estimatedTime projectSource upworkId technologies billingCycle hourlyPrice fixedPrice totalProjectBudgetCents status clientDetails')
-      .populate({path:'technologies',select:'label value',match:{workspaceId:getActiveWorkspaceId(),type:'technology'}})
-      .sort({ createdAt: -1 })
-      .limit(10001)
-      .lean()
-  ]);
-  if (projects.length > 10000) throw new ErrorResponse('Select a project or department to narrow this report', 413);
+    const [totalProjectsBeforeFiltering, projects] = await Promise.all([
+      Board.countDocuments(baseProjectMatch),
+      Board.find(projectMatch)
+        .populate('department', 'name')
+        .populate('members', 'name email avatar')
+        .populate('owner', 'name email avatar')
+        .select('name department members owner startDate dueDate createdAt estimatedTime projectSource upworkId technologies billingCycle hourlyPrice fixedPrice totalProjectBudgetCents status clientDetails')
+        .populate({path:'technologies',select:'label value',match:{workspaceId:getActiveWorkspaceId(),type:'technology'}})
+        .sort({ createdAt: -1 })
+        .limit(10001)
+        .lean()
+    ]);
+    if (projects.length > 10000) throw new ErrorResponse('Select a project or department to narrow this report', 413);
 
-  const projectIds = projects.map((project) => project._id);
-  const [cards, subtasks, nanos, milestoneData] = projectIds.length > 0
-    ? await Promise.all([
-      Promise.all([aggregateFinanceTime(Card, projectIds, filters, { cards: true }), aggregateLastActivity(Card, projectIds, 'task', true)]).then(parts => parts.flat()),
-      Promise.all([aggregateFinanceTime(Subtask, projectIds, filters), aggregateLastActivity(Subtask, projectIds, 'subtask')]).then(parts => parts.flat()),
-      Promise.all([aggregateFinanceTime(SubtaskNano, projectIds, filters), aggregateLastActivity(SubtaskNano, projectIds, 'nano-subtask')]).then(parts => parts.flat()),
-      aggregateMilestoneFinance(projectIds, filters)
-    ])
-    : [[], [], [], { approvals: [], stats: new Map(), lifetime: new Map() }];
-  const milestoneApprovals = milestoneData.approvals;
+    const projectIds = projects.map((project) => project._id);
+    const [cards, subtasks, nanos, milestoneData] = projectIds.length > 0
+      ? await Promise.all([
+        Promise.all([aggregateFinanceTime(Card, projectIds, filters, { cards: true }), aggregateLastActivity(Card, projectIds, 'task', true)]).then(parts => parts.flat()),
+        Promise.all([aggregateFinanceTime(Subtask, projectIds, filters), aggregateLastActivity(Subtask, projectIds, 'subtask')]).then(parts => parts.flat()),
+        Promise.all([aggregateFinanceTime(SubtaskNano, projectIds, filters), aggregateLastActivity(SubtaskNano, projectIds, 'nano-subtask')]).then(parts => parts.flat()),
+        aggregateMilestoneFinance(projectIds, filters)
+      ])
+      : [[], [], [], { approvals: [], stats: new Map(), lifetime: new Map() }];
+    const milestoneApprovals = milestoneData.approvals;
 
-  const usersById = await buildUserNameMap([...cards, ...subtasks, ...nanos], milestoneApprovals);
+    const usersById = await buildUserNameMap([...cards, ...subtasks, ...nanos], milestoneApprovals);
 
-  return {
-    filters,
-    permittedUserIds,
-    usersById,
-    projects,
-    cardsByBoard: groupByBoard(cards),
-    subtasksByBoard: groupByBoard(subtasks),
-    nanosByBoard: groupByBoard(nanos),
-    milestonesByBoard: new Map(),
-    milestoneStatsByBoard: milestoneData.stats,
-    lifetimeMilestoneByBoard: milestoneData.lifetime,
-    milestoneApprovalsByBoard: groupByBoard(milestoneApprovals),
-    diagnostics: {
-      totalProjectsBeforeFiltering,
-      projectsAfterBillingTypeFiltering: projects.length
-    }
-  };
+    const context = {
+      filters,
+      permittedUserIds,
+      usersById,
+      projects,
+      cardsByBoard: groupByBoard(cards),
+      subtasksByBoard: groupByBoard(subtasks),
+      nanosByBoard: groupByBoard(nanos),
+      milestonesByBoard: new Map(),
+      milestoneStatsByBoard: milestoneData.stats,
+      lifetimeMilestoneByBoard: milestoneData.lifetime,
+      milestoneApprovalsByBoard: groupByBoard(milestoneApprovals),
+      diagnostics: {
+        totalProjectsBeforeFiltering,
+        projectsAfterBillingTypeFiltering: projects.length
+      }
+    };
+    return JSON.parse(JSON.stringify(context, (_key, value) => value instanceof Map ? { __financeMap: [...value] } : value instanceof Set ? { __financeSet: [...value] } : value));
+  });
+  // Restore private calculation structures without retaining mutable shared results.
+  const context = JSON.parse(JSON.stringify(packed), (_key, value) => value?.__financeMap ? new Map(value.__financeMap) : value?.__financeSet ? new Set(value.__financeSet) : value);
+  return { ...context, filters };
 };
 
 const getProjectEntities = (context, projectId) => [

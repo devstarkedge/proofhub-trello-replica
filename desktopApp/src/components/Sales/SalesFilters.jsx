@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -10,9 +11,23 @@ import { formatSalesDate } from '../../utils/dateUtils';
 import SearchableSelect from '../ui/SearchableSelect';
 
 const SalesFilters = () => {
-  const { rows, filters, setFilters, clearFilters, dropdownOptions, uniqueNames, nameTab, setNameTab } = useSalesStore();
+  const { rows, filters, setFilters, clearFilters, dropdownOptions, uniqueNames, nameTab, setNameTab, fetchDropdownOptions } = useSalesStore(useShallow(state => ({
+    rows: state.rows,
+    filters: state.filters,
+    setFilters: state.setFilters,
+    clearFilters: state.clearFilters,
+    dropdownOptions: state.dropdownOptions,
+    uniqueNames: state.uniqueNames,
+    nameTab: state.nameTab,
+    setNameTab: state.setNameTab,
+    fetchDropdownOptions: state.fetchDropdownOptions
+  })));
   const [isExpanded, setIsExpanded] = useState(false);
   const filterBtnRef = useRef(null);
+  useEffect(() => {
+    if (!isExpanded) return;
+    Promise.all(['platform', 'technology', 'status', 'clientLocation', 'clientBudget', 'profile', 'replyFromClient', 'followUps'].map(fetchDropdownOptions)).catch(() => {});
+  }, [isExpanded, fetchDropdownOptions]);
 
   const toggleFilters = useCallback(() => {
     setIsExpanded(prev => {

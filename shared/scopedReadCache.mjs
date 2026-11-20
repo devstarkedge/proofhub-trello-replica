@@ -6,7 +6,11 @@ export function createScopedReadCache({ storage, ttlMs = 30000, maxEntries = 12,
   let revision = 0;
   return {
     clear() { revision++; entries.clear(); },
-    read(key, load, { force = false } = {}) {
+    deletePending(key, scope = captureRequestScope(storage)) {
+      const cacheKey = `${requestScopeKey(scope)}:${key}`;
+      if (entries.get(cacheKey)?.flight) entries.delete(cacheKey);
+    },
+    read(key, load, { force = false, ttlMs: readTtlMs = ttlMs, expiresAt } = {}) {
       const scope = captureRequestScope(storage);
       const cacheKey = `${requestScopeKey(scope)}:${key}`;
       const existing = entries.get(cacheKey);
@@ -22,9 +26,9 @@ export function createScopedReadCache({ storage, ttlMs = 30000, maxEntries = 12,
       entries.set(cacheKey, entry);
       entry.flight = Promise.resolve().then(load).then(value => {
         assertRequestScope(storage, scope);
-        if (ttlMs > 0 && generation === revision && entries.get(cacheKey) === entry) {
+        if (readTtlMs > 0 && generation === revision && entries.get(cacheKey) === entry) {
           const bytes = new TextEncoder().encode(JSON.stringify(value)).byteLength;
-          if (bytes <= maxBytes) { entry.value = value; entry.expiresAt = now() + ttlMs; }
+          if (bytes <= maxBytes) { entry.value = value; entry.expiresAt = Math.min(now() + readTtlMs, expiresAt ? expiresAt(value) : Infinity); }
           else entries.delete(cacheKey);
         }
         return value;

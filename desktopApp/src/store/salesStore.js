@@ -4,6 +4,7 @@ import * as salesApi from '../services/salesApi';
 import * as salesTabApi from '../services/salesTabApi';
 import { registerResettable } from './resetRegistry';
 
+let rowsGeneration = 0;
 const DEFAULT_FILTERS = {
   search: '',
   name: '',
@@ -96,6 +97,7 @@ const useSalesStore = create(
        * Fetch sales rows with current filters
        */
       fetchRows: async (page = null) => {
+        const generation = ++rowsGeneration;
         set({ loading: true, error: null });
         try {
           const currentPage = page || get().pagination.page;
@@ -123,6 +125,7 @@ const useSalesStore = create(
           }
 
           const response = await salesApi.getSalesRows(params);
+          if (generation !== rowsGeneration) return;
           // Deduplicate rows by _id
           const uniqueRows = [];
           const seen = new Set();
@@ -138,7 +141,7 @@ const useSalesStore = create(
             loading: false
           });
         } catch (error) {
-          set({ error: error.message, loading: false });
+          if (generation === rowsGeneration) set({ error: error.message, loading: false });
         }
       },
 
@@ -714,7 +717,7 @@ const useSalesStore = create(
       /**
        * Set active name tab and filter — also clears any active custom tab
        */
-      setNameTab: (name) => {
+      setNameTab: (name, { fetch = true } = {}) => {
         const filterName = name === 'All' ? '' : name;
         set(state => ({
           nameTab: name,
@@ -726,7 +729,7 @@ const useSalesStore = create(
           sortOrder: 'desc',
           pagination: { ...state.pagination, page: 1 },
         }));
-        get().fetchRows(1);
+        if (fetch) get().fetchRows(1);
       },
 
       /**
@@ -998,7 +1001,7 @@ const useSalesStore = create(
       // per-workspace persist key) is the simpler fix for this phase; the
       // persist middleware re-serializes these defaults to localStorage
       // ('sales-storage') on this same set() call.
-      reset: () => set({
+      reset: () => { rowsGeneration++; set({
         rows: [],
         selectedRows: new Set(),
         filters: { ...DEFAULT_FILTERS },
@@ -1019,7 +1022,7 @@ const useSalesStore = create(
         savedTabs: [],
         activeTabId: null,
         tabsLoading: false,
-      }),
+      }); },
     }),
     {
       name: 'sales-storage',

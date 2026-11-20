@@ -1,8 +1,9 @@
+import useFinanceRefresh from '../../hooks/useFinanceRefresh';
 import { formatLoggedMinutes } from '../../../../shared/loggedTimeCell.mjs';
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Users, FolderKanban, Building2, ChevronDown, ChevronRight, RefreshCw, AlertCircle, Edit3, Search as SearchIcon, Calendar } from 'lucide-react';
-import api from '../../services/api';
+import api from '../../services/financeApi';
 import { toast } from 'react-toastify';
 import DateFilters from '../../components/Finance/DateFilters';
 import DepartmentFilter from '../../components/Finance/DepartmentFilter';
@@ -20,6 +21,7 @@ const ViewFinancePage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [page, setPage] = useState(null);
+  const pageController = useRef(null), dataController = useRef(null);
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dataLoading, setDataLoading] = useState(false);
@@ -42,9 +44,12 @@ const ViewFinancePage = () => {
 
   // Fetch page configuration
   const fetchPage = async () => {
+    pageController.current?.abort();
+    const controller = new AbortController(); pageController.current = controller;
     try {
       setLoading(true);
-      const response = await api.get(`/api/finance/pages/${id}`);
+      const response = await api.get(`/api/finance/pages/${id}`, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       if (response.data.success) {
         setPage(response.data.data);
         // Apply default filters from page config
@@ -59,18 +64,21 @@ const ViewFinancePage = () => {
         }
       }
     } catch (err) {
+      if (controller.signal.aborted) return;
       console.error('Error fetching page:', err);
       setError('Failed to load page');
       toast.error('Failed to load page');
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   };
 
   // Fetch data based on page type
-  const fetchData = async () => {
+  const fetchData = async (event) => {
+    if (event?.type === 'click') api.refresh();
     if (!page) return;
-
+    dataController.current?.abort();
+    const controller = new AbortController(); dataController.current = controller;
     try {
       setDataLoading(true);
 
@@ -81,7 +89,8 @@ const ViewFinancePage = () => {
       if (filters.billingType) params.append('billingType', filters.billingType);
 
       const endpoint = page.pageType === 'users' ? '/api/finance/users' : '/api/finance/projects';
-      const response = await api.get(`${endpoint}?${params.toString()}`);
+      const response = await api.get(`${endpoint}?${params.toString()}`, { signal: controller.signal });
+      if (controller.signal.aborted) return;
 
       if (response.data.success) {
         setData(response.data.data || []);
@@ -102,25 +111,31 @@ const ViewFinancePage = () => {
         setExpandedDepartments(expanded);
       }
     } catch (err) {
+      if (controller.signal.aborted) return;
       console.error('Error fetching data:', err);
       toast.error('Failed to load data');
     } finally {
-      setDataLoading(false);
+      if (!controller.signal.aborted) setDataLoading(false);
     }
   };
 
+  const liveRevision = useFinanceRefresh(type => type.includes('page') ? fetchPage() : fetchData());
+
   useEffect(() => {
-    fetchPage();
+    setPage(null); setData([]); fetchPage();
+    return () => { pageController.current?.abort(); dataController.current?.abort(); };
   }, [id]);
 
   useEffect(() => {
     if (page) {
       fetchData();
     }
+    return () => dataController.current?.abort();
   }, [page, filters]);
 
   // Fetch week-wise data when mode is enabled
   useEffect(() => {
+    const controller = new AbortController();
     const fetchWeeklyData = async () => {
       if (!weekWiseMode || !page) {
         setWeeklyData(null);
@@ -141,19 +156,22 @@ const ViewFinancePage = () => {
         if (filters.billingType) {
           params.append('billingType', filters.billingType);
         }
-        const response = await api.get(`/api/finance/weekly-report/year?${params.toString()}`);
+        const response = await api.get(`/api/finance/weekly-report/year?${params.toString()}`, { signal: controller.signal });
+        if (controller.signal.aborted) return;
         if (response.data.success) {
           setWeeklyData(response.data.data);
         }
       } catch (err) {
+        if (controller.signal.aborted) return;
         console.error('Error fetching weekly data:', err);
       } finally {
-        setWeeklyDataLoading(false);
+        if (!controller.signal.aborted) setWeeklyDataLoading(false);
       }
     };
 
     fetchWeeklyData();
-  }, [weekWiseMode, selectedYear, selectedMonth, filters.departmentId, filters.billingType, page]);
+    return () => controller.abort();
+  }, [weekWiseMode, selectedYear, selectedMonth, filters.departmentId, filters.billingType, page, liveRevision]);
 
   // Format helpers
   const formatCurrency = (amount) => {

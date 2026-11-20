@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { getSalesPreferences, getSalesSuggestions } from '../services/salesApi';
+import { businessReads } from '../services/businessReadClient';
 import { getStaticSuggestions } from '../utils/salesSuggestions';
 
 /**
@@ -14,7 +15,6 @@ import { getStaticSuggestions } from '../utils/salesSuggestions';
 export const useSalesPreferences = () => {
   const [defaults, setDefaults] = useState({});
   const [loading, setLoading] = useState(true);
-  const cacheRef = useRef(new Map()); // field:contextHash → suggestions
 
   // Fetch last-used defaults on mount
   useEffect(() => {
@@ -43,18 +43,6 @@ export const useSalesPreferences = () => {
    * @returns {Promise<string[]>} - Ordered suggestion values
    */
   const getSuggestionsForField = useCallback(async (field, context = {}) => {
-    // Build a simple cache key from field + context values
-    const ctxKey = Object.entries(context)
-      .filter(([, v]) => v)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([k, v]) => `${k}:${v}`)
-      .join('|');
-    const cacheKey = `${field}:${ctxKey}`;
-
-    if (cacheRef.current.has(cacheKey)) {
-      return cacheRef.current.get(cacheKey);
-    }
-
     // Start with static suggestions
     let suggestions = getStaticSuggestions(field, context);
 
@@ -68,7 +56,6 @@ export const useSalesPreferences = () => {
       // Use static fallback
     }
 
-    cacheRef.current.set(cacheKey, suggestions);
     return suggestions;
   }, []);
 
@@ -76,7 +63,7 @@ export const useSalesPreferences = () => {
    * Clear the suggestion cache (call when form context changes significantly)
    */
   const clearCache = useCallback(() => {
-    cacheRef.current.clear();
+    businessReads.clear('sales', { resources: ['preferences'] });
   }, []);
 
   return { defaults, loading, getSuggestionsForField, clearCache };

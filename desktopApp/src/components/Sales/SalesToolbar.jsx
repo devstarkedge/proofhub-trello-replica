@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Upload, Download, Columns, History, ChevronDown, FileSpreadsheet, FileText } from 'lucide-react';
@@ -11,7 +12,11 @@ const SalesToolbar = ({
   onViewActivityLog,
   permissions
 }) => {
-  const { exportRows, selectedRows, pagination } = useSalesStore();
+  const { exportRows, selectedRows, pagination } = useSalesStore(useShallow(state => ({
+    exportRows: state.exportRows,
+    selectedRows: state.selectedRows,
+    pagination: state.pagination
+  })));
   const [exportOpen, setExportOpen] = useState(false);
 
   const handleExport = async (format) => {

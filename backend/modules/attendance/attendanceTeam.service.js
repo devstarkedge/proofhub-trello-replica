@@ -1,3 +1,5 @@
+import { businessCaches } from '../../services/businessReadCache.js';
+import { attendanceReadPolicy } from '../../../shared/moduleReadPolicies.mjs';
 import mongoose from 'mongoose';
 import { DateTime } from 'luxon';
 import { attendanceFallbackCutoffExpression, confirmedCheckoutStatuses, legacyHardCutoff } from './attendanceActivity.service.js';
@@ -22,7 +24,8 @@ import { readRecentWorkBreakWindows } from './attendanceWorkBreak.js';
 import { intervalMinutes, attendanceIntervals, attendanceIntervalMillisecondsExpression } from './attendanceIntervals.js';
 import { buildCalendarContext, classifyDateWithContext } from '../workCalendar/workCalendarFacade.js';
 import { dateOnlyToInstant } from '../leave/leaveTimezone.util.js';
-import { readAttendanceWork, unavailableWork } from './attendanceTrackedWork.service.js';
+import { readAttendanceWork, resolveAttendanceWorkAccess, unavailableWork } from './attendanceTrackedWork.service.js';
+import { trackingAccessFingerprint } from '../tracking/tracking.readCache.js';
 
 
 
@@ -90,49 +93,62 @@ async function prepare({ viewer, workspaceId, query = {}, now = new Date(), hist
   if (q.userId) assertCanViewUser(access, viewer._id || viewer.id, q.userId);
   if (q.departmentId) assertCanViewDepartment(access, q.departmentId);
   const departmentFilter = { workspaceId, ...(access.scope === 'workspace' ? {} : { _id: { $in: access.allowedDepartmentIds } }) };
-  const [departments, members, profiles, policy, attendanceHistory, leaveHistory] = await Promise.all([
-    Department.find(departmentFilter).select('_id name members isActive').lean(),
-    WorkspaceMembership.find({ workspace: workspaceId, ...(access.allowedUserIds ? { user: { $in: access.allowedUserIds } } : {}) }).select('user role status department joinedAt').lean(),
-    AttendanceMemberProfile.find({ workspaceId, isActive: true, ...(access.allowedUserIds ? { user: { $in: access.allowedUserIds } } : {}) }).lean(),
-    resolveApplicablePolicyVersion({ workspaceId }),
-    AttendanceDay.distinct('user', { workspaceId, ...(historicalSubject && q.userId ? { user: oid(q.userId) } : { workDateKey: { $gte: q.startDate, $lte: q.endDate }, ...(access.allowedUserIds ? { user: { $in: access.allowedUserIds } } : {}) }) }),
-    LeaveRequestDay.aggregate([
-      { $match: { workspaceId: oid(workspaceId), ...(historicalSubject && q.userId ? {} : { date: { $gte: dateOnlyToInstant(q.startDate, timezone), $lte: dateOnlyToInstant(q.endDate, timezone) } }) } },
-      { $lookup: { from: LeaveRequest.collection.name, localField: 'request', foreignField: '_id', pipeline: [
-        { $match: { workspaceId: oid(workspaceId), status: { $in: APPROVED_STATUSES }, ...(q.userId ? { requester: oid(q.userId) } : access.allowedUserIds ? { requester: { $in: access.allowedUserIds.map(oid) } } : {}) } },
-        { $project: { requester: 1 } }
-      ], as: 'approved' } }, { $unwind: '$approved' }, { $group: { _id: '$approved.requester' } }
-    ]).option(queryOptions)
-  ]);
-  const history = [...new Map([...attendanceHistory, ...leaveHistory.map(row => row._id)].map(user => [id(user), user])).values()];
-  const selectedDepartment = q.departmentId ? departments.find(d => id(d) === q.departmentId && d.isActive !== false) : null;
-  if (q.departmentId && !selectedDepartment) throw new ErrorResponse('Department not found', 404);
-  const profileMap = new Map(profiles.map(p => [id(p.user), p])), historicalIds = new Set(history.map(id));
-  const memberIds = new Set(members.map(m => id(m.user))), departmentMap = new Map(departments.map(d => [id(d), d]));
-  const rosterDepartments = new Map();
-  for (const department of departments) for (const member of department.members || []) {
-    const list = rosterDepartments.get(id(member)) || []; list.push(department._id); rosterDepartments.set(id(member), list);
-  }
-  const roster = [];
-  for (const member of members) {
-    if (q.userId && id(member.user) !== q.userId) continue;
-    if (selectedDepartment && !(member.department || []).some(d => id(d) === q.departmentId) && !(selectedDepartment.members || []).some(u => id(u) === id(member.user))) continue;
-    const eligibility = await resolveAttendanceEligibility({ workspaceId, userId: member.user, membership: member, workspace, attendancePolicy: policy, resolvedProfile: profileMap.get(id(member.user)) || {} });
-    if (eligibility.attendanceRequired || historicalIds.has(id(member.user))) roster.push({ ...member, historical: member.status !== 'active' || !eligibility.attendanceRequired });
-  }
-  // Deleted membership rows must not erase workspace-wide authorized history.
-  if (access.scope === 'workspace' && !q.departmentId) for (const user of history) {
-    if ((!q.userId || id(user) === q.userId) && !memberIds.has(id(user))) roster.push({ user, historical: true, department: [] });
-  }
-  const users = await User.find({ _id: { $in: roster.map(m => m.user) } }).select('name email avatar').lean();
-  const userMap = new Map(users.map(u => [id(u), u]));
-  const subjects = roster.map(m => ({ user: { _id: m.user, name: null, email: null, avatar: null, ...userMap.get(id(m.user)) }, historical: !!m.historical, primaryDepartmentId: m.department?.[0] || null,
-    departments: [...new Set([...(m.department || []), ...(rosterDepartments.get(id(m.user)) || [])].map(id))].map(key => departmentMap.get(key)).filter(Boolean).map(d => ({ _id: d._id, name: d.name }))
-  })).filter(row => !q.search || [row.user.name, row.user.email].some(value => value?.toLocaleLowerCase().includes(q.search.toLocaleLowerCase())));
-  const today = DateTime.fromJSDate(now).setZone(timezone).toISODate(), through = q.endDate < today ? q.endDate : today;
-  const expectedDates = q.startDate > through ? 0 : Math.round(DateTime.fromISO(through).diff(DateTime.fromISO(q.startDate), 'days').days) + 1;
-  const breakWindows = q.endDate >= today ? await readRecentWorkBreakWindows(workspaceId, now) : [];
-  return { viewer, workspaceId, workspace, access, q, timezone, now, today, expectedDates, subjects, departments, breakWindows };
+  const roster = await businessCaches.attendance.read({ workspaceId, viewerId: viewer._id || viewer.id, kind: 'team-roster',
+    query: { startDate: q.startDate, endDate: q.endDate, userId: q.userId, departmentId: q.departmentId, search: q.search, historicalSubject, today: DateTime.fromJSDate(now).setZone(timezone).toISODate() },
+    access: { access, role: viewer.role, roleId: viewer.roleId, timezone }, ttlMs: 15000 }, async () => {
+    const [departments, members, profiles, policy, attendanceHistory, leaveHistory] = await Promise.all([
+      Department.find(departmentFilter).select('_id name members isActive').lean(),
+      WorkspaceMembership.find({ workspace: workspaceId, ...(access.allowedUserIds ? { user: { $in: access.allowedUserIds } } : {}) }).select('user role status department joinedAt').lean(),
+      AttendanceMemberProfile.find({ workspaceId, isActive: true, ...(access.allowedUserIds ? { user: { $in: access.allowedUserIds } } : {}) }).lean(),
+      resolveApplicablePolicyVersion({ workspaceId }),
+      AttendanceDay.distinct('user', { workspaceId, ...(historicalSubject && q.userId ? { user: oid(q.userId) } : { workDateKey: { $gte: q.startDate, $lte: q.endDate }, ...(access.allowedUserIds ? { user: { $in: access.allowedUserIds } } : {}) }) }),
+      LeaveRequestDay.aggregate([
+        { $match: { workspaceId: oid(workspaceId), ...(historicalSubject && q.userId ? {} : { date: { $gte: dateOnlyToInstant(q.startDate, timezone), $lte: dateOnlyToInstant(q.endDate, timezone) } }) } },
+        { $lookup: { from: LeaveRequest.collection.name, localField: 'request', foreignField: '_id', pipeline: [
+          { $match: { workspaceId: oid(workspaceId), status: { $in: APPROVED_STATUSES }, ...(q.userId ? { requester: oid(q.userId) } : access.allowedUserIds ? { requester: { $in: access.allowedUserIds.map(oid) } } : {}) } },
+          { $project: { requester: 1 } }
+        ], as: 'approved' } }, { $unwind: '$approved' }, { $group: { _id: '$approved.requester' } }
+      ]).option(queryOptions)
+    ]);
+    const history = [...new Map([...attendanceHistory, ...leaveHistory.map(row => row._id)].map(user => [id(user), user])).values()];
+    const selectedDepartment = q.departmentId ? departments.find(d => id(d) === q.departmentId && d.isActive !== false) : null;
+    if (q.departmentId && !selectedDepartment) throw new ErrorResponse('Department not found', 404);
+    const profileMap = new Map(profiles.map(p => [id(p.user), p])), historicalIds = new Set(history.map(id));
+    const memberIds = new Set(members.map(m => id(m.user))), departmentMap = new Map(departments.map(d => [id(d), d]));
+    const rosterDepartments = new Map();
+    for (const department of departments) for (const member of department.members || []) {
+      const list = rosterDepartments.get(id(member)) || []; list.push(department._id); rosterDepartments.set(id(member), list);
+    }
+    const roster = [];
+    for (const member of members) {
+      if (q.userId && id(member.user) !== q.userId) continue;
+      if (selectedDepartment && !(member.department || []).some(d => id(d) === q.departmentId) && !(selectedDepartment.members || []).some(u => id(u) === id(member.user))) continue;
+      const eligibility = await resolveAttendanceEligibility({ workspaceId, userId: member.user, membership: member, workspace, attendancePolicy: policy, resolvedProfile: profileMap.get(id(member.user)) || {} });
+      if (eligibility.attendanceRequired || historicalIds.has(id(member.user))) roster.push({ ...member, historical: member.status !== 'active' || !eligibility.attendanceRequired });
+    }
+    // Deleted membership rows must not erase workspace-wide authorized history.
+    if (access.scope === 'workspace' && !q.departmentId) for (const user of history) {
+      if ((!q.userId || id(user) === q.userId) && !memberIds.has(id(user))) roster.push({ user, historical: true, department: [] });
+    }
+    const users = await User.find({ _id: { $in: roster.map(m => m.user) } }).select('name email avatar').lean();
+    const userMap = new Map(users.map(u => [id(u), u]));
+    const subjects = roster.map(m => ({ user: { _id: m.user, name: null, email: null, avatar: null, ...userMap.get(id(m.user)) }, historical: !!m.historical, primaryDepartmentId: m.department?.[0] || null,
+      departments: [...new Set([...(m.department || []), ...(rosterDepartments.get(id(m.user)) || [])].map(id))].map(key => departmentMap.get(key)).filter(Boolean).map(d => ({ _id: d._id, name: d.name }))
+    })).filter(row => !q.search || [row.user.name, row.user.email].some(value => value?.toLocaleLowerCase().includes(q.search.toLocaleLowerCase())));
+    const today = DateTime.fromJSDate(now).setZone(timezone).toISODate(), through = q.endDate < today ? q.endDate : today;
+    const expectedDates = q.startDate > through ? 0 : Math.round(DateTime.fromISO(through).diff(DateTime.fromISO(q.startDate), 'days').days) + 1;
+    const breakWindows = q.endDate >= today ? await readRecentWorkBreakWindows(workspaceId, now) : [];
+    return { today, expectedDates, subjects, departments, breakWindows };
+  });
+  // Attendance access does not grant Tracking access. Rebuild the Tracking
+  // fingerprint before every cached report hit, including expiring overrides.
+  const workAccess = await resolveAttendanceWorkAccess(workspaceId, viewer).catch(error => {
+    if ([403, 404].includes(error.statusCode)) return null;
+    throw error;
+  });
+  const workFingerprint = workAccess ? trackingAccessFingerprint(workAccess.ctx, workAccess.scope) : 'tracking-unavailable';
+  const breakWindows = roster.breakWindows.map(window => ({ ...window, startsAt: new Date(window.startsAt), endsAt: new Date(window.endsAt) }));
+  return { viewer, workspaceId, workspace, access, q, timezone, now, ...roster, breakWindows, workAccess, workFingerprint };
 }
 
 const countIf = expression => ({ $sum: { $cond: [expression, 1, 0] } });
@@ -232,7 +248,13 @@ async function summaryRows(ctx, {includeWork=false}={}) {
 }
 
 export async function getTeamAttendance(args) {
-  const ctx = await prepare(args), rows = await summaryRows(ctx), totals = emptyTotals();
+  const ctx = await prepare(args);
+  // Page navigation reuses the authorized period calculation, not just one page.
+  const { page: _page, pageSize: _size, ...periodQuery } = ctx.q;
+  const snapshot = await businessCaches.attendance.read({ workspaceId: ctx.workspaceId, viewerId: ctx.viewer._id || ctx.viewer.id, kind: 'team-summary',
+    query: { ...periodQuery, today: ctx.today }, access: { work: ctx.workFingerprint, access: ctx.access, role: ctx.viewer.role, roleId: ctx.viewer.roleId, subjects: ctx.subjects.map(subject => id(subject.user)) }, ttlMs: 15000 }, async () => ({ rows: await summaryRows(ctx), asOf: ctx.now }));
+  const rows = snapshot.rows;
+  const totals = emptyTotals();
   totals.totalMembers = rows.length;
   for (const row of rows) {
     if (row.recordedDays) totals.membersWithRecords++;
@@ -241,7 +263,7 @@ export async function getTeamAttendance(args) {
     if (row.attendanceMinutes != null) totals.attendanceMinutes = (totals.attendanceMinutes || 0) + row.attendanceMinutes;
   }
   const pageCount = Math.max(1, Math.ceil(rows.length / ctx.q.pageSize)), page = Math.min(ctx.q.page, pageCount);
-  return { scope: ctx.access.scope, permissions: ctx.access.reportPermissions, timezone: ctx.timezone, asOf: ctx.now,
+  return { scope: ctx.access.scope, permissions: ctx.access.reportPermissions, timezone: ctx.timezone, asOf: snapshot.asOf,
     filters: { departments: ctx.departments.filter(d => d.isActive !== false).map(d => ({ _id: d._id, name: d.name })), statuses: TEAM_STATUSES, workModes: TEAM_WORK_MODES },
     query: ctx.q, totals, pagination: { page, pageSize: ctx.q.pageSize, total: rows.length, pageCount },
     rows: rows.slice((page - 1) * ctx.q.pageSize, page * ctx.q.pageSize),
@@ -273,30 +295,35 @@ export async function getTeamAttendanceMonth(args) {
   if (typeof args.month !== 'string' || !/^\d{4}-\d{2}$/.test(args.month) || !DateTime.fromISO(`${args.month}-01`).isValid) throw new ErrorResponse('Invalid attendance month', 400);
   const month = DateTime.fromISO(`${args.month}-01`), startDate = month.toISODate(), endDate = month.endOf('month').toISODate();
   const ctx = await subjectContext({ ...args, query: { ...args.query, startDate, endDate } });
-  const records = await AttendanceDay.aggregate(teamDayPipeline({ ...ctx, userIds: [args.userId], startDate, endDate })).option(queryOptions);
-  const map = new Map(records.map(record => [record.workDateKey, record]));
-  const calendar = endDate >= ctx.today ? await buildCalendarContext({ timezone: ctx.timezone, departmentIds: [ctx.subjects[0].primaryDepartmentId].filter(Boolean), startDate, endDate }) : null;
-  const days = [];
-  for (let date = month; date.toISODate() <= endDate; date = date.plus({ days: 1 })) {
-    const workDateKey = date.toISODate(), record = map.get(workDateKey);
-    if (record) {
-      const { leaveTypes: _, policyVersion: __, ...publicDay } = record;
-      days.push({ ...publicDay, calendarSource: record.hasAttendance ? 'ATTENDANCE_SNAPSHOT' : 'APPROVED_LEAVE_SNAPSHOT' });
-    } else {
-      days.push(missingCalendarDay(ctx, workDateKey, workDateKey >= ctx.today ? calendar : null));
+  return businessCaches.attendance.read({ workspaceId: args.workspaceId, viewerId: args.viewer._id || args.viewer.id, kind: 'team-month',
+    query: { userId: args.userId, month: args.month, workDateKey: args.workDateKey, query: args.query, today: ctx.today },
+    access: { work: ctx.workFingerprint, access: ctx.access, role: args.viewer.role, roleId: args.viewer.roleId },
+    ttlMs: data => endDate < ctx.today ? attendanceReadPolicy.historyTtl(data.days) : 15000 }, async () => {
+    const records = await AttendanceDay.aggregate(teamDayPipeline({ ...ctx, userIds: [args.userId], startDate, endDate })).option(queryOptions);
+    const map = new Map(records.map(record => [record.workDateKey, record]));
+    const calendar = endDate >= ctx.today ? await buildCalendarContext({ timezone: ctx.timezone, departmentIds: [ctx.subjects[0].primaryDepartmentId].filter(Boolean), startDate, endDate }) : null;
+    const days = [];
+    for (let date = month; date.toISODate() <= endDate; date = date.plus({ days: 1 })) {
+      const workDateKey = date.toISODate(), record = map.get(workDateKey);
+      if (record) {
+        const { leaveTypes: _, policyVersion: __, ...publicDay } = record;
+        days.push({ ...publicDay, calendarSource: record.hasAttendance ? 'ATTENDANCE_SNAPSHOT' : 'APPROVED_LEAVE_SNAPSHOT' });
+      } else {
+        days.push(missingCalendarDay(ctx, workDateKey, workDateKey >= ctx.today ? calendar : null));
+      }
     }
-  }
-  const sessions = await AttendanceSession.find({ workspaceId: args.workspaceId, user: args.userId, workDateKey: { $gte: startDate, $lte: endDate } }).select('workDateKey status checkInAt checkOutAt effectiveShiftEndAt missedCheckoutCutoffAt regularizationResolution').lean();
-  const sessionsByDay = new Map();
-  for (const session of sessions) { const list = sessionsByDay.get(session.workDateKey) || []; list.push(effectiveAttendanceSession(session)); sessionsByDay.set(session.workDateKey, list); }
-  for (const day of days) {
-    const daySessions = sessionsByDay.get(day.workDateKey) || [];
-    day.activeSession = daySessions.some(s => s.status === 'ACTIVE' && (!legacyHardCutoff(s) || +legacyHardCutoff(s) > +ctx.now));
-    if (day.hasAttendance && day.activeSession) { day.workedMinutes = Math.round(intervalMinutes(attendanceIntervals(daySessions, ctx.now, ctx.breakWindows))); day.durationIsLive = true; }
-  }
-  const work = await readAttendanceWork({ ...ctx, userIds: [args.userId], startDate, endDate });
-  for (const day of days) day.trackedWork = work.get(id(args.userId) + ':' + day.workDateKey) || unavailableWork();
-  return { user: ctx.subjects[0].user, departments: ctx.subjects[0].departments, timezone: ctx.timezone, month: args.month, asOf: ctx.now, days };
+    const sessions = await AttendanceSession.find({ workspaceId: args.workspaceId, user: args.userId, workDateKey: { $gte: startDate, $lte: endDate } }).select('workDateKey status checkInAt checkOutAt effectiveShiftEndAt missedCheckoutCutoffAt regularizationResolution').lean();
+    const sessionsByDay = new Map();
+    for (const session of sessions) { const list = sessionsByDay.get(session.workDateKey) || []; list.push(effectiveAttendanceSession(session)); sessionsByDay.set(session.workDateKey, list); }
+    for (const day of days) {
+      const daySessions = sessionsByDay.get(day.workDateKey) || [];
+      day.activeSession = daySessions.some(s => s.status === 'ACTIVE' && (!legacyHardCutoff(s) || +legacyHardCutoff(s) > +ctx.now));
+      if (day.hasAttendance && day.activeSession) { day.workedMinutes = Math.round(intervalMinutes(attendanceIntervals(daySessions, ctx.now, ctx.breakWindows))); day.durationIsLive = true; }
+    }
+    const work = await readAttendanceWork({ ...ctx, userIds: [args.userId], startDate, endDate });
+    for (const day of days) day.trackedWork = work.get(id(args.userId) + ':' + day.workDateKey) || unavailableWork();
+    return { user: ctx.subjects[0].user, departments: ctx.subjects[0].departments, timezone: ctx.timezone, month: args.month, asOf: ctx.now, days };
+  });
 }
 
 async function trackedDay(ctx, userId, workDateKey) {
@@ -306,34 +333,39 @@ async function trackedDay(ctx, userId, workDateKey) {
 
 export async function getTeamAttendanceDay(args) {
   const ctx = await subjectContext({ ...args, query: { ...args.query, startDate: args.workDateKey, endDate: args.workDateKey } });
-  const filter = { workspaceId: args.workspaceId, user: args.userId, workDateKey: args.workDateKey };
-  const [records, sessions, regularizations, leaveScope] = await Promise.all([
-    AttendanceDay.aggregate(teamDayPipeline({ ...ctx, userIds: [args.userId], startDate: args.workDateKey, endDate: args.workDateKey })).option(queryOptions),
-    AttendanceSession.find(filter).select('_id status checkInAt checkOutAt effectiveShiftEndAt missedCheckoutCutoffAt regularizationResolution regularizationStatus').lean(),
-    AttendanceRegularization.find({ workspaceId: args.workspaceId, requester: args.userId, workDateKey: args.workDateKey }).select('attendanceSession status type appliedAt decidedAt finalCorrection').lean(),
-    resolveLeaveAccessScope({ viewer: args.viewer, workspaceId: args.workspaceId })
-  ]);
-  const approved = regularizations.filter(r => r.status === 'APPROVED' && r.appliedAt);
-  const effective = applyRegularizationOverlay({ sessions, approvedRegularizations: approved });
-  const requests = await LeaveRequest.find({ $and: [leaveScope.requestFilter, { workspaceId: args.workspaceId, requester: args.userId, status: { $in: APPROVED_STATUSES } }] }).select('_id leaveType').lean();
-  const [leaveDays, leaveTypes, trackedWork] = await Promise.all([
-    LeaveRequestDay.find({ workspaceId: args.workspaceId, request: { $in: requests.map(r => r._id) }, date: dateOnlyToInstant(args.workDateKey, ctx.timezone) }).select('request dayType isConsuming shortLeaveStartTime shortLeaveEndTime shortLeaveDurationMinutes').lean(),
-    LeaveType.find({ workspaceId: args.workspaceId, _id: { $in: requests.map(r => r.leaveType) } }).select('name').lean(),
-    trackedDay(ctx, args.userId, args.workDateKey)
-  ]);
-  const calendar = !records.length && args.workDateKey >= ctx.today ? await buildCalendarContext({ timezone: ctx.timezone, departmentIds: [ctx.subjects[0].primaryDepartmentId].filter(Boolean), startDate: args.workDateKey, endDate: args.workDateKey }) : null;
-  const { leaveTypes: _, policyVersion, ...day } = records[0] || missingCalendarDay(ctx, args.workDateKey, calendar);
-  day.activeSession = effective.some(s => s.status === 'ACTIVE' && (!legacyHardCutoff(s) || +legacyHardCutoff(s) > +ctx.now));
-  if (day.hasAttendance && day.activeSession) { day.workedMinutes = Math.round(intervalMinutes(attendanceIntervals(effective, ctx.now, ctx.breakWindows))); day.durationIsLive = true; }
-  const policy = policyVersion ? await AttendancePolicyVersion.findOne({ workspaceId: args.workspaceId, _id: policyVersion }).select('name versionNumber').lean() : null;
-  return { user: ctx.subjects[0].user, timezone: ctx.timezone, asOf: ctx.now, day,
-    schedule: { startLocalTime: day.effectiveOfficeHoursStart || null, endLocalTime: day.effectiveOfficeHoursEnd || null, source: day.effectiveOfficeHoursSource || null,
-      recordedEndAt: sessions.map(s => s.effectiveShiftEndAt).filter(Boolean).sort((a, b) => +b - +a)[0] || null,
-      expectedMinutes: day.hasAttendance ? day.expectedWorkingMinutes ?? day.shiftExpectedMinutes : null, policyVersion: policy?.versionNumber || null },
-    sessions: effective.map(s => ({ status: s.status, checkInAt: s.checkInAt, checkOutAt: s.checkOutAt, regularized: !!s.regularized, regularizationStatus: s.regularizationStatus || null })),
-    regularizations: regularizations.map(r => ({ status: r.status, type: r.type, appliedAt: r.appliedAt || null })),
-    approvedLeaves: leaveDays.map(d => { const request = requests.find(r => id(r) === id(d.request)); return { dayType: d.dayType, isConsuming: d.isConsuming,
-      type: leaveTypes.find(t => id(t) === id(request?.leaveType))?.name || null, startLocalTime: d.shortLeaveStartTime, endLocalTime: d.shortLeaveEndTime, durationMinutes: d.shortLeaveDurationMinutes }; }), trackedWork };
+  return businessCaches.attendance.read({ workspaceId: args.workspaceId, viewerId: args.viewer._id || args.viewer.id, kind: 'team-day',
+    query: { userId: args.userId, month: args.month, workDateKey: args.workDateKey, query: args.query, today: ctx.today },
+    access: { work: ctx.workFingerprint, access: ctx.access, role: args.viewer.role, roleId: args.viewer.roleId },
+    ttlMs: data => args.workDateKey < ctx.today && data.regularizations.every(request => request.status !== 'PENDING_APPROVAL') ? attendanceReadPolicy.historyTtl([data.day]) : 15000 }, async () => {
+    const filter = { workspaceId: args.workspaceId, user: args.userId, workDateKey: args.workDateKey };
+    const [records, sessions, regularizations, leaveScope] = await Promise.all([
+      AttendanceDay.aggregate(teamDayPipeline({ ...ctx, userIds: [args.userId], startDate: args.workDateKey, endDate: args.workDateKey })).option(queryOptions),
+      AttendanceSession.find(filter).select('_id status checkInAt checkOutAt effectiveShiftEndAt missedCheckoutCutoffAt regularizationResolution regularizationStatus').lean(),
+      AttendanceRegularization.find({ workspaceId: args.workspaceId, requester: args.userId, workDateKey: args.workDateKey }).select('attendanceSession status type appliedAt decidedAt finalCorrection').lean(),
+      resolveLeaveAccessScope({ viewer: args.viewer, workspaceId: args.workspaceId })
+    ]);
+    const approved = regularizations.filter(r => r.status === 'APPROVED' && r.appliedAt);
+    const effective = applyRegularizationOverlay({ sessions, approvedRegularizations: approved });
+    const requests = await LeaveRequest.find({ $and: [leaveScope.requestFilter, { workspaceId: args.workspaceId, requester: args.userId, status: { $in: APPROVED_STATUSES } }] }).select('_id leaveType').lean();
+    const [leaveDays, leaveTypes, trackedWork] = await Promise.all([
+      LeaveRequestDay.find({ workspaceId: args.workspaceId, request: { $in: requests.map(r => r._id) }, date: dateOnlyToInstant(args.workDateKey, ctx.timezone) }).select('request dayType isConsuming shortLeaveStartTime shortLeaveEndTime shortLeaveDurationMinutes').lean(),
+      LeaveType.find({ workspaceId: args.workspaceId, _id: { $in: requests.map(r => r.leaveType) } }).select('name').lean(),
+      trackedDay(ctx, args.userId, args.workDateKey)
+    ]);
+    const calendar = !records.length && args.workDateKey >= ctx.today ? await buildCalendarContext({ timezone: ctx.timezone, departmentIds: [ctx.subjects[0].primaryDepartmentId].filter(Boolean), startDate: args.workDateKey, endDate: args.workDateKey }) : null;
+    const { leaveTypes: _, policyVersion, ...day } = records[0] || missingCalendarDay(ctx, args.workDateKey, calendar);
+    day.activeSession = effective.some(s => s.status === 'ACTIVE' && (!legacyHardCutoff(s) || +legacyHardCutoff(s) > +ctx.now));
+    if (day.hasAttendance && day.activeSession) { day.workedMinutes = Math.round(intervalMinutes(attendanceIntervals(effective, ctx.now, ctx.breakWindows))); day.durationIsLive = true; }
+    const policy = policyVersion ? await AttendancePolicyVersion.findOne({ workspaceId: args.workspaceId, _id: policyVersion }).select('name versionNumber').lean() : null;
+    return { user: ctx.subjects[0].user, timezone: ctx.timezone, asOf: ctx.now, day,
+      schedule: { startLocalTime: day.effectiveOfficeHoursStart || null, endLocalTime: day.effectiveOfficeHoursEnd || null, source: day.effectiveOfficeHoursSource || null,
+        recordedEndAt: sessions.map(s => s.effectiveShiftEndAt).filter(Boolean).sort((a, b) => +b - +a)[0] || null,
+        expectedMinutes: day.hasAttendance ? day.expectedWorkingMinutes ?? day.shiftExpectedMinutes : null, policyVersion: policy?.versionNumber || null },
+      sessions: effective.map(s => ({ status: s.status, checkInAt: s.checkInAt, checkOutAt: s.checkOutAt, regularized: !!s.regularized, regularizationStatus: s.regularizationStatus || null })),
+      regularizations: regularizations.map(r => ({ status: r.status, type: r.type, appliedAt: r.appliedAt || null })),
+      approvedLeaves: leaveDays.map(d => { const request = requests.find(r => id(r) === id(d.request)); return { dayType: d.dayType, isConsuming: d.isConsuming,
+        type: leaveTypes.find(t => id(t) === id(request?.leaveType))?.name || null, startLocalTime: d.shortLeaveStartTime, endLocalTime: d.shortLeaveEndTime, durationMinutes: d.shortLeaveDurationMinutes }; }), trackedWork };
+  });
 }
 
 export async function exportTeamAttendance(args, response) {

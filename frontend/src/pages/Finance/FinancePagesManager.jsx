@@ -1,7 +1,7 @@
 import { useState, useEffect, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, FileText, Trash2, Edit3, Check, X, Clock, CheckCircle, XCircle, Users, FolderKanban, Eye, ChevronRight } from 'lucide-react';
-import api from '../../services/api';
+import api from '../../services/financeApi';
 import AuthContext from '../../context/AuthContext';
 import { toast } from 'react-toastify';
 

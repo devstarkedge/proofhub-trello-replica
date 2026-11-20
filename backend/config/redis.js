@@ -1,5 +1,5 @@
 // Durable jobs, distributed limits and realtime remain production-only.
-// Tracking may optionally reuse the command connection for caching in dev.
+// Display read caches may optionally reuse the command connection in dev.
 export function redisConfig(env) {
   const enabled = env.NODE_ENV === 'production';
   const cacheEnabled = enabled || env.NODE_ENV !== 'test' && Boolean(env.REDIS_URL?.trim());

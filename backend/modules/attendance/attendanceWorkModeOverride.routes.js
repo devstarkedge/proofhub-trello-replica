@@ -1,3 +1,4 @@
+import { cachedBusinessJson } from '../../middleware/businessReadCache.js';
 import express from 'express';
 import { body } from 'express-validator';
 import { protect } from '../../middleware/authMiddleware.js';
@@ -9,8 +10,8 @@ const router = express.Router();
 router.use(protect);
 const gate = requireResourcePermission('attendance', 'manage_work_modes');
 
-router.get('/work-mode-overrides', gate, controller.list);
-router.get('/work-mode-overrides/history', gate, controller.history);
+router.get('/work-mode-overrides', gate, cachedBusinessJson('attendance', 'attendanceWorkModeOverride.routes.js:list', controller.list));
+router.get('/work-mode-overrides/history', gate, cachedBusinessJson('attendance', 'attendanceWorkModeOverride.routes.js:history', controller.history));
 router.post('/work-mode-overrides', gate,
   [
     body('scopeType').isIn(['ROLE', 'DEPARTMENT', 'USER']),
@@ -25,7 +26,7 @@ router.post('/work-mode-overrides', gate,
 router.patch('/work-mode-overrides/:overrideId', gate, controller.update);
 router.post('/work-mode-overrides/:overrideId/deactivate', gate, controller.deactivate);
 
-router.get('/work-mode-overrides/:overrideId/rules', gate, controller.listRules);
+router.get('/work-mode-overrides/:overrideId/rules', gate, cachedBusinessJson('attendance', 'attendanceWorkModeOverride.routes.js:listRules', controller.listRules));
 router.post('/work-mode-overrides/:overrideId/rules', gate,
   [
     body('dayOfWeek').isInt({ min: 0, max: 6 }),
@@ -37,7 +38,7 @@ router.post('/work-mode-overrides/:overrideId/rules', gate,
 );
 router.post('/work-mode-overrides/rules/:ruleId/deactivate', gate, controller.deactivateRule);
 
-router.get('/work-mode-overrides/:overrideId/date-overrides', gate, controller.listDateOverridesForOverride);
+router.get('/work-mode-overrides/:overrideId/date-overrides', gate, cachedBusinessJson('attendance', 'attendanceWorkModeOverride.routes.js:listDateOverridesForOverride', controller.listDateOverridesForOverride));
 router.post('/work-mode-overrides/:overrideId/date-overrides', gate,
   [body('startDate').notEmpty(), body('mode').isIn(['OFFICE', 'WFH', 'HYBRID', 'FIELD']), validate],
   controller.createDateOverridesForOverride

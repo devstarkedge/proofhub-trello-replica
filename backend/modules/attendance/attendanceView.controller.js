@@ -1,4 +1,5 @@
 import asyncHandler from '../../middleware/asyncHandler.js';
+import { observedBusinessRead } from '../../middleware/businessReadCache.js';
 import { resolveAttendanceAccess } from './attendanceAuthorization.service.js';
 import { getAttendanceView, getAttendanceDashboardSummary, getAttendanceSessionDetail } from './attendanceView.service.js';
 
@@ -10,20 +11,20 @@ export const getAccess = asyncHandler(async (req, res) => {
 
 export const getView = asyncHandler(async (req, res) => {
   const { startDate, endDate, userId, departmentId, status, workMode } = req.query;
-  const result = await getAttendanceView({
+  const result = await observedBusinessRead('attendance', res, () => getAttendanceView({
     viewer: req.user, workspaceId: req.workspaceId,
     startDate: startDate || null, endDate: endDate || null,
     userId: userId || null, departmentId: departmentId || null, status: status || null, workMode: workMode || null
-  });
+  }));
   res.json({ success: true, data: result.records, scope: result.scope });
 });
 
 export const getDashboard = asyncHandler(async (req, res) => {
   const { startDate, endDate, departmentId, status, workMode } = req.query;
-  const result = await getAttendanceDashboardSummary({
+  const result = await observedBusinessRead('attendance', res, () => getAttendanceDashboardSummary({
     viewer: req.user, workspaceId: req.workspaceId,
     startDate: startDate || null, endDate: endDate || null, departmentId: departmentId || null, status: status || null, workMode: workMode || null
-  });
+  }));
   res.json({ success: true, data: result });
 });
 

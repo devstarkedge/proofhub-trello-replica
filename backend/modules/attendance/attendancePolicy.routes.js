@@ -1,3 +1,4 @@
+import { cachedBusinessJson } from '../../middleware/businessReadCache.js';
 import express from 'express';
 import { body } from 'express-validator';
 import { protect } from '../../middleware/authMiddleware.js';
@@ -8,7 +9,7 @@ import * as controller from './attendancePolicy.controller.js';
 const router = express.Router();
 router.use(protect);
 
-router.get('/policy', requireResourcePermission('attendance', 'manage_policy'), controller.getPolicyConfig);
+router.get('/policy', requireResourcePermission('attendance', 'manage_policy'), cachedBusinessJson('attendance', 'attendancePolicy.routes.js:getPolicyConfig', controller.getPolicyConfig));
 router.post(
   '/policy',
   requireResourcePermission('attendance', 'manage_policy'),

@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow';
 import React, { useEffect, useContext, useCallback, useState } from 'react';
 import SearchableSelect from '../ui/SearchableSelect';
 import useSalesStore from '../../store/salesStore';
@@ -10,6 +11,7 @@ import DeletePopup from '../ui/DeletePopup';
  * Fetches options from the sales store, handles add/delete with permissions,
  * and forwards prioritizedValues for intelligent suggestions.
  */
+const EMPTY_OPTIONS = [];
 const SalesDropdown = React.memo(({
   columnName,
   value,
@@ -22,10 +24,15 @@ const SalesDropdown = React.memo(({
   autoSelectOnTab = true,
   prioritizedValues = [],
 }) => {
-  const { fetchDropdownOptions, addDropdownOption, deleteDropdownOption, dropdownOptions } = useSalesStore();
+  const { fetchDropdownOptions, addDropdownOption, deleteDropdownOption, dropdownOptions } = useSalesStore(useShallow(state => ({
+    fetchDropdownOptions: state.fetchDropdownOptions,
+    addDropdownOption: state.addDropdownOption,
+    deleteDropdownOption: state.deleteDropdownOption,
+    dropdownOptions: state.dropdownOptions
+  })));
   const { user } = useContext(AuthContext);
   const isAdmin = user?.role?.toLowerCase() === 'admin';
-  const options = dropdownOptions[columnName] || [];
+  const options = dropdownOptions[columnName] || EMPTY_OPTIONS;
 
   // Delete confirmation state
   const [deleteTarget, setDeleteTarget] = useState(null);

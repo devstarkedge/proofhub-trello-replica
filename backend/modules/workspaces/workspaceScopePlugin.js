@@ -1,5 +1,7 @@
 import mongoose from 'mongoose';
 import { getActiveContext } from './workspaceContext.js';
+import businessReadInvalidation from '../../services/businessReadInvalidation.plugin.js';
+import { invalidateBusinessReads, readDomains } from '../../services/businessReadCache.js';
 
 // aggregate()'s $match runs as raw MongoDB, with none of Mongoose's
 // automatic string->ObjectId casting that find()/count()/etc. get for free —
@@ -56,6 +58,7 @@ function toObjectId(value) {
  *    the resulting document) or it will silently skip this plugin entirely.
  */
 export default function workspaceScopePlugin(schema, { allowGlobal = false } = {}) {
+  schema.plugin(businessReadInvalidation);
   schema.statics.bulkWrite = async function (operations, options) {
     const ctx = getActiveContext();
     if (!ctx?.workspaceId && !ctx?.bypass) throw new Error('Bulk writes require workspace context');
@@ -90,7 +93,15 @@ export default function workspaceScopePlugin(schema, { allowGlobal = false } = {
       }
       return { [kind]: entry };
     });
-    return mongoose.Model.bulkWrite.call(this, scoped, options);
+    try {
+      return await mongoose.Model.bulkWrite.call(this, scoped, options);
+    } finally {
+      // Unordered bulk writes can partially succeed before rejecting.
+      if (readDomains(this.modelName).length) for (const workspaceId of new Set(scoped.map(operation => {
+        const entry = Object.values(operation)[0];
+        return entry.document?.workspaceId || entry.replacement?.workspaceId || entry.filter?.workspaceId;
+      }))) await invalidateBusinessReads(this.modelName, workspaceId, options?.session);
+    }
   };
   const buildFilter = (ctx) => (
     allowGlobal

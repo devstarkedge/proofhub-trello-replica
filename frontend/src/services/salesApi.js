@@ -1,3 +1,4 @@
+import { businessReads } from './businessReadClient';
 import axios from 'axios';
 import sessionApi from './api';
 import { installScopedSessionTransport } from '../../../shared/sessionTransport.mjs';
@@ -54,7 +55,7 @@ api.interceptors.response.use(
     const message = error.response?.data?.message || 'An error occurred';
     
     // Don't show toast for 403 permission errors or 423 lock errors (component will handle)
-    if (![403, 423].includes(error.response?.status)) {
+    if (!axios.isCancel(error) && ![403, 423].includes(error.response?.status)) {
       toast.error(message);
     }
     
@@ -296,8 +297,7 @@ export const getSalesPreferences = async () => {
  * @param {Object} context - Current form values for co-occurrence matching
  */
 export const getSalesSuggestions = async (field, context = {}) => {
-  const { data } = await api.post('/preferences/suggestions', { field, context });
-  return data;
+  return businessReads.read('sales', `suggestions:${JSON.stringify([field, Object.fromEntries(Object.entries(context).sort())])}`, config => api.post('/preferences/suggestions', { field, context }, config), { resource: 'preferences', response: true });
 };
 
 // ============================================
@@ -332,3 +332,7 @@ export const getVerifiedUsers = async () => {
   const { data } = await rootApi.get('/users/verified');
   return data?.data || [];
 };
+
+businessReads.install(api, 'sales', (url, config) => !/(?:^|\/)(?:permissions|export|lock|unlock)(?:\/|$)/.test(url) && !config.responseType,
+  config => !String(config.url).endsWith('/preferences/suggestions'));
+businessReads.install(rootApi, 'sales', url => url === '/users/verified', () => false);

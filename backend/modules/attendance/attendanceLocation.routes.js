@@ -1,3 +1,4 @@
+import { cachedBusinessJson } from '../../middleware/businessReadCache.js';
 import express from 'express';
 import { body } from 'express-validator';
 import { protect } from '../../middleware/authMiddleware.js';
@@ -9,7 +10,7 @@ const router = express.Router();
 router.use(protect);
 const gate = requireResourcePermission('attendance', 'manage_locations');
 
-router.get('/locations', gate, controller.listLocations);
+router.get('/locations', gate, cachedBusinessJson('attendance', 'attendanceLocation.routes.js:listLocations', controller.listLocations));
 router.post('/locations', gate,
   [
     body('name').trim().notEmpty(),

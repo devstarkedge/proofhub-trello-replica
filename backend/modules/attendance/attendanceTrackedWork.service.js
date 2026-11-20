@@ -10,12 +10,16 @@ export const unavailableWork = () => ({ seconds: null, reason: 'No authorized tr
 
 // Reuse Tracking's visibility pipeline, including project and historical
 // department guards. Attendance access never implies Tracking access.
-export async function readAttendanceWork({ workspaceId, viewer, userIds, startDate, endDate, now = new Date() }) {
+export async function resolveAttendanceWorkAccess(workspaceId, viewer) {
+  const [ctx, policy] = await Promise.all([contextFor(workspaceId, viewer._id || viewer.id, { readOnly: true }), policyFor(workspaceId)]);
+  return { ctx, policy, scope: await readVisibilityScope(ctx) };
+}
+export async function readAttendanceWork({ workspaceId, viewer, userIds, startDate, endDate, now = new Date(), workAccess }) {
   const result = new Map();
   if (!userIds.length) return result;
   try {
-    const [ctx, policy] = await Promise.all([contextFor(workspaceId, viewer._id || viewer.id, { readOnly: true }), policyFor(workspaceId)]);
-    const scope = await readVisibilityScope(ctx), owners = userIds.filter(owner => scope.canOwner(owner));
+    const { ctx, policy, scope } = workAccess || await resolveAttendanceWorkAccess(workspaceId, viewer);
+    const owners = userIds.filter(owner => scope.canOwner(owner));
     if (!owners.length) return result;
     const workBreakWindows = await readRecentWorkBreakWindows(workspaceId, now);
     const pipeline = dashboardReadPipeline({ workspaceId, ctx, scope, owners, bounds: { workDateKey: { $gte: startDate, $lte: endDate } }, query: {}, dates: { start: new Date(0), end: now }, now, policy, attendanceDetails: true, workBreakWindows });

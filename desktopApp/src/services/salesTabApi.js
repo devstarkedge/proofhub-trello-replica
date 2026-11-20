@@ -1,3 +1,4 @@
+import { businessReads } from './businessReadClient';
 import axios from 'axios';
 import sessionApi from './api';
 import { installScopedSessionTransport } from '../../../shared/sessionTransport.mjs';
@@ -23,7 +24,7 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     const message = error.response?.data?.message || 'An error occurred';
-    if (![403].includes(error.response?.status)) {
+    if (!axios.isCancel(error) && ![403].includes(error.response?.status)) {
       toast.error(message);
     }
     return Promise.reject(error);
@@ -66,3 +67,5 @@ export const markSalesTabRead = async (id) => {
   const { data } = await api.post(`/${id}/mark-read`);
   return data;
 };
+
+businessReads.install(api, 'sales', (url, config) => !config.responseType);

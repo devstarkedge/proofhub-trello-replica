@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow';
 import { useMemo, useState, useRef, useEffect, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -136,7 +137,13 @@ const CustomTabBar = ({ onEditTab, onDeleteTab }) => {
   const {
     savedTabs, activeTabId, activateTab, deactivateTab,
     permissions,
-  } = useSalesStore();
+  } = useSalesStore(useShallow(state => ({
+    savedTabs: state.savedTabs,
+    activeTabId: state.activeTabId,
+    activateTab: state.activateTab,
+    deactivateTab: state.deactivateTab,
+    permissions: state.permissions
+  })));
 
   const isAdmin = permissions?.isAdmin || user?.role === 'admin';
   const userId = user?._id || user?.id;

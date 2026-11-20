@@ -10,6 +10,7 @@ import { periodDateRange, isValidDateRange, workspaceDateKey } from '../../utils
 import { formatHours } from '../../utils/duration';
 import { LEAVE_REFRESH_EVENTS } from '../../utils/leaveRequestSync';
 import * as attendanceApi from '../../services/attendanceApi';
+import { businessReads } from '../../services/businessReadClient';
 
 const COLUMNS = [['Member', 'name'], ['Department', 'department'], ['Present', 'present'], ['Half days', 'halfDays'], ['Short leave (attendance)', 'shortDays'], ['Absent', 'absent'], ['Missing checkout', 'missingCheckout'], ['Full leave', 'leaveDays'], ['Work time', 'workSeconds'], ['Attendance rate', 'attendanceRate']];
 const CARDS = [
@@ -38,7 +39,8 @@ function TeamAttendanceContent({ workspace, identity }) {
   const load = useCallback(signal => valid ? attendanceApi.getTeamAttendance(query, signal) : Promise.resolve({ data: null }), [query, valid]);
   const read = useTeamRead(JSON.stringify([query, revision]), load, identity, JSON.stringify([query, accessRevision])), data = read.data;
   useEffect(() => { if (data) setDepartments(data.filters.departments); else if (read.forbidden) setDepartments([]); }, [data, read.forbidden]);
-  const refresh = useCallback(() => {
+  const refresh = useCallback((event) => {
+    businessReads.clear('attendance', { fresh: event?.type === 'click' });
     if (period !== 'custom') {
       const next = periodDateRange(period, { timezone, weekStartsOn: workspace.weekStartsOn ?? 0 });
       if (next.startDate !== range.startDate || next.endDate !== range.endDate) { setRange(next); setPage(1); }

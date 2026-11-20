@@ -1,7 +1,7 @@
 import { useState, useEffect, useContext } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Save, Users, FolderKanban, ArrowLeft, AlertCircle, Check } from 'lucide-react';
-import api from '../../services/api';
+import api from '../../services/financeApi';
 import AuthContext from '../../context/AuthContext';
 import { toast } from 'react-toastify';
 

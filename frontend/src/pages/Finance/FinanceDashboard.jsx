@@ -1,3 +1,4 @@
+import useFinanceRefresh from '../../hooks/useFinanceRefresh';
 import { formatLoggedMinutes } from '../../../../shared/loggedTimeCell.mjs';
 import useAccessControl from '../../hooks/useAccessControl';
 import { useState, useEffect, useContext, useMemo, useRef } from 'react';
@@ -15,9 +16,8 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import api from '../../services/api';
+import api from '../../services/financeApi';
 import AuthContext from '../../context/AuthContext';
-import socketService from '../../services/socket';
 import ProjectWorkflowLink from '../../components/Finance/ProjectWorkflowLink';
 import { getBillingTypeLabel, getBillingTypeStyle } from '../../utils/billing';
 
@@ -40,7 +40,8 @@ const FinanceDashboard = () => {
   const readController = useRef(null);
 
   // Fetch all dashboard data
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = async (event) => {
+    if (event?.type === 'click') api.refresh();
     readController.current?.abort();
     const controller = new AbortController();
     readController.current = controller;
@@ -122,37 +123,7 @@ const FinanceDashboard = () => {
     return () => readController.current?.abort();
   }, [selectedPeriod, canBilling]);
 
-  // Real-time updates via Socket.IO
-  useEffect(() => {
-    // Join finance room to receive real-time updates
-    socketService.joinFinance();
-
-    // Debounced refresh handler to prevent excessive API calls
-    let refreshTimeout;
-    const handleFinanceRefresh = (event) => {
-      console.log('Finance data refresh triggered:', event?.detail);
-
-      // Clear any pending refresh
-      clearTimeout(refreshTimeout);
-
-      // Debounce: wait 500ms before refreshing to batch rapid changes
-      refreshTimeout = setTimeout(() => {
-        // Don't show loading spinner for background refresh
-        setError(null);
-        fetchDashboardData();
-      }, 500);
-    };
-
-    // Listen for finance refresh events from socket
-    window.addEventListener('socket-finance-refresh', handleFinanceRefresh);
-
-    // Cleanup on unmount
-    return () => {
-      window.removeEventListener('socket-finance-refresh', handleFinanceRefresh);
-      clearTimeout(refreshTimeout);
-      socketService.leaveFinance();
-    };
-  }, [selectedPeriod, canBilling]); // Re-subscribe if period changes to use updated fetchDashboardData
+  useFinanceRefresh(fetchDashboardData);
 
   // Format currency
   const formatCurrency = (amount) => {

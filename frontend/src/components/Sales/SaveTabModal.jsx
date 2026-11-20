@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow';
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Save, Bell, AlertTriangle, Lock, Globe, Filter, SortAsc, Zap, Clock, Mail, Volume2 } from 'lucide-react';
@@ -42,7 +43,15 @@ const SaveTabModal = ({ isOpen, onClose, editingTab = null }) => {
   const {
     filters, sortBy, sortOrder, columnFilters,
     savedTabs, createSavedTab, updateSavedTab,
-  } = useSalesStore();
+  } = useSalesStore(useShallow(state => ({
+    filters: state.filters,
+    sortBy: state.sortBy,
+    sortOrder: state.sortOrder,
+    columnFilters: state.columnFilters,
+    savedTabs: state.savedTabs,
+    createSavedTab: state.createSavedTab,
+    updateSavedTab: state.updateSavedTab
+  })));
 
   const mode = editingTab ? 'edit' : 'create';
   const [saving, setSaving] = useState(false);

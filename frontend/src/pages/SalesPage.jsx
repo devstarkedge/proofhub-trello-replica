@@ -1,4 +1,6 @@
-import { useEffect, useState, useContext } from 'react';
+import { useShallow } from 'zustand/react/shallow';
+import WorkspaceContext from '../context/WorkspaceContext';
+import { useEffect, useState, useContext, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import AuthContext from '../context/AuthContext';
@@ -24,10 +26,12 @@ import WatchAlertToast from '../components/Sales/WatchAlertToast';
 
 const SalesPage = () => {
   const navigate = useNavigate();
+  const { currentWorkspace } = useContext(WorkspaceContext) || {};
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, loading: authLoading } = useContext(AuthContext);
   const { openTabApprovalModal } = useContext(NotificationContext);
   const [loading, setLoading] = useState(true);
+  const lifecycle = useRef(null), userId = user?._id || user?.id;
   const [showFilters, setShowFilters] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -76,45 +80,56 @@ const SalesPage = () => {
     handleTabIgnored,
     handleTabAlert,
     handleTabUnreadUpdate,
-  } = useSalesStore();
+  } = useSalesStore(useShallow(state => ({
+    permissions: state.permissions,
+    fetchPermissions: state.fetchPermissions,
+    fetchRows: state.fetchRows,
+    fetchCustomColumns: state.fetchCustomColumns,
+    fetchDropdownOptions: state.fetchDropdownOptions,
+    fetchUniqueNames: state.fetchUniqueNames,
+    setNameTab: state.setNameTab,
+    nameTab: state.nameTab,
+    selectedRows: state.selectedRows,
+    lockedRows: state.lockedRows,
+    lockRow: state.lockRow,
+    unlockRow: state.unlockRow,
+    handleRowCreated: state.handleRowCreated,
+    handleRowUpdated: state.handleRowUpdated,
+    handleRowDeleted: state.handleRowDeleted,
+    handleBulkUpdate: state.handleBulkUpdate,
+    handleBulkDelete: state.handleBulkDelete,
+    handleDropdownUpdated: state.handleDropdownUpdated,
+    handleColumnCreated: state.handleColumnCreated,
+    handleColumnDeleted: state.handleColumnDeleted,
+    handleRowLocked: state.handleRowLocked,
+    handleRowUnlocked: state.handleRowUnlocked,
+    syncDrafts: state.syncDrafts,
+    fetchSavedTabs: state.fetchSavedTabs,
+    savedTabs: state.savedTabs,
+    activeTabId: state.activeTabId,
+    activateTab: state.activateTab,
+    deactivateTab: state.deactivateTab,
+    deleteSavedTab: state.deleteSavedTab,
+    handleTabCreated: state.handleTabCreated,
+    handleTabUpdated: state.handleTabUpdated,
+    handleTabDeleted: state.handleTabDeleted,
+    handleTabApproved: state.handleTabApproved,
+    handleTabIgnored: state.handleTabIgnored,
+    handleTabAlert: state.handleTabAlert,
+    handleTabUnreadUpdate: state.handleTabUnreadUpdate
+  })));
 
   useEffect(() => {
-    // Wait for auth restore to finish before initializing page
-    if (authLoading) return;
-
-    if (user && (user._id || user.id)) {
-      initializePage();
-    }
-
+    if (authLoading || !userId) return;
+    let disposed = false;
+    const owner = lifecycle.current;
+    owner.initializePage(() => !disposed);
     return () => {
-      // Remove any sales socket listeners and leave sales room on unmount
-      window.removeEventListener('socket-sales-row-created', onSocketRowCreated);
-      window.removeEventListener('socket-sales-row-updated', onSocketRowUpdated);
-      window.removeEventListener('socket-sales-row-deleted', onSocketRowDeleted);
-      window.removeEventListener('socket-sales-rows-bulk-updated', onSocketRowsBulkUpdated);
-      window.removeEventListener('socket-sales-rows-bulk-deleted', onSocketRowsBulkDeleted);
-      window.removeEventListener('socket-sales-dropdown-updated', onSocketDropdownUpdated);
-      window.removeEventListener('socket-sales-column-created', onSocketColumnCreated);
-      window.removeEventListener('socket-sales-column-updated', onSocketColumnUpdated);
-      window.removeEventListener('socket-sales-column-deleted', onSocketColumnDeleted);
-      window.removeEventListener('socket-sales-rows-imported', onSocketRowsImported);
-      window.removeEventListener('socket-sales-row-locked', onSocketRowLocked);
-      window.removeEventListener('socket-sales-row-unlocked', onSocketRowUnlocked);
-      window.removeEventListener('sales-permissions-updated', onPermsUpdate);
-      window.removeEventListener('socket-sales-permissions-updated', onPermsUpdate);
-      window.removeEventListener('socket-connected', onSocketConnected);
-      window.removeEventListener('socket-sales-tab-created', onSocketTabCreated);
-      window.removeEventListener('socket-sales-tab-updated', onSocketTabUpdated);
-      window.removeEventListener('socket-sales-tab-deleted', onSocketTabDeleted);
-      window.removeEventListener('socket-sales-tab-approved', onSocketTabApproved);
-      window.removeEventListener('socket-sales-tab-ignored', onSocketTabIgnored);
-      window.removeEventListener('socket-sales-tab-alert', onSocketTabAlert);
-      window.removeEventListener('socket-sales-tab-unread-update', onSocketTabUnreadUpdate);
-
+      disposed = true;
+      owner.listeners.forEach(([event, handler]) => window.removeEventListener(event, handler));
       socketService.leaveSales();
     };
-    // Re-run when auth loading changes (i.e. after restoreSession completes)
-  }, [authLoading, user]);
+  }, [authLoading, userId, user?.role, user?.roleId, user?.permissionsVersion, currentWorkspace?._id]);
 
   // Listen for online status to sync drafts
   useEffect(() => {
@@ -180,9 +195,10 @@ const SalesPage = () => {
     }
   };
 
-  const initializePage = async () => {
+  const initializePage = async (current = () => true) => {
+    const listeners = lifecycle.current.listeners;
     try {
-      setLoading(true);
+      setLoading(useSalesStore.getState().rows.length === 0);
 
       console.log('Checking permissions for user:', user._id);
 
@@ -191,6 +207,7 @@ const SalesPage = () => {
       try {
         perms = await fetchPermissions(user._id);
       } catch (permError) {
+        if (!current()) return;
         console.error('Permission check failed:', permError);
         // If permission check fails (404, 403, etc.), assume no access
         toast.error('You do not have access to the Sales module');
@@ -198,6 +215,7 @@ const SalesPage = () => {
         return;
       }
 
+      if (!current()) return;
       console.log('Permissions received:', perms);
       
       if (!perms || !perms.moduleVisible) {
@@ -209,56 +227,23 @@ const SalesPage = () => {
       // Join sales Socket.IO room
       socketService.joinSales();
 
-      // Setup real-time event listeners (attach named handlers so they can be removed)
-      window.addEventListener('socket-sales-row-created', onSocketRowCreated);
-      window.addEventListener('socket-sales-row-updated', onSocketRowUpdated);
-      window.addEventListener('socket-sales-row-deleted', onSocketRowDeleted);
-      window.addEventListener('socket-sales-rows-bulk-updated', onSocketRowsBulkUpdated);
-      window.addEventListener('socket-sales-rows-bulk-deleted', onSocketRowsBulkDeleted);
-      window.addEventListener('socket-sales-dropdown-updated', onSocketDropdownUpdated);
-      window.addEventListener('socket-sales-column-created', onSocketColumnCreated);
-      window.addEventListener('socket-sales-column-updated', onSocketColumnUpdated);
-      window.addEventListener('socket-sales-column-deleted', onSocketColumnDeleted);
-      window.addEventListener('socket-sales-rows-imported', onSocketRowsImported);
-      window.addEventListener('socket-sales-row-locked', onSocketRowLocked);
-      window.addEventListener('socket-sales-row-unlocked', onSocketRowUnlocked);
-      
-      // Permissions listeners
-      window.addEventListener('sales-permissions-updated', onPermsUpdate);
-      window.addEventListener('socket-sales-permissions-updated', onPermsUpdate);
-
-      // Socket connection listener (handles reconnects and delayed connections)
-      window.addEventListener('socket-connected', onSocketConnected);
-
-      // Tab event listeners
-      window.addEventListener('socket-sales-tab-created', onSocketTabCreated);
-      window.addEventListener('socket-sales-tab-updated', onSocketTabUpdated);
-      window.addEventListener('socket-sales-tab-deleted', onSocketTabDeleted);
-      window.addEventListener('socket-sales-tab-approved', onSocketTabApproved);
-      window.addEventListener('socket-sales-tab-ignored', onSocketTabIgnored);
-      window.addEventListener('socket-sales-tab-alert', onSocketTabAlert);
-      window.addEventListener('socket-sales-tab-unread-update', onSocketTabUnreadUpdate);
+      listeners.forEach(([event, handler]) => window.addEventListener(event, handler));
 
       // Fetch initial data
       // Initialize name tab from URL query param if present
       const urlName = searchParams.get('name');
       if (urlName) {
-        setNameTab(urlName);
+        setNameTab(urlName, { fetch: false });
       }
 
       await Promise.all([
         fetchRows(),
         fetchCustomColumns(),
-        fetchUniqueNames(),
-        fetchDropdownOptions('platform'),
-        fetchDropdownOptions('technology'),
-        fetchDropdownOptions('status'),
-        fetchDropdownOptions('clientLocation'),
-        fetchDropdownOptions('clientBudget'),
-        fetchDropdownOptions('profile'),
-        fetchDropdownOptions('replyFromClient'),
-        fetchDropdownOptions('followUps')
+        fetchUniqueNames()
       ]);
+
+      if (!current()) return;
+      if (current()) setLoading(false);
 
       // Fetch saved tabs
       fetchSavedTabs().catch(() => {});
@@ -266,8 +251,9 @@ const SalesPage = () => {
       // Sync any pending offline drafts
       await syncDrafts();
 
-      setLoading(false);
+      if (current()) setLoading(false);
     } catch (error) {
+      if (!current()) return;
       console.error('Failed to initialize sales page:', error);
       setLoading(false);
       toast.error('Failed to load sales module');
@@ -411,6 +397,31 @@ const SalesPage = () => {
     }
     setEditingRow(null);
   };
+
+  lifecycle.current = { initializePage, listeners: [
+    ['socket-sales-row-created', onSocketRowCreated],
+    ['socket-sales-row-updated', onSocketRowUpdated],
+    ['socket-sales-row-deleted', onSocketRowDeleted],
+    ['socket-sales-rows-bulk-updated', onSocketRowsBulkUpdated],
+    ['socket-sales-rows-bulk-deleted', onSocketRowsBulkDeleted],
+    ['socket-sales-dropdown-updated', onSocketDropdownUpdated],
+    ['socket-sales-column-created', onSocketColumnCreated],
+    ['socket-sales-column-updated', onSocketColumnUpdated],
+    ['socket-sales-column-deleted', onSocketColumnDeleted],
+    ['socket-sales-rows-imported', onSocketRowsImported],
+    ['socket-sales-row-locked', onSocketRowLocked],
+    ['socket-sales-row-unlocked', onSocketRowUnlocked],
+    ['sales-permissions-updated', onPermsUpdate],
+    ['socket-sales-permissions-updated', onPermsUpdate],
+    ['socket-connected', onSocketConnected],
+    ['socket-sales-tab-created', onSocketTabCreated],
+    ['socket-sales-tab-updated', onSocketTabUpdated],
+    ['socket-sales-tab-deleted', onSocketTabDeleted],
+    ['socket-sales-tab-approved', onSocketTabApproved],
+    ['socket-sales-tab-ignored', onSocketTabIgnored],
+    ['socket-sales-tab-alert', onSocketTabAlert],
+    ['socket-sales-tab-unread-update', onSocketTabUnreadUpdate],
+  ] };
 
   // Render permissions check loader only if permissions are completely missing
   // But we want to show the shell ASAP, so we might skip this if we want instant shell.

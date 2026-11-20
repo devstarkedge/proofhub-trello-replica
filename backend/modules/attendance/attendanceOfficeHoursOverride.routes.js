@@ -1,3 +1,4 @@
+import { cachedBusinessJson } from '../../middleware/businessReadCache.js';
 import express from 'express';
 import { body } from 'express-validator';
 import { protect } from '../../middleware/authMiddleware.js';
@@ -11,8 +12,8 @@ const router = express.Router();
 router.use(protect);
 const gate = requireResourcePermission('attendance', 'manage_office_hours');
 
-router.get('/office-hours-overrides', gate, controller.list);
-router.get('/office-hours-overrides/history', gate, controller.history);
+router.get('/office-hours-overrides', gate, cachedBusinessJson('attendance', 'attendanceOfficeHoursOverride.routes.js:list', controller.list));
+router.get('/office-hours-overrides/history', gate, cachedBusinessJson('attendance', 'attendanceOfficeHoursOverride.routes.js:history', controller.history));
 router.post('/office-hours-overrides', gate,
   [
     body('scopeType').isIn(['ROLE', 'DEPARTMENT', 'USER']),

@@ -1,3 +1,4 @@
+import { businessReads } from '../../services/businessReadClient';
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, CalendarCheck, CalendarX, ChevronLeft, ChevronRight, Clock3, List, LogIn, LogOut, Monitor, Layers, Umbrella, Info, RefreshCw } from 'lucide-react';
 import AuthContext from '../../context/AuthContext';
@@ -74,7 +75,7 @@ export default function MyAttendanceOverview({ today, workspace, scope, children
     const identity = () => String(workspace?._id) === localStorage.getItem('workspaceId') && token === localStorage.getItem('token');
     const load = () => {
       const request = ++generation;
-      setHistory({ key: readKey, records: [], loading: true, error: '' });
+      setHistory(previous => ({ key: readKey, records: previous.key === readKey ? previous.records : [], loading: previous.key !== readKey || previous.loading, error: '' }));
       if (!userId || !range || !identity()) { setHistory({ key: readKey, records: [], loading: false, error: 'Personal attendance history is unavailable for the current session.' }); return; }
       // Explicitly request self through the existing API. No team, dashboard,
       // policy-management or role-dependent endpoint is used for this view.
@@ -90,9 +91,11 @@ export default function MyAttendanceOverview({ today, workspace, scope, children
       });
     };
     load();
+    let timer;
+    const refresh = () => { clearTimeout(timer); timer = setTimeout(load, 120); };
     const events = ['socket-attendance-checked-in', 'socket-attendance-checked-out', 'socket-attendance-missed-checkout', 'socket-attendance-updated', 'socket-attendance-regularization-decided', 'flowtask:tracking-refresh', 'tracking-local-change'];
-    events.forEach(event => window.addEventListener(event, load));
-    return () => { active = false; generation++; events.forEach(event => window.removeEventListener(event, load)); };
+    events.forEach(event => window.addEventListener(event, refresh));
+    return () => { clearTimeout(timer); active = false; generation++; events.forEach(event => window.removeEventListener(event, refresh)); };
   }, [readKey, userId, token, workspace?._id, range]);
 
   const ready = history.key === readKey;
@@ -156,10 +159,10 @@ export default function MyAttendanceOverview({ today, workspace, scope, children
         <section className="min-w-0 overflow-hidden rounded-2xl border shadow-sm" style={cardStyle} aria-label="Personal attendance history">
           <header className="flex flex-wrap items-center justify-between gap-3 border-b p-4 sm:p-5" style={{ borderColor: 'var(--color-border-subtle)' }}>
             <div className="flex items-center gap-2"><button type="button" aria-label="Previous attendance month" className={controlClass} style={controlStyle} onClick={() => setCalendarMonth(moveAttendanceMonth(month, -1))}><ChevronLeft size={16} /></button><h2 className="text-sm font-semibold">{attendanceDateLabel(`${month}-01`, { month: 'long', year: 'numeric' })}</h2><button type="button" aria-label="Next attendance month" className={controlClass} style={controlStyle} onClick={() => setCalendarMonth(moveAttendanceMonth(month, 1))}><ChevronRight size={16} /></button></div>
-            <div className="flex items-center gap-1.5"><button type="button" title="This month" className={controlClass} style={controlStyle} onClick={() => setCalendarMonth(currentDate.slice(0, 7))}>This month</button><button type="button" aria-label="Refresh personal history" className={controlClass} style={controlStyle} onClick={() => setRevision(value => value + 1)} disabled={loading}><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /></button></div>
+            <div className="flex items-center gap-1.5"><button type="button" title="This month" className={controlClass} style={controlStyle} onClick={() => setCalendarMonth(currentDate.slice(0, 7))}>This month</button><button type="button" aria-label="Refresh personal history" className={controlClass} style={controlStyle} onClick={() => { businessReads.clear('attendance', { fresh: true }); setRevision(value => value + 1); }} disabled={loading}><RefreshCw size={14} className={loading ? 'animate-spin' : ''} /></button></div>
             <div role="group" aria-label="Attendance history presentation" className="inline-flex rounded-lg border p-0.5" style={{ borderColor: 'var(--color-border-default)' }}>{[['calendar', CalendarDays, 'Calendar'], ['list', List, 'List']].map(([mode, icon, label]) => { const Icon = icon; return <button key={mode} type="button" aria-pressed={view === mode} className="inline-flex min-h-9 items-center gap-1.5 rounded-md px-3 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-border-focus)]" style={{ backgroundColor: view === mode ? 'var(--color-primary)' : 'transparent', color: view === mode ? 'var(--color-text-on-primary)' : 'var(--color-text-secondary)' }} onClick={() => setView(mode)}><Icon size={14} />{label}</button>; })}</div>
           </header>
-          {loading ? <div role="status" className="flex min-h-80 animate-pulse items-center justify-center gap-2 text-sm" style={mutedStyle}><RefreshCw className="h-4 w-4 animate-spin" />Loading your attendance…</div> : error ? <div role="alert" className="space-y-3 p-6 text-sm"><p>{error}</p><button type="button" className={controlClass} style={controlStyle} onClick={() => setRevision(value => value + 1)}>Retry history</button></div> : <>
+          {loading ? <div role="status" className="flex min-h-80 animate-pulse items-center justify-center gap-2 text-sm" style={mutedStyle}><RefreshCw className="h-4 w-4 animate-spin" />Loading your attendance…</div> : error ? <div role="alert" className="space-y-3 p-6 text-sm"><p>{error}</p><button type="button" className={controlClass} style={controlStyle} onClick={() => { businessReads.clear('attendance', { fresh: true }); setRevision(value => value + 1); }}>Retry history</button></div> : <>
             {view === 'calendar' ? <div className="p-3 sm:p-4" ref={grid} onKeyDown={navigateDay}>
               <div className="overflow-hidden rounded-xl border" style={{ borderColor: 'var(--color-border-default)' }}><div className="grid grid-cols-7 border-b py-3 text-center text-xs font-medium" style={{ backgroundColor: 'var(--color-bg-muted)', borderColor: 'var(--color-border-subtle)' }}>{weekdays.map(day => <span key={day}>{day}</span>)}</div>
                 <div className="grid grid-cols-7">{Array.from({ length: slots }, (_, slot) => {

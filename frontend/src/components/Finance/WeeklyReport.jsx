@@ -1,7 +1,8 @@
+import useFinanceRefresh from '../../hooks/useFinanceRefresh';
 import { formatLoggedMinutes } from '../../../../shared/loggedTimeCell.mjs';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Calendar, ChevronDown, ChevronRight, Users, FolderKanban, AlertCircle, RefreshCw } from 'lucide-react';
-import api from '../../services/api';
+import api from '../../services/financeApi';
 import ProjectWorkflowLink from './ProjectWorkflowLink';
 import BillingTypeFilter from './BillingTypeFilter';
 
@@ -12,6 +13,7 @@ import BillingTypeFilter from './BillingTypeFilter';
  */
 const WeeklyReport = ({ viewType = 'users' }) => {
   const [weeklyData, setWeeklyData] = useState([]);
+  const readController = useRef(null);
   const [monthlyTotals, setMonthlyTotals] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -28,7 +30,10 @@ const WeeklyReport = ({ viewType = 'users' }) => {
   ];
 
   // Fetch data from the new weekly API
-  const fetchData = async () => {
+  const fetchData = async (event) => {
+    if (event?.type === 'click') api.refresh();
+    readController.current?.abort();
+    const controller = new AbortController(); readController.current = controller;
     try {
       setLoading(true);
       setError(null);
@@ -40,7 +45,8 @@ const WeeklyReport = ({ viewType = 'users' }) => {
         billingType
       });
 
-      const response = await api.get(`/api/finance/weekly?${params.toString()}`);
+      const response = await api.get(`/api/finance/weekly?${params.toString()}`, { signal: controller.signal });
+      if (controller.signal.aborted) return;
 
       if (response.data.success) {
         setWeeklyData(response.data.data.weeks || []);
@@ -52,15 +58,19 @@ const WeeklyReport = ({ viewType = 'users' }) => {
         setExpandedWeeks(expanded);
       }
     } catch (err) {
+      if (controller.signal.aborted) return;
       console.error('Error fetching weekly report:', err);
       setError(err.message);
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   };
 
+  useFinanceRefresh(fetchData);
+
   useEffect(() => {
     fetchData();
+    return () => readController.current?.abort();
   }, [selectedMonth, selectedYear, currentViewType, billingType]);
 
   // Toggle week expansion

@@ -1,3 +1,4 @@
+import businessReadInvalidation from '../services/businessReadInvalidation.plugin.js';
 import mongoose from 'mongoose';
 import { WORKSPACE_TYPES, INDUSTRY_OPTIONS, COMPANY_SIZE_OPTIONS } from '../utils/workspaceOptions.js';
 
@@ -126,4 +127,5 @@ workspaceSchema.pre('validate', function (next) {
   next();
 });
 
+workspaceSchema.plugin(businessReadInvalidation, { workspaceField: '_id' });
 export default mongoose.model('Workspace', workspaceSchema);

@@ -1,4 +1,5 @@
 import express from 'express';
+import { businessReadFreshness } from '../../middleware/businessReadCache.js';
 import { protect } from '../../middleware/authMiddleware.js';
 import { requireModule } from '../hubspot/workspaceModules.js';
 import setupRoutes from './attendanceSetup.routes.js';
@@ -23,6 +24,7 @@ const router = express.Router();
 
 router.use('/', setupRoutes);
 router.use(protect, requireModule('attendance'));
+router.use(businessReadFreshness);
 router.use('/team', teamRoutes);
 router.use('/', selfRoutes);
 router.use('/', policyRoutes);

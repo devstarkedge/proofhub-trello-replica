@@ -1,4 +1,4 @@
-import { hasResourceAction } from '../permissions/permissionEngine.js';
+import { resolveResourceAccess } from '../permissions/permissionEngine.js';
 import { getManagedDepartmentIds, getManagedEmployeeIds } from '../organization/departmentScopeFacade.js';
 import { resolveDepartmentManagers, resolveActiveMembersByRole } from '../leave/leaveApprovalAudience.service.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
@@ -32,21 +32,14 @@ import { ErrorResponse } from '../../middleware/errorHandler.js';
 export async function resolveAttendanceAccess({ viewer, workspaceId }) {
   const viewerId = viewer._id || viewer.id;
 
-  const [
-    canViewWorkspace, canManagePolicy, canManageShifts, canManageLocations, canManageWorkModes,
-    canApproveWfh, canApproveRegularization, canCorrect, canViewReports, canViewAudit
-  ] = await Promise.all([
-    viewer.role === 'admin' ? true : hasResourceAction(viewer, 'attendance', 'view_workspace', workspaceId),
-    hasResourceAction(viewer, 'attendance', 'manage_policy', workspaceId),
-    hasResourceAction(viewer, 'attendance', 'manage_shifts', workspaceId),
-    hasResourceAction(viewer, 'attendance', 'manage_locations', workspaceId),
-    hasResourceAction(viewer, 'attendance', 'manage_work_modes', workspaceId),
-    hasResourceAction(viewer, 'attendance', 'approve_wfh', workspaceId),
-    hasResourceAction(viewer, 'attendance', 'approve_regularization', workspaceId),
-    hasResourceAction(viewer, 'attendance', 'correct_attendance', workspaceId),
-    hasResourceAction(viewer, 'attendance', 'view_reports', workspaceId),
-    hasResourceAction(viewer, 'attendance', 'view_audit', workspaceId)
-  ]);
+  // Resolve this resource once per access decision, preserving the existing
+  // Admin workspace-view rule and the central resolver's action semantics.
+  const { actions } = await resolveResourceAccess(viewer, 'attendance', workspaceId);
+  const canViewWorkspace = viewer.role === 'admin' || actions.view_workspace === true;
+  const canManagePolicy = actions.manage_policy === true, canManageShifts = actions.manage_shifts === true;
+  const canManageLocations = actions.manage_locations === true, canManageWorkModes = actions.manage_work_modes === true;
+  const canApproveWfh = actions.approve_wfh === true, canApproveRegularization = actions.approve_regularization === true;
+  const canCorrect = actions.correct_attendance === true, canViewReports = actions.view_reports === true, canViewAudit = actions.view_audit === true;
 
   const managementPermissions = { canManagePolicy, canManageShifts, canManageLocations, canManageWorkModes };
   const correctionPermissions = { canApproveWfh, canApproveRegularization, canCorrect };

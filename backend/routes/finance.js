@@ -1,4 +1,5 @@
 import express from 'express';
+import { businessReadFreshness, cachedBusinessJson } from '../middleware/businessReadCache.js';
 import { 
   getFinanceSummary,
   getUserFinanceData,
@@ -33,6 +34,7 @@ const router = express.Router();
 // Apply authentication and granular finance access to all routes
 router.use(protect);
 router.use(checkFinanceAccess);
+router.use(businessReadFreshness);
 
 // ============================================
 // CORE FINANCE DATA ROUTES
@@ -57,7 +59,7 @@ router.get('/weekly-report/year', requireFinancePermission('billingDetails'), ge
 router.get('/projects/:projectId/contributions', requireFinancePermission('billingDetails'), getUserContributions);
 
 // Get all departments for filtering
-router.get('/departments', getFinanceDepartments);
+router.get('/departments', cachedBusinessJson('finance', 'departments', getFinanceDepartments));
 
 // Get all filter options (departments, users, projects, billing types)
 router.get('/filters', getFinanceFilterOptions);

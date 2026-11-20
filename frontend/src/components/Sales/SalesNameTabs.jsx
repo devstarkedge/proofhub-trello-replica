@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow';
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { ChevronDown, Users } from 'lucide-react';
@@ -25,7 +26,12 @@ const getTabColor = (name) => {
 };
 
 const SalesNameTabs = () => {
-  const { uniqueNames, nameTab, setNameTab, pagination } = useSalesStore();
+  const { uniqueNames, nameTab, setNameTab, pagination } = useSalesStore(useShallow(state => ({
+    uniqueNames: state.uniqueNames,
+    nameTab: state.nameTab,
+    setNameTab: state.setNameTab,
+    pagination: state.pagination
+  })));
   const [showMore, setShowMore] = useState(false);
   const moreRef = useRef(null);
   const scrollRef = useRef(null);

@@ -1,3 +1,4 @@
+import { cachedBusinessJson } from '../middleware/businessReadCache.js';
 import express from 'express';
 import {
   getSalesRows,
@@ -41,20 +42,20 @@ router.use(checkSalesPermission);
 // ============================================
 
 // Get user's sales preferences (last-used defaults)
-router.get('/preferences', getPreferences);
+router.get('/preferences', cachedBusinessJson('sales', 'getPreferences', getPreferences));
 
 // Get intelligent suggestions for a field based on context
-router.post('/preferences/suggestions', getSuggestions);
+router.post('/preferences/suggestions', cachedBusinessJson('sales', 'getSuggestions', getSuggestions));
 
 // ============================================
 // SALES ROWS ROUTES
 // ============================================
 
 // Get all sales rows with filters/search
-router.get('/rows', getSalesRows);
+router.get('/rows', cachedBusinessJson('sales', 'getSalesRows', getSalesRows));
 
 // Get unique names for tabs/filters
-router.get('/names', getUniqueNames);
+router.get('/names', cachedBusinessJson('sales', 'getUniqueNames', getUniqueNames));
 
 // Export sales rows (requires canExport)
 router.get('/rows/export', requireSalesPermission('canExport'), exportRows);
@@ -69,7 +70,7 @@ router.post('/rows/bulk-update', requireSalesPermission('canUpdate'), bulkUpdate
 router.post('/rows/bulk-delete', requireSalesPermission('canDelete'), bulkDeleteRows);
 
 // Get single sales row
-router.get('/rows/:id', getSalesRowById);
+router.get('/rows/:id', cachedBusinessJson('sales', 'getSalesRowById', getSalesRowById));
 
 // Create new sales row (requires canCreate)
 router.post('/rows', requireSalesPermission('canCreate'), createSalesRow);
@@ -85,14 +86,14 @@ router.post('/rows/:id/lock', lockRow);
 router.post('/rows/:id/unlock', unlockRow);
 
 // Get activity log (requires canViewActivityLog)
-router.get('/rows/:id/activity', requireSalesPermission('canViewActivityLog'), getActivityLog);
+router.get('/rows/:id/activity', requireSalesPermission('canViewActivityLog'), cachedBusinessJson('sales', 'getActivityLog', getActivityLog));
 
 // ============================================
 // DROPDOWN MANAGEMENT ROUTES
 // ============================================
 
 // Get dropdown options for a column
-router.get('/dropdowns/:columnName', getDropdownOptions);
+router.get('/dropdowns/:columnName', cachedBusinessJson('sales', 'getDropdownOptions', getDropdownOptions));
 
 // Add dropdown option (requires canManageDropdowns)
 router.post('/dropdowns/:columnName', requireSalesPermission('canManageDropdowns'), addDropdownOption);
@@ -108,7 +109,7 @@ router.delete('/dropdowns/:columnName/:id', deleteDropdownOption);
 // ============================================
 
 // Get custom columns
-router.get('/columns', getCustomColumns);
+router.get('/columns', cachedBusinessJson('sales', 'getCustomColumns', getCustomColumns));
 
 // Create custom column (requires canManageDropdowns)
 router.post('/columns', requireSalesPermission('canManageDropdowns'), createCustomColumn);

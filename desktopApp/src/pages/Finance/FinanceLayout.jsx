@@ -17,7 +17,7 @@ import {
 import AuthContext from '../../context/AuthContext';
 import WorkspaceContext from '../../context/WorkspaceContext';
 import { registerResettable } from '../../store/resetRegistry';
-import api from '../../services/api';
+import api from '../../services/financeApi';
 import socketService from '../../services/socket';
 import { toast } from 'react-toastify';
 

@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow';
 import { useRef, useState, useCallback, useContext, memo, useEffect, useMemo } from 'react';
 import { formatSalesDate } from '../../utils/dateUtils';
 import { motion } from 'framer-motion';
@@ -408,7 +409,23 @@ const SalesTable = ({ onEditRow, onViewActivity, permissions, loading }) => {
     setSorting,
     columnWidths: persistedWidths = {},
     setColumnWidth,
-  } = useSalesStore();
+  } = useSalesStore(useShallow(state => ({
+    rows: state.rows,
+    customColumns: state.customColumns,
+    selectedRows: state.selectedRows,
+    toggleRowSelection: state.toggleRowSelection,
+    selectAllRows: state.selectAllRows,
+    clearSelection: state.clearSelection,
+    pagination: state.pagination,
+    goToPage: state.goToPage,
+    deleteRow: state.deleteRow,
+    lockedRows: state.lockedRows,
+    sortBy: state.sortBy,
+    sortOrder: state.sortOrder,
+    setSorting: state.setSorting,
+    columnWidths: state.columnWidths,
+    setColumnWidth: state.setColumnWidth
+  })));
 
   /* Live drag state (not persisted until mouseup) */
   const [dragState, setDragState] = useState(null);          // { key, startX, startWidth }

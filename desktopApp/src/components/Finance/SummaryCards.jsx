@@ -1,3 +1,4 @@
+import useFinanceRefresh from '../../hooks/useFinanceRefresh';
 import { formatLoggedMinutes } from '../../../../shared/loggedTimeCell.mjs';
 import { useState, useEffect, useRef } from 'react';
 import {
@@ -9,7 +10,7 @@ import {
   TrendingUp,
   RefreshCw
 } from 'lucide-react';
-import api from '../../services/api';
+import api from '../../services/financeApi';
 import ProjectWorkflowLink from './ProjectWorkflowLink';
 
 /**
@@ -25,7 +26,8 @@ const SummaryCards = ({ filters = {}, onCardClick, summaryOverride = null, summa
   const managed = Boolean(summaryState);
 
   // Fetch summary data
-  const fetchSummary = async () => {
+  const fetchSummary = async (event) => {
+    if (event?.type === 'click') api.refresh();
     readController.current?.abort();
     const controller = new AbortController();
     readController.current = controller;
@@ -58,6 +60,8 @@ const SummaryCards = ({ filters = {}, onCardClick, summaryOverride = null, summa
     if (!managed) fetchSummary();
     return () => readController.current?.abort();
   }, [filters.startDate, filters.endDate, filters.departmentId, filters.billingType, managed]);
+
+  useFinanceRefresh(() => { if (!managed) fetchSummary(); }, !managed);
 
   // Format currency
   const formatCurrency = (amount) => {

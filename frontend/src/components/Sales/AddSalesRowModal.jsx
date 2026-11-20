@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow';
 import React, { useEffect, useContext, useCallback, useRef, useState, useMemo } from 'react';
 import { X, Calendar, AlertCircle, ChevronDown, Search, Check, Briefcase, Users, Calculator, Activity, LayoutGrid, MessageSquare, Keyboard } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
@@ -529,7 +530,12 @@ NotesSection.displayName = 'NotesSection';
 // Main Modal Component
 // ────────────────────────────────────────────────────────────
 const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
-  const { createRow, updateRow, dropdownOptions, customColumns, fetchCustomColumns } = useSalesStore();
+  const { createRow, updateRow, dropdownOptions, customColumns } = useSalesStore(useShallow(state => ({
+    createRow: state.createRow,
+    updateRow: state.updateRow,
+    dropdownOptions: state.dropdownOptions,
+    customColumns: state.customColumns
+  })));
   const { user } = useContext(AuthContext);
   const { defaults: prefDefaults, getSuggestionsForField, clearCache: clearSuggestionCache } = useSalesPreferences();
   const isEdit = Boolean(editingRow);
@@ -713,7 +719,6 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
 
   // Initialize form on mount / edit change
   useEffect(() => {
-    fetchCustomColumns();
     if (isEdit && editingRow) {
       const base = { ...defaultValues, ...convertRowForForm(editingRow) };
       if (customColumns?.length) {
@@ -743,7 +748,7 @@ const AddSalesRowModal = ({ isOpen, onClose, editingRow }) => {
       }
       reset(base);
     }
-  }, [isEdit, editingRow, reset, fetchCustomColumns, customColumns.length]);
+  }, [isEdit, editingRow, reset]);
 
   // Keep form in sync when customColumns change while modal is open
   useEffect(() => {

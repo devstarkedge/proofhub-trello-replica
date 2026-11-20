@@ -1,3 +1,4 @@
+import businessReadInvalidation from '../services/businessReadInvalidation.plugin.js';
 import mongoose from 'mongoose';
 import reportingDirectoryInvalidation from '../services/chat/reportingDirectoryInvalidation.plugin.js';
 import { isValidPassword, PASSWORD_POLICY_MESSAGE } from '../utils/passwordPolicy.js';
@@ -274,4 +275,5 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
 };
 
 userSchema.plugin(reportingDirectoryInvalidation, { userIdentity: true, fields: ['name', 'isActive'] });
+userSchema.plugin(businessReadInvalidation, { userIdentity: true });
 export default mongoose.model('User', userSchema);
