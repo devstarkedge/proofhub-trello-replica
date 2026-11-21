@@ -1,3 +1,4 @@
+import { recoverTaskImports } from './taskImportWorker.js';
 import { recoverPendingAnnouncementDeliveries } from '../schedulers/announcementScheduler.js';
 import { processAllAttendanceEvents } from '../modules/attendance/attendanceEvents.service.js';
 import { processFileDeletionJobs } from '../services/fileDeletionJobs.js';
@@ -21,6 +22,7 @@ import config from '../config/index.js';
 
 const JOB_HANDLERS = {
   async 'cleanup-file-jobs'() {
+    await recoverTaskImports();
     try { await recoverPendingAnnouncementDeliveries(); }
     catch (error) { console.warn('[Announcement] Pending delivery will retry:', error.message); }
     return processFileDeletionJobs();

@@ -1,3 +1,4 @@
+import { startTaskImportWorker, getTaskImportWorker, recoverTaskImports } from '../workers/taskImportWorker.js';
 /**
  * Queue Manager
  *
@@ -92,7 +93,7 @@ export async function initQueues() {
       _accepting = true;
       // Both backends run the same processors, concurrency limits and schedules.
       const workers = [
-        startHubSpotWorker(),
+        startTaskImportWorker(), startHubSpotWorker(),
         startEmailWorker(), startNotificationWorker(), startActivityWorker(),
         startAnnouncementWorker(), startCleanupWorker(), startRecurringTaskWorker(),
         startSlackWorker(), startLeaveWorker(), startChatWebhookWorker(), startSalesAlertWorker(),
@@ -103,7 +104,7 @@ export async function initQueues() {
       await registerLeaveMaintenanceJobs();
       await registerAttendanceMaintenanceJobs();
       const recovery = await Promise.allSettled([
-        recoverHubSpotWork(),
+        recoverTaskImports(), recoverHubSpotWork(),
         recoverAnnouncementSchedules(), recoverRecurringSchedules(), recoverReminderSchedules(),
         recoverSlackBatchSchedules(), recoverSlackDigestSchedules(), recoverCardDueDateSchedules(),
         recoverLeaveApprovalReminderSchedules(),
@@ -128,7 +129,7 @@ export function isQueueActive() {
 export async function shutdownQueues() {
   _accepting = false;
   const workers = [
-    getHubSpotWorker(),
+    getTaskImportWorker(), getHubSpotWorker(),
     getEmailWorker(), getNotificationWorker(), getActivityWorker(), getAnnouncementWorker(),
     getCleanupWorker(), getRecurringTaskWorker(), getSalesAlertWorker(),
     getChatWebhookWorker(), getSlackWorker(), getLeaveWorker(),

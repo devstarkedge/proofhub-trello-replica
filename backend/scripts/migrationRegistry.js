@@ -1,3 +1,4 @@
+import { runTaskImportMigration } from './migrateTaskImport.js';
 import { runActivityCheckoutIndexMigration, runSmartCheckoutMigration } from './migrateSmartCheckout.js';
 import { runAttendanceReportingMigration } from './migrateAttendanceReporting.js';
 import { runLeaveReportingMigration } from './migrateLeaveReporting.js';
@@ -124,6 +125,7 @@ const MIGRATIONS = [
   { name: 'attendance_chat_reporting', version: '20261029', description: 'Add durable attendance reporting delivery and directory lease indexes', run: runAttendanceReportingMigration },
   { name: 'approved_leave_reporting', version: '20261029', description: 'Add durable daily leave reporting delivery indexes', run: runLeaveReportingMigration },
   { name: 'attendance_activity_checkout_index', version: '20261111', description: 'Index active attendance sessions by inactivity deadline', run: runActivityCheckoutIndexMigration },
+  { name: 'task_import_indexes', version: '20261121', description: 'Add durable project import progress, recovery and duplicate prevention indexes', run: runTaskImportMigration },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

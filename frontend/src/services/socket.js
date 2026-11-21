@@ -598,6 +598,10 @@ class SocketService {
     });
 
     // Announcement events
+    this.socket.on('task-import-progress', (data) => {
+      window.dispatchEvent(new CustomEvent('socket-task-import-progress', { detail: data }));
+    });
+
     this.socket.on('announcement-created', (data) => {
       if (import.meta.env.DEV) console.log('Announcement created:', data);
       window.dispatchEvent(new CustomEvent('socket-announcement-created', { detail: data }));

@@ -16,6 +16,7 @@ const WorkflowHeader = memo(({
   onNavigateBack,
   onEditProject,
   onProjectMemberAdded,
+  onTaskImport,
   onDownloadCSV,
   onShowFields,
   onTrash,
@@ -157,6 +158,8 @@ const WorkflowHeader = memo(({
 
             {/* 3-Dot Enterprise Menu */}
             <WorkflowMenu
+              onTaskImport={onTaskImport}
+              canImportTasks={board.canImportTasks === true}
               onDownloadCSV={onDownloadCSV}
               onShowFields={onShowFields}
               onTrash={onTrash}

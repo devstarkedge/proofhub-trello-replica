@@ -1,6 +1,6 @@
 import { memo, useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MoreHorizontal, Download, Eye, Trash2, RefreshCw, Archive, X } from 'lucide-react';
+import { MoreHorizontal, Download, Eye, Trash2, RefreshCw, Archive, Upload, X } from 'lucide-react';
 
 const menuItems = [
   { id: 'csv', label: 'Download CSV', sublabel: 'Export project report', icon: Download, iconBg: 'bg-emerald-50', iconColor: 'text-emerald-600', hoverGradient: 'rgba(16, 185, 129, 0.08)' },
@@ -11,6 +11,8 @@ const menuItems = [
 ];
 
 const WorkflowMenu = memo(({
+  onTaskImport,
+  canImportTasks,
   onDownloadCSV,
   onShowFields,
   onTrash,
@@ -45,13 +47,14 @@ const WorkflowMenu = memo(({
   const handleAction = useCallback((id) => {
     setIsOpen(false);
     switch (id) {
+      case 'import': onTaskImport?.(); break;
       case 'csv': onDownloadCSV?.(); break;
       case 'fields': onShowFields?.(); break;
       case 'trash': onTrash?.(); break;
       case 'recurring': onRecurringTasks?.(); break;
       case 'archive': onArchiveToggle?.(); break;
     }
-  }, [onDownloadCSV, onShowFields, onTrash, onRecurringTasks, onArchiveToggle]);
+  }, [onTaskImport, onDownloadCSV, onShowFields, onTrash, onRecurringTasks, onArchiveToggle]);
 
   return (
     <div className="relative">
@@ -120,7 +123,7 @@ const WorkflowMenu = memo(({
 
             {/* Menu items */}
             <div className="px-2 pb-2 space-y-0.5">
-              {menuItems.map((item) => {
+              {[...menuItems.slice(0, 1), ...(canImportTasks ? [{ id: 'import', label: 'Task Import', sublabel: 'Import tasks from Excel', icon: Upload, iconBg: 'bg-purple-50', iconColor: 'text-purple-600', hoverGradient: 'rgba(139, 92, 246, 0.08)' }] : []), ...menuItems.slice(1)].map((item) => {
                 const Icon = item.icon;
                 const label = item.dynamicLabel && showArchived ? 'Show Active' : item.label;
                 const sublabel = item.dynamicLabel && showArchived ? 'Exit archive view' : item.sublabel;

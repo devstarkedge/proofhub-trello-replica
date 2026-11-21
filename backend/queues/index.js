@@ -55,6 +55,12 @@ export const salesAlertQueue = createQueue('flowtask.sales-alert');
 /** Leave accrual/expiry sweeps + per-approval reminder/escalation jobs */
 export const leaveQueue = createQueue('flowtask.leave');
 
+/** Durable Mongo-backed task import batches; Redis contains scheduling only. */
+export const taskImportQueue = createQueue('flowtask.task-import', {
+  attempts: 3, backoff: { type: 'exponential', delay: 5000 },
+  removeOnComplete: true, removeOnFail: { count: 50, age: 24 * 3600 },
+});
+
 // ─── Convenience: add jobs ────────────────────────────────────────────────────
 
 /**
@@ -161,6 +167,7 @@ export function enqueueSalesTabReconcile(tabId, opts = {}) {
 // ─── Export all queues for health checks / shutdown ───────────────────────────
 
 export const allQueues = [
+  taskImportQueue,
   hubspotQueue,
   chatWebhookQueue,
   emailQueue,

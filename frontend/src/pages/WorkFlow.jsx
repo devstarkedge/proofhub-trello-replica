@@ -21,6 +21,7 @@ import { WorkflowSkeleton } from '../components/LoadingSkeleton';
 import { toast } from 'react-toastify';
 import AllRecurringTasksPage from './AllRecurringTasksPage';
 
+import TaskImportModal from '../components/workflow/TaskImportModal';
 import WorkflowHeader from '../components/workflow/WorkflowHeader';
 import ShowFieldsPanel from '../components/workflow/ShowFieldsPanel';
 import FilterPanel from '../components/workflow/FilterPanel';
@@ -89,6 +90,7 @@ const WorkFlow = memo(() => {
   const [archivedCardsByList, setArchivedCardsByList] = useState({});
   const [loadingArchived, setLoadingArchived] = useState(false);
   const [highlightedEntityId, setHighlightedEntityId] = useState(null);
+  const [showTaskImport, setShowTaskImport] = useState(false);
   const [showFieldsPanel, setShowFieldsPanel] = useState(false);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [boardLabels, setBoardLabels] = useState([]);
@@ -146,6 +148,7 @@ const WorkFlow = memo(() => {
        setShareAutoOpened(false);
        setShowRecurringPage(false);
        setShowArchived(false);
+       setShowTaskImport(false);
        setShowFieldsPanel(false);
        setShowFilterPanel(false);
        setBoardLabels([]);
@@ -983,6 +986,7 @@ useEffect(() => {
         onNavigateBack={handleNavigateBack}
         onEditProject={handleOpenEditModal}
         onProjectMemberAdded={handleProjectMemberAdded}
+        onTaskImport={() => setShowTaskImport(true)}
         onDownloadCSV={handleDownloadCSV}
         onShowFields={() => {
           setShowFieldsPanel(prev => !prev);
@@ -993,6 +997,11 @@ useEffect(() => {
         onArchiveToggle={() => setShowArchived(prev => !prev)}
         showArchived={showArchived}
       />
+
+      {showTaskImport && board.canImportTasks === true && <TaskImportModal
+        key={JSON.stringify([projectId, user?._id || user?.id, localStorage.getItem('workspaceId'), resetRevision])}
+        board={board} departmentId={deptId} onClose={() => setShowTaskImport(false)}
+      />}
 
       {/* Show Fields Panel */}
       <ShowFieldsPanel

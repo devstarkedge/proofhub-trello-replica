@@ -1,3 +1,4 @@
+import { authorizeTaskImport } from '../services/taskImportAccess.js';
 import { resourceReadFilter } from '../services/resourceReadFilter.js';
 import { deleteResource } from '../services/resourceDeletion.js';
 import { boundedInteger, pageNumber } from '../utils/pagination.js';
@@ -133,6 +134,13 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
     }
   }
 
+  board.canImportTasks = false;
+  try {
+    await authorizeTaskImport(req, projectId, null, project);
+    board.canImportTasks = true;
+  } catch (error) {
+    if (![403, 404].includes(error.statusCode)) throw error;
+  }
   const listIds = lists.map(l => l._id);
   const cardFilter = { $and: [{ list: { $in: listIds }, isArchived: false }, await resourceReadFilter(req, 'task', projectId)] };
   const cards = await Card.find(cardFilter)

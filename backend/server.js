@@ -1,3 +1,4 @@
+import taskImportRoutes from './routes/taskImports.js';
 import { startPendingPointWorkers, stopPendingPointWorkers } from './services/pendingPointWorkers.js';
 import express from 'express';
 import mongoose from 'mongoose';
@@ -212,6 +213,7 @@ app.use('/api/authz', authzRoutes);
 app.use('/api/boards', boardsRoutes);
 app.use('/api/lists', listsRoutes);
 app.use('/api/cards', cardsRoutes);
+app.use('/api/departments/:departmentId/projects/:projectId/task-imports', taskImportRoutes);
 app.use('/api/teams', teamsRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/categories', categoryRoutes);

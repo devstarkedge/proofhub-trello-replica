@@ -1,3 +1,4 @@
+import { createProjectTask } from '../services/taskCreation.js';
 import { resourceReadFilter } from '../services/resourceReadFilter.js';
 import { workspaceMembershipDepartmentStages, scopeWorkspaceLookups } from '../utils/workspaceAggregation.js';
 import { copyTaskHierarchy } from '../services/taskCopy.js';
@@ -783,139 +784,9 @@ export const getCard = asyncHandler(async (req, res, next) => {
 // @desc    Create card
 // @route   POST /api/cards
 // @access  Private
-export const createCard = asyncHandler(async (req, res, next) => {
-  await authorizeProjectResource(req, 'project', req.body.board, 'task.create');
-  prepareTaskCreation(req);
-  if (req.body.description) req.body.description = sanitizeHtml(req.body.description);
-  const {
-    title,
-    description,
-    list,
-    board,
-    assignee,
-    assignees: assigneesFromBody,
-    members,
-    labels,
-    priority,
-    dueDate,
-    startDate,
-    position,
-  } = req.body;
-
-  const resolvedAssignees = Array.isArray(assigneesFromBody)
-    ? assigneesFromBody
-    : assignee
-      ? [assignee]
-      : [];
-
-  // Get the list and count cards in parallel
-  const [cardList, cardCount] = await Promise.all([
-    List.findById(list).lean(),
-    position === undefined || position === null ? Card.countDocuments({ list }) : Promise.resolve(position)
-  ]);
-  
-  if (!cardList) {
-    return next(new ErrorResponse("List not found", 404));
-  }
-
-  if (String(cardList.board) !== String(board)) {
-    return next(new ErrorResponse('List does not belong to the project', 400));
-  }
-
-  const card = await Card.create({
-    title,
-    description,
-    list,
-    board,
-    assignees: resolvedAssignees,
-    members: members || [],
-    labels: labels || [],
-    priority,
-    dueDate,
-    startDate,
-    status: cardList.title.toLowerCase().replace(/\s+/g, '-'),
-    position: cardCount,
-    createdBy: req.user.id,
-  });
-
-  // Log activity
-  await Activity.create({
-    type: "card_created",
-    description: `Created card "${title}"`,
-    user: req.user.id,
-    board,
-    card: card._id,
-    list,
-    contextType: 'task'
-  });
-
-  // Emit real-time update to board
-  emitToBoard(board, 'card-created', {
-    card,
-    listId: list,
-    createdBy: {
-      id: req.user.id,
-      name: req.user.name
-    }
-  });
-
-  // Dispatch chat webhook for task creation (always, regardless of assignees)
-  const boardData = await Board.findById(board).select('name department').lean();
-  chatHooks.onTaskCreated(card, boardData, req.user).catch(console.error);
-
-  // Send notifications using the notification service
-  if (resolvedAssignees.length > 0) {
-    await notificationService.notifyTaskAssigned(card, resolvedAssignees, req.user.id);
-
-    // Send Slack notifications for task assignment
-    slackHooks.onTaskAssigned(card, boardData, resolvedAssignees, req.user).catch(console.error);
-
-    // Dispatch chat webhook for task assignment
-    chatHooks.onTaskAssigned(card, resolvedAssignees, boardData, req.user).catch(console.error);
-  }
-
-  // Notify all members
-  if (members && members.length > 0) {
-    const boardData2 = boardData || await Board.findById(board).select('name department').lean();
-    const memberDeptId = boardData2?.department || null;
-    for (const memberId of members) {
-      if (memberId.toString() !== req.user.id && memberId.toString() !== assignee?.toString()) {
-        await notificationService.createNotification({
-          type: "member_added",
-          title: "Added to Task",
-          message: `${req.user.name} added you to "${title}"`,
-          user: memberId,
-          sender: req.user.id,
-          relatedCard: card._id,
-          relatedBoard: board,
-          departmentId: memberDeptId,
-          projectId: board,
-          taskId: card._id,
-          metadata: {
-            departmentId: memberDeptId,
-            projectId: board,
-            taskId: card._id,
-            url: memberDeptId ? `/workflow/${memberDeptId}/${board}/${card._id}` : null
-          }
-        });
-      }
-    }
-  }
-
-  const populatedCard = await Card.findById(card._id)
-    .populate('assignees', 'name email avatar')
-    .populate("members", "name email avatar")
-    .populate("createdBy", "name email avatar")
-    .lean();
-
-  if (card.dueDate) {
-    scheduleDueDateJobs(card).catch(console.error);
-  }
-
-  res.status(201).json({
-    success: true,
-    data: populatedCard,
-  });
+export const createCard = asyncHandler(async (req, res) => {
+  const data = await createProjectTask(req);
+  res.status(201).json({ success: true, data });
 });
 
 // @desc    Update card
