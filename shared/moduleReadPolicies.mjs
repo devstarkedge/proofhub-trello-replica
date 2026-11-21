@@ -78,6 +78,8 @@ export const attendanceReadPolicy = {
   serverTtl: kind => /\.routes\.js:/.test(kind) ? 30000 : 15000,
   eventResources(type) {
     if (/attendance|leave|calendar/.test(type)) return this.resources;
+    // Screenshot delivery and device telemetry do not change work durations.
+    if (/^tracking:(screenshot|activity|device|heartbeat)/.test(type)) return [];
     return /tracking/.test(type) ? ['reports'] : [];
   },
   mutationResources() { return this.resources; }

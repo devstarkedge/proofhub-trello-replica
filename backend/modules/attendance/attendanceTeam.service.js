@@ -93,7 +93,7 @@ async function prepare({ viewer, workspaceId, query = {}, now = new Date(), hist
   if (q.userId) assertCanViewUser(access, viewer._id || viewer.id, q.userId);
   if (q.departmentId) assertCanViewDepartment(access, q.departmentId);
   const departmentFilter = { workspaceId, ...(access.scope === 'workspace' ? {} : { _id: { $in: access.allowedDepartmentIds } }) };
-  const roster = await businessCaches.attendance.read({ workspaceId, viewerId: viewer._id || viewer.id, kind: 'team-roster',
+  const [roster, workAccess] = await Promise.all([businessCaches.attendance.read({ workspaceId, viewerId: viewer._id || viewer.id, kind: 'team-roster',
     query: { startDate: q.startDate, endDate: q.endDate, userId: q.userId, departmentId: q.departmentId, search: q.search, historicalSubject, today: DateTime.fromJSDate(now).setZone(timezone).toISODate() },
     access: { access, role: viewer.role, roleId: viewer.roleId, timezone }, ttlMs: 15000 }, async () => {
     const [departments, members, profiles, policy, attendanceHistory, leaveHistory] = await Promise.all([
@@ -139,13 +139,12 @@ async function prepare({ viewer, workspaceId, query = {}, now = new Date(), hist
     const expectedDates = q.startDate > through ? 0 : Math.round(DateTime.fromISO(through).diff(DateTime.fromISO(q.startDate), 'days').days) + 1;
     const breakWindows = q.endDate >= today ? await readRecentWorkBreakWindows(workspaceId, now) : [];
     return { today, expectedDates, subjects, departments, breakWindows };
-  });
-  // Attendance access does not grant Tracking access. Rebuild the Tracking
-  // fingerprint before every cached report hit, including expiring overrides.
-  const workAccess = await resolveAttendanceWorkAccess(workspaceId, viewer).catch(error => {
+  }), resolveAttendanceWorkAccess(workspaceId, viewer).catch(error => {
     if ([403, 404].includes(error.statusCode)) return null;
     throw error;
-  });
+  })]);
+  // Attendance access does not grant Tracking access. Rebuild the Tracking
+  // fingerprint before every cached report hit, including expiring overrides.
   const workFingerprint = workAccess ? trackingAccessFingerprint(workAccess.ctx, workAccess.scope) : 'tracking-unavailable';
   const breakWindows = roster.breakWindows.map(window => ({ ...window, startsAt: new Date(window.startsAt), endsAt: new Date(window.endsAt) }));
   return { viewer, workspaceId, workspace, access, q, timezone, now, ...roster, breakWindows, workAccess, workFingerprint };
@@ -216,23 +215,8 @@ function summarizedPipeline(ctx) {
   ];
 }
 
-async function summaryRows(ctx, {includeWork=false}={}) {
-  const groups = ctx.subjects.length ? await AttendanceDay.aggregate(summarizedPipeline(ctx)).option(queryOptions) : [];
-  const groupMap = new Map(groups.map(g => [id(g), g]));
-  const rows = ctx.subjects.map(subject => serializeTeamRow({ ...subject, ...groupMap.get(id(subject.user)) }, ctx.expectedDates))
-    .filter(row => !(ctx.q.status || ctx.q.workMode) || row.recordedDays > 0);
-  const work = await readAttendanceWork({ ...ctx, userIds: rows.map(row => row.user._id), startDate: ctx.q.startDate, endDate: ctx.q.endDate });
-  let matches = null;
-  if (ctx.q.status || ctx.q.workMode) {
-    const pipeline = teamDayPipeline({ ...ctx, userIds: rows.map(row => row.user._id), startDate: ctx.q.startDate, endDate: ctx.q.endDate });
-    pipeline.push({ $match: { ...(ctx.q.status ? { displayStatus: ctx.q.status } : {}), ...(ctx.q.workMode ? { workMode: ctx.q.workMode } : {}) } }, { $project: { user: 1, workDateKey: 1 } });
-    matches = new Set((await AttendanceDay.aggregate(pipeline).option(queryOptions)).map(day => id(day.user) + ':' + day.workDateKey));
-  }
-  for (const row of rows) {
-    const entries = [...work].filter(([key]) => key.startsWith(id(row.user) + ':') && (!matches || matches.has(key))).map(([, value]) => value);
-    row.workSeconds = entries.length && entries.every(value => value.seconds != null) ? entries.reduce((total, value) => total + value.seconds, 0) : null;
-  }
-  const { sort, direction } = ctx.q, sign = direction === 'asc' ? 1 : -1;
+function sortTeamRows(rows, query) {
+  const { sort, direction } = query, sign = direction === 'asc' ? 1 : -1;
   const value = row => {
     if (sort === 'department') return row.departments.map(d => d.name).join(', ');
     if (sort === 'attendanceRate') return row.attendanceRate.value ?? row.attendanceRate.recorded?.value;
@@ -244,16 +228,41 @@ async function summaryRows(ctx, {includeWork=false}={}) {
     if (bv == null && av != null) return -1;
     return (typeof av === 'string' ? av.localeCompare(bv || '', undefined, { sensitivity: 'base' }) : (av || 0) - (bv || 0)) * sign || id(a.user).localeCompare(id(b.user));
   });
+}
+
+async function summaryRows(ctx, {includeWork=false}={}) {
+  // Default overview needs both independent sources; overlap their round trips.
+  // Filtered reports keep the existing narrowed owner list for tracked work.
+  const [groups, prefetchedWork] = await Promise.all([
+    ctx.subjects.length ? AttendanceDay.aggregate(summarizedPipeline(ctx)).option(queryOptions) : [],
+    !ctx.q.status && !ctx.q.workMode ? readAttendanceWork({ ...ctx, userIds: ctx.subjects.map(subject => subject.user._id), startDate: ctx.q.startDate, endDate: ctx.q.endDate }) : null
+  ]);
+  const groupMap = new Map(groups.map(g => [id(g), g]));
+  const rows = ctx.subjects.map(subject => serializeTeamRow({ ...subject, ...groupMap.get(id(subject.user)) }, ctx.expectedDates))
+    .filter(row => !(ctx.q.status || ctx.q.workMode) || row.recordedDays > 0);
+  const work = prefetchedWork || await readAttendanceWork({ ...ctx, userIds: rows.map(row => row.user._id), startDate: ctx.q.startDate, endDate: ctx.q.endDate });
+  let matches = null;
+  if (ctx.q.status || ctx.q.workMode) {
+    const pipeline = teamDayPipeline({ ...ctx, userIds: rows.map(row => row.user._id), startDate: ctx.q.startDate, endDate: ctx.q.endDate });
+    pipeline.push({ $match: { ...(ctx.q.status ? { displayStatus: ctx.q.status } : {}), ...(ctx.q.workMode ? { workMode: ctx.q.workMode } : {}) } }, { $project: { user: 1, workDateKey: 1 } });
+    matches = new Set((await AttendanceDay.aggregate(pipeline).option(queryOptions)).map(day => id(day.user) + ':' + day.workDateKey));
+  }
+  for (const row of rows) {
+    const entries = [...work].filter(([key]) => key.startsWith(id(row.user) + ':') && (!matches || matches.has(key))).map(([, value]) => value);
+    row.workSeconds = entries.length && entries.every(value => value.seconds != null) ? entries.reduce((total, value) => total + value.seconds, 0) : null;
+  }
+  sortTeamRows(rows, ctx.q);
   return includeWork ? {rows, work} : rows;
 }
 
 export async function getTeamAttendance(args) {
   const ctx = await prepare(args);
   // Page navigation reuses the authorized period calculation, not just one page.
-  const { page: _page, pageSize: _size, ...periodQuery } = ctx.q;
+  const { page: _page, pageSize: _size, sort: _sort, direction: _direction, ...periodQuery } = ctx.q;
   const snapshot = await businessCaches.attendance.read({ workspaceId: ctx.workspaceId, viewerId: ctx.viewer._id || ctx.viewer.id, kind: 'team-summary',
     query: { ...periodQuery, today: ctx.today }, access: { work: ctx.workFingerprint, access: ctx.access, role: ctx.viewer.role, roleId: ctx.viewer.roleId, subjects: ctx.subjects.map(subject => id(subject.user)) }, ttlMs: 15000 }, async () => ({ rows: await summaryRows(ctx), asOf: ctx.now }));
-  const rows = snapshot.rows;
+  const rows = [...snapshot.rows];
+  sortTeamRows(rows, ctx.q);
   const totals = emptyTotals();
   totals.totalMembers = rows.length;
   for (const row of rows) {

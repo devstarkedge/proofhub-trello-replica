@@ -6,9 +6,20 @@ export function createScopedReadCache({ storage, ttlMs = 30000, maxEntries = 12,
   let revision = 0;
   return {
     clear() { revision++; entries.clear(); },
+    peek(key, { staleMs = 0 } = {}) {
+      const scope = captureRequestScope(storage);
+      const entry = entries.get(`${requestScopeKey(scope)}:${key}`);
+      if (!entry?.expiresAt || entry.expiresAt + staleMs <= now()) return null;
+      assertRequestScope(storage, scope);
+      return { value: entry.value, stale: entry.expiresAt <= now() };
+    },
     deletePending(key, scope = captureRequestScope(storage)) {
       const cacheKey = `${requestScopeKey(scope)}:${key}`;
-      if (entries.get(cacheKey)?.flight) entries.delete(cacheKey);
+      const entry = entries.get(cacheKey);
+      if (entry?.flight) {
+        if (entry.expiresAt) entries.set(cacheKey, { value: entry.value, expiresAt: entry.expiresAt });
+        else entries.delete(cacheKey);
+      }
     },
     read(key, load, { force = false, ttlMs: readTtlMs = ttlMs, expiresAt } = {}) {
       const scope = captureRequestScope(storage);
@@ -20,7 +31,9 @@ export function createScopedReadCache({ storage, ttlMs = 30000, maxEntries = 12,
         return existing.value;
       });
       const generation = revision;
-      const entry = {};
+      // Keep a bounded previous display snapshot available during revalidation.
+      // It never counts as a fresh read and clear() removes it immediately.
+      const entry = existing?.expiresAt ? { value: existing.value, expiresAt: existing.expiresAt } : {};
       entries.delete(cacheKey);
       while (entries.size >= maxEntries) entries.delete(entries.keys().next().value);
       entries.set(cacheKey, entry);

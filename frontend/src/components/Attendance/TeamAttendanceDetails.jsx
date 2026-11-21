@@ -25,12 +25,12 @@ export default function TeamAttendanceDetails({ userId, query, revision, timezon
   const [showLegend, setShowLegend] = useState(false);
   const [retry, setRetry] = useState(0), root = useRef(null), grid = useRef(null), focusDate = useRef(null);
   const loadMonth = useCallback(signal => attendanceApi.getTeamAttendanceMonth(userId, month, { departmentId: query.departmentId }, signal), [userId, month, query.departmentId]);
-  const monthRead = useTeamRead(JSON.stringify([userId, month, query.departmentId, revision, retry]), loadMonth, identity, JSON.stringify([userId, month, query.departmentId]));
+  const monthRead = useTeamRead(JSON.stringify([userId, month, query.departmentId, revision, retry]), loadMonth, identity, JSON.stringify([userId, month, query.departmentId]), attendanceApi.peekTeamAttendanceMonth(userId, month, { departmentId: query.departmentId }));
   const loadDay = useCallback(signal => attendanceApi.getTeamAttendanceDay(userId, selectedDate, { departmentId: query.departmentId }, signal), [userId, selectedDate, query.departmentId]);
-  const dayRead = useTeamRead(JSON.stringify([userId, selectedDate, query.departmentId, revision, retry]), loadDay, identity, JSON.stringify([userId, selectedDate, query.departmentId]));
+  const dayRead = useTeamRead(JSON.stringify([userId, selectedDate, query.departmentId, revision, retry]), loadDay, identity, JSON.stringify([userId, selectedDate, query.departmentId]), attendanceApi.peekTeamAttendanceDay(userId, selectedDate, { departmentId: query.departmentId }));
   const monthQuery = useMemo(() => teamAttendanceMonthQuery(query, userId, month), [query, userId, month]);
   const loadSummary = useCallback(signal => attendanceApi.getTeamAttendance(monthQuery, signal), [monthQuery]);
-  const summaryRead = useTeamRead(JSON.stringify([monthQuery, revision, retry]), loadSummary, identity, JSON.stringify(monthQuery)), summary = summaryRead.data?.rows?.[0];
+  const summaryRead = useTeamRead(JSON.stringify([monthQuery, revision, retry]), loadSummary, identity, JSON.stringify(monthQuery), attendanceApi.peekTeamAttendance(monthQuery)), summary = summaryRead.data?.rows?.[0];
   useEffect(() => {
     if (!monthRead.data || !focusDate.current) return;
     grid.current?.querySelector(`[data-date="${focusDate.current}"]`)?.focus(); focusDate.current = null;

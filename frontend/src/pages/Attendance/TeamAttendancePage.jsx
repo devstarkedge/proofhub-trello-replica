@@ -37,10 +37,10 @@ function TeamAttendanceContent({ workspace, identity }) {
   useEffect(() => { const timer = setTimeout(() => { setSearch(searchInput); setPage(1); }, 300); return () => clearTimeout(timer); }, [searchInput]);
   const query = useMemo(() => ({ ...range, status, workMode, departmentId, search, sort, direction, page, pageSize }), [range, status, workMode, departmentId, search, sort, direction, page, pageSize]);
   const load = useCallback(signal => valid ? attendanceApi.getTeamAttendance(query, signal) : Promise.resolve({ data: null }), [query, valid]);
-  const read = useTeamRead(JSON.stringify([query, revision]), load, identity, JSON.stringify([query, accessRevision])), data = read.data;
+  const read = useTeamRead(JSON.stringify([query, revision]), load, identity, JSON.stringify([query, accessRevision]), attendanceApi.peekTeamAttendance(query)), data = read.data;
   useEffect(() => { if (data) setDepartments(data.filters.departments); else if (read.forbidden) setDepartments([]); }, [data, read.forbidden]);
   const refresh = useCallback((event) => {
-    businessReads.clear('attendance', { fresh: event?.type === 'click' });
+    if (event?.type === 'click') businessReads.clear('attendance', { fresh: true });
     if (period !== 'custom') {
       const next = periodDateRange(period, { timezone, weekStartsOn: workspace.weekStartsOn ?? 0 });
       if (next.startDate !== range.startDate || next.endDate !== range.endDate) { setRange(next); setPage(1); }
@@ -48,19 +48,20 @@ function TeamAttendanceContent({ workspace, identity }) {
     setRevision(v => v + 1); setExportError('');
   }, [period, timezone, workspace.weekStartsOn, range.startDate, range.endDate]);
   const close = useCallback(() => setSelectedUserId(null), []);
-  const lostAccess = useCallback(() => { setSelectedUserId(null); setDepartments([]); setAccessRevision(v => v + 1); setRevision(v => v + 1); }, []);
+  const lostAccess = useCallback(() => { businessReads.clear('attendance'); setSelectedUserId(null); setDepartments([]); setAccessRevision(v => v + 1); setRevision(v => v + 1); }, []);
   useEffect(() => {
     let timer;
     const invalidate = event => {
       if (event.detail?.workspaceId && String(event.detail.workspaceId) !== String(workspace._id)) return;
       exportController.current?.abort();
-      if (/authz|access|role|assigned|rejected|permission|membership|department/.test(event.type)) { setSelectedUserId(null); setAccessRevision(v => v + 1); setRevision(v => v + 1); }
+      if (/authz|access|role|assigned|rejected|permission|membership|department/.test(event.type)) { businessReads.clear('attendance'); setSelectedUserId(null); setAccessRevision(v => v + 1); setRevision(v => v + 1); }
       else { clearTimeout(timer); timer = setTimeout(refresh, 120); }
     };
     ATTENDANCE_EVENTS.forEach(event => window.addEventListener(event, invalidate));
     const realtime = event => {
       const { type = '', payload = {} } = event.detail || {};
       if (!/^(tracking:|attendance:|leave:)|role|permission|department|membership|access/.test(type)) return;
+      if (/^tracking:(screenshot|activity|device|heartbeat)/.test(type)) return;
       invalidate({ type, detail: payload });
     };
     const storage = event => { if (['token', 'workspaceId'].includes(event.key)) { close(); refresh(); } };

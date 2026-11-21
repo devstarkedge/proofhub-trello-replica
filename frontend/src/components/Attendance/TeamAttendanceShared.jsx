@@ -17,7 +17,7 @@ export function Rate({ rate }) {
 }
 export function ReadState({ read, children, retry }) {
   if (read.loading) return <div role="status" className="animate-pulse rounded-xl border p-8 text-center text-sm" style={mutedStyle}>Loading attendance…</div>;
-  if (read.error) return <div role="alert" className="rounded-xl border border-rose-300 p-5 text-sm"><p>{read.error}</p><button className={`${controlClass} mt-3`} style={inputStyle} onClick={retry}>Try again</button></div>;
+  if (read.error && !read.data) return <div role="alert" className="rounded-xl border border-rose-300 p-5 text-sm"><p>{read.error}</p><button className={`${controlClass} mt-3`} style={inputStyle} onClick={retry}>Try again</button></div>;
   if (!read.data) return <p className="p-6 text-sm" style={mutedStyle}>No attendance information available.</p>;
-  return children;
+  return <>{read.refreshing && <p role="status" className="mb-3 text-xs" style={mutedStyle}>Updating attendance… Showing the previous report while it refreshes.</p>}{read.error && <p role="alert" className="mb-3 text-xs text-amber-700 dark:text-amber-300">Could not refresh attendance. Showing the previous report. <button className="underline" onClick={retry}>Try again</button></p>}{children}</>;
 }

@@ -42,6 +42,15 @@ export const reportAttendanceActivity = (sample, keepalive) => api.post('/me/act
 export const getTeamAttendance = async (params, signal) => (await api.get('/team', { params, signal })).data;
 export const getTeamAttendanceMonth = async (userId, month, params, signal) => (await api.get(`/team/users/${userId}/months/${month}`, { params, signal })).data;
 export const getTeamAttendanceDay = async (userId, workDateKey, params, signal) => (await api.get(`/team/users/${userId}/days/${workDateKey}`, { params, signal })).data;
+// Display-only stale snapshots show their asOf time while the normal transport
+// revalidates. They never authorize actions or extend the fresh read deadline.
+const peekReport = (url, params) => {
+  const snapshot = businessReads.peek('attendance', api, url, { params }, { staleMs: 60000 });
+  return snapshot ? { data: snapshot.value.data?.data, stale: snapshot.stale } : null;
+};
+export const peekTeamAttendance = params => peekReport('/team', params);
+export const peekTeamAttendanceMonth = (userId, month, params) => peekReport(`/team/users/${userId}/months/${month}`, params);
+export const peekTeamAttendanceDay = (userId, workDateKey, params) => peekReport(`/team/users/${userId}/days/${workDateKey}`, params);
 export const exportTeamAttendance = async (params, signal) => (await api.get('/team/export', { params, signal, responseType: 'blob', timeout: 120000 })).data;
 
 export const setupAttendanceModule = async () => (await api.post('/setup')).data;

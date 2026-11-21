@@ -297,3 +297,56 @@ Both web and Electron renderer production builds passed sequentially after
 the final resource split. All 29 affected renderer file pairs match; backend
 and shared JavaScript syntax checks and diff whitespace checks passed. These
 builds do not establish live browser or native Electron runtime behavior.
+
+### Attendance route revisit and refresh lifecycle — November 21
+
+The earlier server/transport caches did not address the Team Attendance hook's
+mount lifecycle. Its private Map disappeared when leaving the route. The hook
+also aborted/restarted a request on every refresh revision and ignored every
+CanceledError, including a transport-superseded read whose caller was still
+mounted. That path could leave the loading state without a completion/error.
+Screenshot delivery events unnecessarily invalidated Attendance work reports,
+and the page cleared the transport a second time when processing a refresh.
+
+The transport now exposes scoped snapshots synchronously. Team overview and
+the month/day drawer use the same bounded cache on remount. An expired snapshot
+can be displayed for at most 60 additional seconds while a normal fresh read
+runs; it is explicitly marked as updating and still shows its original asOf
+time. This display fallback does not extend the fresh cache deadline, suppress
+revalidation, authorize an action, or supply exports/checkout/approval state.
+Workspace/account resets, permission/access events, mutations and forbidden
+responses clear the transport snapshots. Legacy authorization/local leave
+events are also handled when the report route is unmounted.
+
+Same-query refreshes now queue at most one follow-up behind the active read.
+Changed filters, access scope and actual unmounts still abort obsolete reads.
+A current caller's transport cancellation exits loading with a retry state.
+Confirmed data stays visible with an explicit notice during background refresh
+or a non-authorization refresh error. Manual refresh still bypasses caches.
+Screenshot/activity/device telemetry no longer evicts or refreshes work reports.
+
+Backend roster and Tracking visibility reads now overlap after the initial
+Attendance authorization. On the unfiltered overview, attendance and tracked
+work calculations also overlap; status/work-mode filters retain the narrowed
+owner path. Sort direction and pagination reuse the same authorized period
+calculation, sorting a copy of its rows. Source queries, scope checks, running
+interval calculations, exports and worker cadence retain their prior rules.
+
+Verification observed in the local Chrome app: after Home -> Attendance, the
+Team Attendance view had 25 visible rows, no blocking Loading attendance state,
+and an Updating attendance notice while it revalidated. This was a functional
+browser observation, not a millisecond/p95 measurement. The isolated MongoDB
+fixture verified a sort change added no AttendanceDay/WorkSession aggregates.
+Hosted Redis was not benchmarked; integration cache tests used a Redis double.
+
+Focused verification for this change: 35 shared client/session checks, 38
+backend cache/hook checks, 11 disposable-database/workspace checks and 8 selected
+Attendance manager/custom-role/tracked-work/export checks passed (92 total).
+The remaining 18 cases in the Attendance integration file were outside that
+selection. Five changed renderer file pairs match exactly. The five affected
+web files passed ESLint, and syntax/diff whitespace checks passed. No live
+production latency measurement or native Electron runtime verification was
+performed. The browser verification screenshot is a local ignored artifact at
+`reports/attendance-loading-2026-11-21/attendance-revisit.jpg`.
+Final web and desktop renderer production builds both passed sequentially,
+including the snapshot-preservation fix for navigation during revalidation.

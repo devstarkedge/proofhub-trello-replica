@@ -14,6 +14,11 @@ const requestPath = (api, url = '') => {
   const base = api.defaults?.baseURL || '';
   return new URL(/^https?:\/\//.test(url) ? url : `${base.replace(/\/$/, '')}/${url.replace(/^\//, '')}`, 'https://flowtask.invalid').pathname;
 };
+const readKey = (api, url, config = {}) => {
+  const parsed = new URL(url, 'https://flowtask.invalid');
+  const params = config.params instanceof URLSearchParams ? searchValues(config.params) : config.params;
+  return JSON.stringify([`${api.defaults?.baseURL || ''}:${parsed.pathname}`, stable(queryValues({ ...searchValues(parsed.searchParams), ...params })), config.responseType || 'json']);
+};
 const snapshotResponse = (result, started) => {
   const headers = { ...result.headers };
   const freshness = Object.entries(headers).find(([name]) => name.toLowerCase() === 'x-read-fresh-for')?.[1];
@@ -41,10 +46,17 @@ export function createBusinessReadClient({ storage, target, registerResettable }
     const type = event.detail?.type || event.type || '';
     const workspace = event.detail?.payload?.workspaceId || event.detail?.workspaceId;
     if (workspace && String(workspace) !== storage.getItem('workspaceId')) return;
-    if (/authz|access|permission|role|department|socket-connected|online|data-invalidated|workspace-updated|workspace-membership|user-verified|user-assigned|user-unassigned/.test(type)) return clearAll();
+    if (/authz|access|permission|role|department|socket-connected|online|data-invalidated|workspace-updated|workspace-rejected|workspace-membership|user-verified|user-assigned|user-unassigned/.test(type)) return clearAll();
     for (const domain of Object.keys(domains)) clear(domain, { resources: moduleReadPolicies[domain].eventResources(type) });
   };
-  for (const event of ['flowtask:realtime', 'socket-connected', 'online', 'flowtask:data-invalidated', 'tracking-local-change', 'flowtask:tracking-refresh', 'attendance-regularization-refresh']) target?.addEventListener(event, invalidateEvent);
+  for (const event of ['flowtask:realtime', 'socket-connected', 'online', 'flowtask:data-invalidated', 'tracking-local-change', 'flowtask:tracking-refresh', 'attendance-regularization-refresh', 'leave-local-change',
+    'socket-authz-changed', 'socket-user-access-updated', 'socket-access-control-updated', 'socket-user-role-changed', 'socket-user-assigned', 'socket-user-unassigned', 'socket-department-bulk-assigned', 'socket-department-bulk-unassigned', 'socket-workspace-rejected']) target?.addEventListener(event, invalidateEvent);
+
+  function peek(domain, api, url, config = {}, options) {
+    const resource = moduleReadPolicies[domain].clientResource(requestPath(api, url));
+    const snapshot = domains[domain][resource].cache.peek(readKey(api, url, config), options);
+    return snapshot ? { ...snapshot, value: structuredClone(snapshot.value) } : null;
+  }
 
   async function read(domain, key, load, { resource = moduleReadPolicies[domain].clientResource(`/${key}`), response = false } = {}) {
     const identity = captureRequestScope(storage);
@@ -72,8 +84,7 @@ export function createBusinessReadClient({ storage, target, registerResettable }
       const resource = moduleReadPolicies[domain].clientResource(requestPath(api, url));
       const bucket = domains[domain][resource];
       const identity = captureRequestScope(storage);
-      const params = config.params instanceof URLSearchParams ? searchValues(config.params) : config.params;
-      const key = JSON.stringify([`${api.defaults?.baseURL || ''}:${parsed.pathname}`, stable(queryValues({ ...searchValues(parsed.searchParams), ...params })), config.responseType || 'json']);
+      const key = readKey(api, url, config);
       const subscriptionKey = `${domain}:${resource}:${requestScopeKey(identity)}:${key}`;
       let subscription = subscriptions.get(subscriptionKey);
       if (!subscription) {
@@ -134,5 +145,5 @@ export function createBusinessReadClient({ storage, target, registerResettable }
     });
     return api;
   }
-  return { install, clear, clearAll, read };
+  return { install, clear, clearAll, read, peek };
 }
