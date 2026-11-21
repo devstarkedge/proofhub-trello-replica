@@ -1,7 +1,7 @@
 {
   "name": "flowtask-desktop",
   "private": true,
-  "version": "1.0.20",
+  "version": "1.0.21",
   "description": "FlowTask desktop application",
   "author": "FlowTask",
   "main": "electron/main.cjs",
@@ -206,6 +206,7 @@
       "artifactName": "FlowTask-${version}-${arch}.${ext}"
     },
     "nsis": {
+      "include": "electron/navigation.nsh",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,

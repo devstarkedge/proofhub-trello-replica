@@ -3,6 +3,14 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('flowtaskDesktop', Object.freeze({
   isDesktop: true,
   platform: process.platform,
+  navigation: process.platform === 'win32' ? Object.freeze({
+    takePending: () => ipcRenderer.invoke('app-navigation:take'),
+    onPending: callback => {
+      const listener = () => callback();
+      ipcRenderer.on('app-navigation:pending', listener);
+      return () => ipcRenderer.removeListener('app-navigation:pending', listener);
+    },
+  }) : undefined,
   copyLeaveLink: link => ipcRenderer.invoke('desktop-clipboard:copy-leave-link', link),
   updates: Object.freeze({
     getStatus: () => ipcRenderer.invoke('desktop-updates:status'),

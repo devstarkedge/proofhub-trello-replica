@@ -94,6 +94,8 @@ const SuperAdminAuditLogPage = lazy(() => import('./pages/SuperAdmin/SuperAdminA
 
 import DesktopTrackingBridge from './components/Tracking/DesktopTrackingBridge';
 import DesktopUpdateBridge from './components/DesktopUpdateBridge';
+import DesktopNavigationBridge from './components/DesktopNavigationBridge';
+import DesktopWorkspaceGate from './components/DesktopWorkspaceGate';
 
 function App() {
   return (
@@ -102,6 +104,7 @@ function App() {
         <WorkspaceProvider>
         <DesktopTrackingBridge />
         <DesktopUpdateBridge />
+        <DesktopNavigationBridge />
         <TeamProvider>
           <NotificationProvider>
             <ClientInfoProvider>
@@ -120,7 +123,7 @@ function App() {
               <Route
                 element={
                   <PrivateRoute>
-                    <MainLayout />
+                    <DesktopWorkspaceGate><MainLayout /></DesktopWorkspaceGate>
                   </PrivateRoute>
                 }
               >

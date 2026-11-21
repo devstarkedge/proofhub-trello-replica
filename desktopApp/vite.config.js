@@ -12,6 +12,7 @@ export default ({ mode, command }) => {
   // the third parameter '' ensures we get raw keys (not only VITE_ prefix)
   const env = loadEnv(mode, process.cwd(), '')
   const backend = desktopConfig.selectBackendURL(env, command === 'build')
+  const chatOrigin = env.VITE_CHATAPP_URL || loadEnv(mode, '../backend', 'CHATAPP_URL').CHATAPP_URL || ''
   const proxyOptions = {
     target: backend,
     changeOrigin: true,
@@ -38,7 +39,7 @@ export default ({ mode, command }) => {
     plugins: [react(), tailwindcss(), {
       name: 'flowtask-desktop-config',
       generateBundle() {
-        this.emitFile({ type: 'asset', fileName: 'desktop-config.json', source: JSON.stringify({ backendURL: backend }) })
+        this.emitFile({ type: 'asset', fileName: 'desktop-config.json', source: JSON.stringify({ backendURL: backend, chatOrigin }) })
       },
     }],
     // Test HTML under artifacts/ can point outside the desktop renderer.

@@ -31,6 +31,7 @@ try {
     server.printUrls();
   }
   const env = electronEnvironment();
+  if (!preview) env.FLOWTASK_CHAT_URL = settings.VITE_CHATAPP_URL || loadEnv('development', root + '../backend', 'CHATAPP_URL').CHATAPP_URL || '';
   delete env.FLOWTASK_DEV_URL;
   if (server) env.FLOWTASK_DEV_URL = server.resolvedUrls.local[0];
   child = spawn(executable, ['.', ...(smoke ? ['--smoke-test'] : []),...(process.argv.includes('--isolated-test-profile')?['--isolated-test-profile']:[])], { cwd: root, env, stdio: 'inherit', windowsHide: false });

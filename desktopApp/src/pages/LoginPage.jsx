@@ -1,4 +1,5 @@
 import { loginDestination } from '../../../shared/loginDestination.mjs';
+import { desktopReturnTo } from '../utils/desktopReturnTo';
 import { useState, useContext } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { motion as Motion } from 'framer-motion';
@@ -104,7 +105,10 @@ const LoginPage = () => {
       });
 
       // Membership is resolved; the global toast can display during navigation.
-      navigate(loginDestination({ user, workspaces, returnTo }), { replace: true, state: null });
+      const destination = loginDestination({ user, workspaces, returnTo });
+      const desktopTarget = window.flowtaskDesktop?.platform === 'win32' && destination === '/'
+        ? desktopReturnTo(returnTo) : null;
+      navigate(desktopTarget || destination, { replace: true, state: null });
     } catch (err) {
       setLoading(false); // Stop loading immediately on error
       

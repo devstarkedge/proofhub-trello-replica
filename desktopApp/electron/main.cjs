@@ -6,6 +6,7 @@ const { startDesktopServer } = require('./server.cjs');
 const { installDesktopNotifications } = require('./notifications.cjs');
 const { installDesktopTracking } = require('./tracking.cjs');
 const { installDesktopUpdates } = require('./auto-updates.cjs');
+const { openPeer, installNavigation } = require('./app-navigation.cjs');
 
 ipcMain.handle('desktop-clipboard:copy-leave-link', (event, value) => {
   if (event.sender !== mainWindow?.webContents || event.senderFrame !== event.sender.mainFrame ||
@@ -44,6 +45,12 @@ let rendererOrigin;
 let desktopUpdates;
 const root = path.join(__dirname, '..');
 const hasLock = app.requestSingleInstanceLock();
+let chatOrigin = '';
+const unpackedPreview = path.basename(path.dirname(process.execPath)).toLowerCase() === 'win-unpacked';
+if (hasLock) installNavigation({ app, ipcMain, getWindow: () => mainWindow,
+  ownScheme: 'flowtask-desktop', register: app.isPackaged && !smokeTest && !isolatedTestProfile && !unpackedPreview,
+  trusted: value => { try { return new URL(value).origin === rendererOrigin; } catch { return false; } },
+});
 
 // Apply to every window, including previews/popups and recreated windows.
 // Chromium still handles standard text-editing shortcuts without a menu.
@@ -73,12 +80,13 @@ app.on('browser-window-created', (_event, window) => {
   });
 });
 
-function openExternal(url) {
+async function openExternal(url) {
   try {
     if (['https:', 'http:', 'mailto:'].includes(new URL(url).protocol)) {
-      shell.openExternal(url).catch((error) => console.error('Cannot open link:', error.message));
+      if (await openPeer(url, { app, shell, peerOrigin: chatOrigin, peerScheme: 'taskchat-desktop' })) return;
+      await shell.openExternal(url);
     }
-  } catch { /* Invalid and privileged URLs are deliberately ignored. */ }
+  } catch { console.error('Cannot open external navigation.'); }
 }
 
 async function createWindow() {
@@ -176,7 +184,7 @@ async function createWindow() {
 if (!hasLock) app.quit();
 else {
   app.on('second-instance', () => {
-    if (mainWindow) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.show(); mainWindow.focus(); }
+    if (process.platform !== 'win32' && mainWindow) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.show(); mainWindow.focus(); }
   });
   app.whenReady().then(async () => {
     installDesktopNotifications(() => mainWindow, () => rendererOrigin);
@@ -185,7 +193,9 @@ else {
       const url = new URL(process.env.FLOWTASK_DEV_URL);
       if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw new Error('Development URL must be local.');
       rendererOrigin = url.origin;
+      chatOrigin = process.env.FLOWTASK_CHAT_URL || '';
     } else {
+      chatOrigin = JSON.parse(fs.readFileSync(path.join(root, 'dist/desktop-config.json'), 'utf8')).chatOrigin || '';
       localServer = await startDesktopServer({ dist: path.join(root, 'dist'), backendURL: readBackendURL(root), port: smokeTest ? 0 : 47831 });
       rendererOrigin = localServer.origin;
     }
