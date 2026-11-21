@@ -4,6 +4,7 @@ import workspaceScopePlugin from '../modules/workspaces/workspaceScopePlugin.js'
 const rowSchema = new mongoose.Schema({
   rowNumber: Number, values: [String], title: String, description: String,
   statusName: String, startDate: Date, dueDate: Date,
+  priority: String, assignees: { type: [mongoose.Schema.Types.ObjectId], default: undefined },
   status: { type: String, enum: ['PENDING', 'SUCCESS', 'FAILED'], default: 'PENDING' },
   card: mongoose.Schema.Types.ObjectId, field: String, error: String,
   attempts: { type: Number, default: 0 }, warning: String,

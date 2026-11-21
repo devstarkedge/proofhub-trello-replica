@@ -2,13 +2,13 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Worker as ParseWorker } from 'node:worker_threads';
 import mongoose from 'mongoose';
 import TaskImport from '../models/TaskImport.js';
-import List from '../models/List.js';
 import Card from '../models/Card.js';
 import User from '../models/User.js';
 import { authorizeTaskImport } from './taskImportAccess.js';
 import { requireProjectPermission } from './projectAuthorization.js';
 import { createProjectTask } from './taskCreation.js';
 import { validateImportRow } from './taskImportWorkbook.js';
+import { taskImportOptions } from './taskImportOptions.js';
 import { run } from '../modules/workspaces/workspaceContext.js';
 import { emitToUser } from '../realtime/index.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
@@ -38,12 +38,12 @@ export async function requireImportIndexes() {
   }
 }
 let parsing = 0;
-export async function parseWorkbook(buffer, statuses) {
+export async function parseWorkbook(buffer, statuses, options) {
   if (parsing >= 2) throw new ErrorResponse('Workbook validation is busy. Please retry shortly.', 429);
   parsing++;
   try {
     return await new Promise((resolve, reject) => {
-      const worker = new ParseWorker(new URL('../workers/taskImportWorkbook.worker.js', import.meta.url), { workerData: { buffer, statuses }, resourceLimits: { maxOldGenerationSizeMb: 128 }, execArgv: [] });
+      const worker = new ParseWorker(new URL('../workers/taskImportWorkbook.worker.js', import.meta.url), { workerData: { buffer, statuses, options }, resourceLimits: { maxOldGenerationSizeMb: 128 }, execArgv: [] });
       const timer = setTimeout(() => { void worker.terminate(); reject(new ErrorResponse('Workbook validation timed out', 400)); }, 15000);
       worker.once('message', result => { clearTimeout(timer); void worker.terminate(); result.error ? reject(new ErrorResponse(result.error, 400)) : resolve(result.rows); });
       worker.once('error', () => { clearTimeout(timer); reject(new ErrorResponse('Unable to read this workbook', 400)); });
@@ -55,11 +55,12 @@ export async function validateWorkbook(req, file) {
   await requireImportIndexes();
   if (!file || !/\.xlsx$/i.test(file.originalname)) throw new ErrorResponse('Select an .xlsx file', 400);
   if (await TaskImport.countDocuments({ user: req.user.id, board: req.params.projectId, status: 'READY' }) >= 10) throw new ErrorResponse('There are too many unsubmitted imports. Reuse a recent workbook or try again later.', 429);
-  const lists = await List.find({ board: req.params.projectId, isArchived: false }).select('title').lean();
-  const rows = await parseWorkbook(file.buffer, lists.map(list => list.title));
+  const project = req.taskImportProject || await authorizeTaskImport(req, req.params.projectId, req.params.departmentId);
+  const options = await taskImportOptions(project, req.workspaceId);
+  const rows = await parseWorkbook(file.buffer, options.statuses, { priorities: options.priorities, assignees: options.assignees });
   // Excel rewrites ZIP metadata when a file is saved. Use task values, including
   // physical row numbers, so duplicate submission protection survives that save.
-  const digest = createHash('sha256').update(JSON.stringify(rows.map(row => [row.rowNumber, row.values]))).digest('hex');
+  const digest = createHash('sha256').update(JSON.stringify(rows.map(row => [row.rowNumber, row.values.slice(5).some(Boolean) ? row.values : row.values.slice(0, 5)]))).digest('hex');
   const filter = { workspaceId: req.workspaceId, user: req.user.id, board: req.params.projectId, digest };
   const existing = await TaskImport.findOne(filter).select(importResultProjection).lean();
   if (existing) return existing;
@@ -87,9 +88,10 @@ export async function retryFailedImport(req, jobId) {
   const filter = { user: req.user.id, board: source.board, digest: `retry:${source._id}` };
   const existing = await TaskImport.findOne(filter).select(importResultProjection).lean();
   if (existing) return existing;
-  const lists = await List.find({ board: source.board, isArchived: false }).select('title').lean();
+  const project = req.taskImportProject || await authorizeTaskImport(req, source.board, source.department);
+  const options = await taskImportOptions(project, req.workspaceId);
   const rows = source.rows.filter(row => row.status === 'FAILED').map(row => ({
-    ...validateImportRow(row.values, lists.map(list => list.title), row.rowNumber),
+    ...validateImportRow(row.values, options.statuses, row.rowNumber, options),
     ...(row.error?.includes('formulas and embedded') ? { error: row.error, field: row.field } : {}),
   }));
   try {
@@ -122,14 +124,21 @@ export async function processImportBatch(jobId, workspaceId) {
         // Fresh membership, role grants, project and list checks on every row.
         const req = { workspaceId, user: { ...user, id: String(user._id) }, body: {} };
         const project = await authorizeTaskImport(req, job.board, job.department);
-        const lists = await List.find({ board: job.board, workspaceId, isArchived: false }).select('title board').lean();
-        row = { ...validateImportRow(stored.values, lists.map(list => list.title), stored.rowNumber), attempts: stored.attempts || 0 };
+        const options = await taskImportOptions(project, workspaceId, { assigneesValue: stored.values[6] || '' });
+        row = { ...validateImportRow(stored.values, options.statuses, stored.rowNumber, options), attempts: stored.attempts || 0 };
         // Structural/formula errors detected by the workbook reader are retained.
         if (stored.error && stored.error.includes('formulas and embedded')) row = { ...row, field: stored.field, error: stored.error };
         if (row.error) throw new ErrorResponse(row.error, 400);
-        if (row.startDate || row.dueDate) await requireProjectPermission(req, 'task.edit_dates', project);
-        const list = lists.find(list => list.title === row.statusName);
-        req.body = { title: row.title, description: row.description, board: job.board, list: list._id, startDate: row.startDate, dueDate: row.dueDate };
+        for (const [provided, field, permission] of [
+          [row.startDate || row.dueDate, row.startDate ? 'Start Date' : 'End Date', 'task.edit_dates'],
+          [row.priority, 'Priority', 'task.edit_priority'],
+          [row.assignees?.length, 'Assignees', 'task.assign'],
+        ]) if (provided) {
+          try { await requireProjectPermission(req, permission, project); }
+          catch (error) { row.field = field; throw error; }
+        }
+        const list = options.lists.find(list => list.title === row.statusName);
+        req.body = { title: row.title, description: row.description, board: job.board, list: list._id, startDate: row.startDate, dueDate: row.dueDate, ...(row.priority ? { priority: row.priority } : {}), ...(row.assignees ? { assignees: row.assignees } : {}) };
         const card = await createProjectTask(req, { creationId: `import:${job._id}:${index}`, authorizedProject: project, validatedList: list });
         row = { ...row, status: 'SUCCESS', card: card._id, error: undefined, field: undefined };
       } catch (error) {
