@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { navigationOrigin } = require('./app-navigation.cjs');
 
 function validateBackendURL(value) {
   const url = new URL(value);
@@ -32,4 +33,14 @@ function readBackendURL(root) {
   return validateBackendURL(JSON.parse(fs.readFileSync(configFile, 'utf8')).backendURL);
 }
 
-module.exports = { validateBackendURL, selectBackendURL, readBackendURL };
+function selectChatOrigin(env, production, developmentFallback = '') {
+  // A production package must never inherit CHATAPP_URL from the backend's
+  // local development .env. Keep custom deployments explicit.
+  const value = production
+    ? env.VITE_CHATAPP_PRODUCTION || env.VITE_CHATAPP_URL
+    : env.VITE_CHATAPP_URL || developmentFallback;
+  if (!value) throw new Error('Set VITE_CHATAPP_URL in desktopApp/.env or the build environment before building.');
+  return navigationOrigin(value, production);
+}
+
+module.exports = { validateBackendURL, selectBackendURL, readBackendURL, selectChatOrigin };

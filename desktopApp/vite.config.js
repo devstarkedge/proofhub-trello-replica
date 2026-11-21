@@ -12,7 +12,8 @@ export default ({ mode, command }) => {
   // the third parameter '' ensures we get raw keys (not only VITE_ prefix)
   const env = loadEnv(mode, process.cwd(), '')
   const backend = desktopConfig.selectBackendURL(env, command === 'build')
-  const chatOrigin = env.VITE_CHATAPP_URL || loadEnv(mode, '../backend', 'CHATAPP_URL').CHATAPP_URL || ''
+  const chatOrigin = desktopConfig.selectChatOrigin(env, command === 'build',
+    command === 'build' ? '' : loadEnv(mode, '../backend', 'CHATAPP_URL').CHATAPP_URL || 'http://localhost:5174')
   const proxyOptions = {
     target: backend,
     changeOrigin: true,

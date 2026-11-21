@@ -1,7 +1,7 @@
 {
   "name": "flowtask-desktop",
   "private": true,
-  "version": "1.0.21",
+  "version": "1.0.22",
   "description": "FlowTask desktop application",
   "author": "FlowTask",
   "main": "electron/main.cjs",
@@ -122,6 +122,7 @@
       "node_modules/node-gyp-build/**/*"
     ],
     "beforeBuild": "./scripts/before-build.cjs",
+    "afterPack": "./scripts/verify-navigation-package.cjs",
     "extraResources": [
       {
         "from": "build/app/node_modules/sharp",

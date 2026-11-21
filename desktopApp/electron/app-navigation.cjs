@@ -14,9 +14,9 @@ function internalRoute(value) {
 function webTarget(value, peerOrigin) {
   try {
     const url = new URL(value);
-    const peer = new URL(peerOrigin);
+    const peers = (Array.isArray(peerOrigin) ? peerOrigin : [peerOrigin]).map(value => new URL(value).origin);
     const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
-    if (url.origin !== peer.origin || url.username || url.password ||
+    if (!peers.includes(url.origin) || url.username || url.password ||
         !(url.protocol === 'https:' || (url.protocol === 'http:' && local))) return null;
     return internalRoute(url.pathname + url.search + url.hash);
   } catch { return null; }
@@ -36,6 +36,17 @@ function parseDeepLink(value, scheme) {
 function makeDeepLink(route, scheme) {
   if (!internalRoute(route)) throw new Error('Invalid navigation route');
   return `${scheme}://navigate?route=${encodeURIComponent(route)}`;
+}
+
+function navigationOrigin(value, production = false) {
+  let url;
+  try { url = new URL(value); } catch { throw new Error('Desktop navigation requires a valid target application URL.'); }
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  if (url.username || url.password || url.pathname !== '/' || url.search || url.hash ||
+      !(url.protocol === 'https:' || (!production && local && url.protocol === 'http:')) || (production && local)) {
+    throw new Error('Desktop navigation requires an HTTPS application origin in production; localhost is development-only.');
+  }
+  return url.origin;
 }
 
 async function openPeer(value, { app, shell, peerOrigin, peerScheme, platform = process.platform,
@@ -107,4 +118,4 @@ function installNavigation({ app, ipcMain, getWindow, trusted, ownScheme, argv =
   return { notify };
 }
 
-module.exports = { internalRoute, webTarget, parseDeepLink, makeDeepLink, openPeer, installNavigation };
+module.exports = { internalRoute, webTarget, parseDeepLink, makeDeepLink, navigationOrigin, openPeer, installNavigation };
