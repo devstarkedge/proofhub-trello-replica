@@ -6,6 +6,7 @@ uploads/
 *docs/
 test/
 tests/
+scratch/
 .log
 .log*
 reports/
