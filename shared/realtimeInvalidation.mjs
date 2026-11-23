@@ -5,7 +5,7 @@ const localFields = new Set([...placement,'title','description','priority','dueD
 // Event-scoped invalidation: a move must not refresh every open card's comments,
 // attachments, destinations and history. Unknown/gap events still reauthorize.
 export function createRealtimeInvalidation({workspaceId,workflow,projects,client,notify,schedule=setTimeout,cancel=clearTimeout}) {
-  let timer, projectTimer, disposed=false, workflowDirty=false, recovery=false;
+  let timer, projectTimer, disposed=false, workflowDirty=false, recovery=false, reauthorizeTasks=false;
   const boards=new Set(),cards=new Set(),types=new Set(),fields=new Set(),seen=new Map();
   function refreshProjects() {
     cancel(projectTimer);projectTimer=schedule(()=>{if(!disposed)void projects().fetchDepartments(true);},750);
@@ -14,6 +14,7 @@ export function createRealtimeInvalidation({workspaceId,workflow,projects,client
     const {type,payload={}}=event.detail||{};
     if(payload.workspaceId && id(payload.workspaceId)!==id(workspaceId))return;
     const eventType=type==='notification'?payload.type:type;
+    if(payload.reauthorizeTasks)reauthorizeTasks=true;
     if(!/card|list|comment|subtask|attachment|task|board|project|department|assigned|access|authz|role|permission|recovery|data-changed/.test(eventType||''))return;
     const operation=payload.operationId && `${type}:${payload.operationId}`;
     if(operation && seen.has(operation))return;
@@ -42,8 +43,8 @@ export function createRealtimeInvalidation({workspaceId,workflow,projects,client
     cancel(timer);timer=schedule(()=>{
       if(disposed)return;
       client.invalidateQueries({predicate:query=>['projects','project','cards','card','tasks','dashboard','workflow'].includes(query.queryKey[0])});
-      notify({workspaceId,boardIds:[...boards],cardIds:[...cards],types:[...types],fields:[...fields],recovery});
-      boards.clear();cards.clear();types.clear();fields.clear();recovery=false;
+      notify({workspaceId,boardIds:[...boards],cardIds:[...cards],types:[...types],fields:[...fields],recovery,reauthorizeTasks});
+      boards.clear();cards.clear();types.clear();fields.clear();recovery=false;reauthorizeTasks=false;
       const current=workflow();
       if(workflowDirty&&current.currentProjectId){workflowDirty=false;void current.initializeWorkflow(current.currentProjectId);}
     },150);
@@ -55,6 +56,7 @@ export function cardRefreshPlan(detail, {workspaceId,boardId,cardId}) {
   if(detail?.workspaceId && id(detail.workspaceId)!==id(workspaceId))return null;
   if(!detail?.types || detail.recovery)return {card:true,comments:true,activities:true,lists:true,project:true};
   if(detail.boardIds?.length&&!detail.boardIds.includes(id(boardId)))return null;
+  if(detail.reauthorizeTasks)return {card:true,comments:true,activities:true,lists:true,project:true};
   const broad=detail.types.some(type=>/board|list|assigned|access|authz|role|permission|department/.test(type));
   if(!broad&&detail.cardIds?.length&&!detail.cardIds.includes(id(cardId)))return null;
   if(!broad&&!detail.cardIds?.length)return null;

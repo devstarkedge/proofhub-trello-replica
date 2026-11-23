@@ -3,6 +3,7 @@ import '../models/User.js';
 import '../realtime/index.js';
 import { publishInboxChange } from '../realtime/notificationEvents.js';
 import notificationService from '../utils/notificationService.js';
+import { assignedWorkNotificationFilter } from '../services/assignedWorkNotifications.js';
 
 // Get paginated notifications
 export const getNotifications = async (req, res) => {
@@ -16,7 +17,8 @@ export const getNotifications = async (req, res) => {
       includeArchived = false 
     } = req.query;
     
-    const query = { user: req.user.id, workspaceId: req.workspaceId };
+    const readScope = await assignedWorkNotificationFilter(req);
+    const query = { user: req.user.id, workspaceId: req.workspaceId, ...readScope };
     
     // Filter by archived status
     if (!includeArchived || includeArchived === 'false') {
@@ -72,7 +74,7 @@ export const getNotifications = async (req, res) => {
         .limit(pageLimit)
         .lean(),
       Notification.countDocuments(query),
-      Notification.countDocuments({ user: req.user.id, isRead: false, isArchived: { $ne: true } })
+      Notification.countDocuments({ user: req.user.id, isRead: false, isArchived: { $ne: true }, ...readScope })
     ]);
     
     res.json({
@@ -95,6 +97,7 @@ export const getNotifications = async (req, res) => {
 export const getUnreadCount = async (req, res) => {
   try {
     const count = await Notification.countDocuments({ 
+      ...await assignedWorkNotificationFilter(req),
       user: req.user.id, 
       isRead: false,
       isArchived: { $ne: true }
@@ -184,9 +187,10 @@ export const getArchivedNotifications = async (req, res) => {
     const { limit = 20, skip = 0 } = req.query;
     const pageLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 20));
     const pageSkip = Math.min(10000, Math.max(0, Number.parseInt(skip, 10) || 0));
+    const readScope = await assignedWorkNotificationFilter(req);
     
     const [notifications, total] = await Promise.all([
-      Notification.find({ user: req.user.id, isArchived: true })
+      Notification.find({ user: req.user.id, isArchived: true, ...readScope })
         .populate('relatedCard', 'title')
         .populate('relatedBoard', 'name')
         .populate('sender', 'name email avatar')
@@ -194,7 +198,7 @@ export const getArchivedNotifications = async (req, res) => {
         .skip(pageSkip)
         .limit(pageLimit)
         .lean(),
-      Notification.countDocuments({ user: req.user.id, isArchived: true })
+      Notification.countDocuments({ user: req.user.id, isArchived: true, ...readScope })
     ]);
     
     res.json({

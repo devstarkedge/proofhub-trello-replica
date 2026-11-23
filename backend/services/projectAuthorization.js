@@ -9,6 +9,8 @@ import { can } from '../authz/engine.js';
 import { canUserAccessBoard } from '../utils/boardAccess.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 import { processTimeEntriesWithOwnership } from '../utils/timeEntryUtils.js';
+import { assignedWorkOnly, assignedWorkTask } from '../../shared/assignedWorkAccess.mjs';
+import { legacyAssignedWorkContext } from './assignedWorkContext.js';
 
 const legacyPermissions = {
   'project.create': 'canCreateProject', 'project.delete': 'canDeleteProjects', 'project.restore': 'canDeleteProjects',
@@ -91,7 +93,13 @@ export async function authorizeProjectResource(req, type, resourceId, permission
   }
   if (!resource) throw new ErrorResponse('Resource not found', 404);
   const project = resource.project || resource;
-  if (id(project.workspaceId) !== id(req.workspaceId) || process.env.AUTHZ_V2 !== 'enforce' && !await canUserAccessBoard(permission === 'project.restore' ? { ...project, isDeleted: false } : project, req.user)) {
+  let assignmentFacts;
+  if (process.env.AUTHZ_V2 !== 'enforce' && assignedWorkOnly(req.user)) {
+    const ctx = await legacyAssignedWorkContext(req);
+    if (!ctx.assignedProjectIds.includes(id(project._id)) || !['project', 'list'].includes(type) && !assignedWorkTask(ctx, resource.taskResource || resource)) throw new ErrorResponse('Resource not found', 404);
+    assignmentFacts = { activeAssignedBoardIds: new Set(ctx.assignedProjectIds) };
+  }
+  if (id(project.workspaceId) !== id(req.workspaceId) || process.env.AUTHZ_V2 !== 'enforce' && !await canUserAccessBoard(permission === 'project.restore' ? { ...project, isDeleted: false } : project, req.user, assignmentFacts)) {
     throw new ErrorResponse('Resource not found', 404);
   }
   await requireProjectPermission(req, permission, resource);

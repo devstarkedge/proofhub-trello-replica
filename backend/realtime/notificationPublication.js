@@ -6,6 +6,7 @@ import { userCanAccessEntity } from '../utils/entityAccess.js';
 import logger from '../utils/logger.js';
 import User from '../models/User.js';
 import Workspace from '../models/Workspace.js';
+import { assignedWorkOnly } from '../../shared/assignedWorkAccess.mjs';
 
 let timer, running = false;
 export async function publishPendingNotifications() {
@@ -19,8 +20,8 @@ export async function publishPendingNotifications() {
       }, { $set: { deliveryLeaseUntil: new Date(Date.now() + 30000) } }, { new: true }).sort({ createdAt: 1 }).lean());
       if (!record) break;
       await run({ workspaceId: record.workspaceId }, async () => {
-        const member = await WorkspaceMembership.exists({ workspace: record.workspaceId, user: record.user, status: 'active', kind: { $ne: 'guest' } });
-        const entityAllowed = record.type.endsWith('_deleted') ||
+        const member = await WorkspaceMembership.findOne({ workspace: record.workspaceId, user: record.user, status: 'active', kind: { $ne: 'guest' } }).select('role accessType restriction kind').lean();
+        const entityAllowed = record.type.endsWith('_deleted') && !assignedWorkOnly(member) ||
           await userCanAccessEntity({ userId: record.user, entityType: record.entityType, entityId: record.entityId });
         const active = await User.exists({ _id: record.user, isActive: true }) && await Workspace.exists({ _id: record.workspaceId, isActive: true });
         if (member && entityAllowed && active) {

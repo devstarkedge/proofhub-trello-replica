@@ -1,5 +1,6 @@
 import { authorizeTaskImport } from '../services/taskImportAccess.js';
 import { resourceReadFilter } from '../services/resourceReadFilter.js';
+import { assignedWorkOnly } from '../../shared/assignedWorkAccess.mjs';
 import { deleteResource } from '../services/resourceDeletion.js';
 import { boundedInteger, pageNumber } from '../utils/pagination.js';
 import { literalSearch } from '../utils/literalSearch.js';
@@ -150,6 +151,11 @@ export const getWorkflowComplete = asyncHandler(async (req, res, next) => {
     .populate('coverImage', 'url secureUrl thumbnailUrl fileName fileType isCover')
     .sort({ list: 1, position: 1 })
     .lean();
+
+  if (assignedWorkOnly(req.projectAuthz || req.user)) board.taskAccess = {
+    mode: 'assigned', userId: String(req.user._id || req.user.id),
+    taskIds: cards.filter(card => req.projectAuthz?.assignedDescendantTaskIds?.includes(String(card._id))).map(card => String(card._id))
+  };
 
   // --- AGGREGATE ALL PROJECT MEMBERS ---
   const memberMap = new Map();
@@ -1133,7 +1139,9 @@ export const getProjectActivity = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const limit = boundedInteger(req.query.limit, 50, 100);
 
-  const activity = await Activity.find({ board: id })
+  const taskFilter = assignedWorkOnly(req.projectAuthz || req.user)
+    ? { card: { $in: await Card.distinct('_id', { $and: [{ board: id }, await resourceReadFilter(req, 'task', id)] }) } } : {};
+  const activity = await Activity.find({ board: id, ...taskFilter })
     .populate('user', 'name avatar')
     .sort({ createdAt: -1 })
     .limit(limit)

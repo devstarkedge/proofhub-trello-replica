@@ -7,6 +7,7 @@ import Comment from '../models/Comment.js';
 import Attachment from '../models/Attachment.js';
 import Department from '../models/Department.js';
 import { id } from './engine.js';
+import { assignedWorkOnly } from '../../shared/assignedWorkAccess.mjs';
 
 const models = { project: Board, task: Card, list: List, subtask: Subtask, nano: SubtaskNano, comment: Comment, attachment: Attachment, department: Department };
 export async function loadResource(ctx, type, resourceId) {
@@ -39,16 +40,18 @@ export async function loadResource(ctx, type, resourceId) {
   if (type === 'task') taskId = resource._id;
   const taskResource = type === 'task' ? resource : taskId ? await Card.findOne({ _id: taskId, board: project._id, workspaceId: ctx.workspaceId }).lean() : null;
   if (taskId && !taskResource) return null;
-  return { ...resource, project, taskResource };
+  return { ...resource, resourceType: type, project, taskResource };
 }
 
 export async function loadAssignments(ctx) {
   if (ctx.assignmentsLoaded) return ctx;
-  const query = { workspaceId: ctx.workspaceId, $or: [{ assignees: ctx.userId }, { members: ctx.userId }] };
+  const strict = assignedWorkOnly(ctx);
+  const query = { workspaceId: ctx.workspaceId, ...(strict ? { assignees: ctx.userId } : { $or: [{ assignees: ctx.userId }, { members: ctx.userId }] }) };
   const childQuery = { workspaceId: ctx.workspaceId, assignees: ctx.userId };
-  const [tasks, subtasks, nanos] = await Promise.all([Card.find({ ...query, isArchived: { $ne: true } }).select('_id board').lean(), Subtask.find(childQuery).select('_id task board').lean(), SubtaskNano.find(childQuery).select('_id task subtask board').lean()]);
-  ctx.assignedTaskIds = [...new Set([...tasks.map(t => id(t._id)), ...subtasks.map(t => id(t.task)), ...nanos.map(t => id(t.task))])];
-  ctx.assignedProjectIds = [...new Set([...tasks, ...subtasks, ...nanos].map(t => id(t.board)))];
+  const [tasks, subtasks, nanos] = await Promise.all([Card.find({ ...query, ...(!strict && { isArchived: { $ne: true } }) }).select('_id board isArchived').lean(), Subtask.find(childQuery).select('_id task board').lean(), SubtaskNano.find(childQuery).select('_id task subtask board').lean()]);
+  ctx.assignedDescendantTaskIds = [...new Set([...subtasks, ...nanos].map(t => id(t.task)))];
+  ctx.assignedTaskIds = [...new Set([...tasks.map(t => id(t._id)), ...ctx.assignedDescendantTaskIds])];
+  ctx.assignedProjectIds = [...new Set([...tasks.filter(task => !strict || !task.isArchived), ...subtasks, ...nanos].map(t => id(t.board)))];
   ctx.assignmentsLoaded = true;
   return ctx;
 }

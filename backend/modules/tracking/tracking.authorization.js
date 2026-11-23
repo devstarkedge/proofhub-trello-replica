@@ -8,6 +8,7 @@ import { resolveResourceAccess } from '../permissions/permissionEngine.js';
 import Department from '../../models/Department.js';
 import Card from '../../models/Card.js';
 import {getAssignmentBasedBoardIds} from '../../services/permissionService.js';
+import {assignedWorkOnly} from '../../../shared/assignedWorkAccess.mjs';
 export const trackingProjectFields='_id workspaceId name visibility owner members managers guests department team isDeleted';
 
 // Respect the application's rollout mode. The existing Board access helper is
@@ -66,7 +67,7 @@ export async function withTrackingProjects(ctx,projects,{loadAssignmentData=true
   // and three assignment scans for every project in the workspace.
   if(!ctx.trackingBoardAccessFacts){
     const [departments,assigned,legacyAssignments]=membership.role==='admin'?[[],projects.some(project=>project.visibility==='private')?await getAssignmentBasedBoardIds(userId):[],[]]:await Promise.all([
-      Department.find({workspaceId,$or:[{members:userId},{managers:userId}]}).select('_id').lean(),getAssignmentBasedBoardIds(userId),Card.distinct('board',{workspaceId,assignees:userId})
+      Department.find({workspaceId,$or:[{members:userId},{managers:userId}]}).select('_id').lean(),assignedWorkOnly(principal)?ctx.assignedProjectIds:getAssignmentBasedBoardIds(userId),Card.distinct('board',{workspaceId,assignees:userId})
     ]);
     ctx.trackingBoardAccessFacts={departmentIds:new Set(departments.map(p=>id(p))),assignedBoardIds:new Set([...assigned,...legacyAssignments].map(id)),activeAssignedBoardIds:new Set(assigned.map(id))};
   }
@@ -81,7 +82,7 @@ export async function withTrackingProjects(ctx,projects,{loadAssignmentData=true
   }
   ctx.trackingLegacyProjectIds=visible;
   ctx.trackingOriginalRestriction=ctx.restriction;
-  ctx.restriction={type:'none',projectIds:[]}; // already enforced by the existing visibility helper above
+  if(!assignedWorkOnly(principal))ctx.restriction={type:'none',projectIds:[]}; // project-only restrictions were enforced above; Assigned Work also restricts tasks
   return ctx;
 }
 export function can(ctx,permission,resource) {

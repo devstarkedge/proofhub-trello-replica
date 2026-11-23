@@ -7,6 +7,7 @@ import { userCanAccessEntity } from '../utils/entityAccess.js';
 import WorkspaceMembership from '../models/WorkspaceMembership.js';
 import User from '../models/User.js';
 import logger from '../utils/logger.js';
+import { assignedWorkOnly } from '../../shared/assignedWorkAccess.mjs';
 
 const queues = new Map();
 const invalidations = new Map();
@@ -20,7 +21,7 @@ async function authorizedSessions(boardId, workspaceId, room) {
   const sockets = await getIO().in(room).fetchSockets();
   const userIds = [...new Set(sockets.map(socket => String(socket.data.user?.id || socket.data.user?._id || '')).filter(Boolean))];
   const [memberships, accounts] = await Promise.all([
-    WorkspaceMembership.find({ workspace: workspaceId, user: { $in: userIds }, status: 'active', kind: { $ne: 'guest' } }).select('user').lean(),
+    WorkspaceMembership.find({ workspace: workspaceId, user: { $in: userIds }, status: 'active', kind: { $ne: 'guest' } }).select('user role restriction accessType kind').lean(),
     User.find({ _id: { $in: userIds }, isActive: true, forcePasswordChange: { $ne: true } }).select('_id tokenVersion').lean()
   ]);
   const members = new Set(memberships.map(member => String(member.user)));
@@ -42,7 +43,7 @@ async function authorizedSessions(boardId, workspaceId, room) {
       socket.disconnect(true);
     }
   }
-  return allowed;
+  return { sockets: allowed, restricted: new Set(memberships.filter(assignedWorkOnly).map(member => String(member.user))) };
 }
 
 // Recheck authorization at publication, including existing subscriptions whose
@@ -53,14 +54,18 @@ export function publishBoardEvent(boardId, type, payload) {
   const key = `${workspaceId}:${boardId}`;
   const previous = queues.get(key) || Promise.resolve();
   const job = previous.then(() => run({ workspaceId }, async () => {
-    const ids = await authorizedSessions(boardId, workspaceId, ROOM.board(boardId, workspaceId));
+    const audienceScope = await authorizedSessions(boardId, workspaceId, ROOM.board(boardId, workspaceId));
     const event = {
       ...payload, boardId: String(boardId), workspaceId: String(workspaceId),
       eventId: randomUUID(), schemaVersion: 1, occurredAt: new Date().toISOString(),
     };
     const byUser = new Map();
-    for (const socket of ids) {
+    for (const socket of audienceScope.sockets) {
       const key = String(socket.data.user.id || socket.data.user._id);
+      // Board payloads may contain sibling tasks, positions or copied hierarchy.
+      // Assigned-work clients use the coalesced, metadata-only invalidation below
+      // and reload through the scoped read API instead of receiving those bodies.
+      if (audienceScope.restricted.has(key)) continue;
       if (!byUser.has(key)) byUser.set(key, { user: socket.data.user, sockets: [] });
       byUser.get(key).sockets.push(socket.id);
     }
@@ -71,8 +76,12 @@ export function publishBoardEvent(boardId, type, payload) {
         run({ workspaceId }, async () => {
           // Only connected, currently authorized users receive invalidations;
           // no private card contents are broadcast to workspace rooms.
-          const targets = await authorizedSessions(boardId, workspaceId, ROOM.workspace(workspaceId));
-          if (targets.length) getIO().to(targets.map(socket => socket.id)).emit('data-changed', { workspaceId: String(workspaceId), boardId: String(boardId), resource: 'workflow', schemaVersion: 1, eventId: randomUUID() });
+          const { sockets: targets, restricted } = await authorizedSessions(boardId, workspaceId, ROOM.workspace(workspaceId));
+          const event = { workspaceId: String(workspaceId), boardId: String(boardId), resource: 'workflow', schemaVersion: 1, eventId: randomUUID() };
+          for (const assignedOnly of [false, true]) {
+            const ids = targets.filter(socket => restricted.has(String(socket.data.user?.id || socket.data.user?._id)) === assignedOnly).map(socket => socket.id);
+            if (ids.length) getIO().to(ids).emit('data-changed', assignedOnly ? { ...event, reauthorizeTasks: true } : event);
+          }
         }).catch(error => logger.warn('Board recovery publication failed', { code: error.code || error.name }));
       }, 250);
       timer.unref(); invalidations.set(key, timer);

@@ -5,6 +5,7 @@ import Card from '../models/Card.js';
 import Subtask from '../models/Subtask.js';
 import SubtaskNano from '../models/SubtaskNano.js';
 import { userHasCapability, CAPABILITIES, getAssignmentBasedBoardIds } from '../services/permissionService.js';
+import { assignedWorkOnly } from '../../shared/assignedWorkAccess.mjs';
 
 /**
  * Enterprise Single Source of Truth for Board/Project Access Control
@@ -51,6 +52,10 @@ export async function canUserAccessBoard(boardOrId, user, accessFacts = null) {
   // department and explicit membership. They must never be OR alternatives.
   const boardId = String(board._id);
   const restriction = user.restriction?.type || user.accessType;
+  if (assignedWorkOnly(user)) {
+    const assigned = accessFacts?.activeAssignedBoardIds || new Set((await getAssignmentBasedBoardIds(userId, { assignedWorkOnly: true })).map(String));
+    return assigned.has(boardId);
+  }
   if (restriction === 'selected_projects') {
     return (user.restriction?.projectIds || user.allowedProjects || []).some(value => String(value?._id || value) === boardId);
   }
@@ -163,19 +168,21 @@ export async function canUserAccessBoard(boardOrId, user, accessFacts = null) {
 export default canUserAccessBoard;
 
 /** Indexed visibility predicate for list/search paths; additional filters AND it. */
-export async function boardAccessFilter(user) {
+export async function boardAccessFilter(user, resolvedContext = null) {
   if (!user?._id && !user?.id) return { _id: { $in: [] } };
+  const reusable = resolvedContext && String(resolvedContext.userId) === String(user._id || user.id) && String(resolvedContext.workspaceId) === String(user.workspaceId);
   if (process.env.AUTHZ_V2 === 'enforce') {
     const { buildContext } = await import('../authz/context.js');
     const { loadAssignments } = await import('../authz/loaders.js');
     const { projectAccessFilter, can } = await import('../authz/engine.js');
-    const ctx = await buildContext(user._id || user.id, user.workspaceId);
+    const ctx = reusable ? resolvedContext : await buildContext(user._id || user.id, user.workspaceId);
     await loadAssignments(ctx);
     if (!can(ctx, 'project.view')) return { _id: { $in: [] } };
     return projectAccessFilter(ctx);
   }
   const actor = user._id || user.id;
   const restriction = user.restriction?.type || user.accessType;
+  if (assignedWorkOnly(user)) return { isDeleted: { $ne: true }, _id: { $in: reusable && resolvedContext.assignmentsLoaded ? resolvedContext.assignedProjectIds : await getAssignmentBasedBoardIds(actor, { assignedWorkOnly: true }) } };
   const selected = user.restriction?.projectIds || user.allowedProjects || [];
   if (restriction === 'selected_projects') return { isDeleted: { $ne: true }, _id: { $in: selected } };
   const scoped = ['assigned_only', 'assigned_tasks'].includes(restriction) || userHasCapability(user, CAPABILITIES.FORCE_ASSIGNMENT_SCOPE);

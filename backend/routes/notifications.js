@@ -17,6 +17,7 @@ import {
   subscribeToFeature
 } from '../controllers/notificationController.js';
 import { protect } from '../middleware/authMiddleware.js';
+import { assignedWorkNotificationFilter } from '../services/assignedWorkNotifications.js';
 
 const router = express.Router();
 
@@ -37,7 +38,7 @@ router.get('/:id', protect, async (req, res, next) => {
   try {
     if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ message: 'Invalid notification reference' });
     const { default: Notification } = await import('../models/Notification.js');
-    const notification = await Notification.findOne({ _id: req.params.id, user: req.user.id, workspaceId: req.workspaceId })
+    const notification = await Notification.findOne({ _id: req.params.id, user: req.user.id, workspaceId: req.workspaceId, ...await assignedWorkNotificationFilter(req) })
       .populate('sender', 'name avatar').populate('relatedCard', 'title').populate('relatedBoard', 'name').lean();
     if (!notification) return res.status(404).json({ message: 'Notification is no longer available' });
     res.json(notification);

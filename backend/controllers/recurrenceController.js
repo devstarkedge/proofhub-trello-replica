@@ -1,5 +1,7 @@
 import { executeRecurrence } from '../services/recurrenceExecution.js';
 import { authorizeProjectResource } from '../services/projectAuthorization.js';
+import { resourceReadFilter } from '../services/resourceReadFilter.js';
+import { assignedWorkOnly } from '../../shared/assignedWorkAccess.mjs';
 import mongoose from 'mongoose';
 import asyncHandler from '../middleware/asyncHandler.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
@@ -187,6 +189,7 @@ export const getAllRecurrences = asyncHandler(async (req, res, next) => {
   const { includeInactive } = req.query;
 
   const query = { board: boardId };
+  if (assignedWorkOnly(req.projectAuthz || req.user)) query.card = { $in: await Card.distinct('_id', { $and: [{ board: boardId }, await resourceReadFilter(req, 'task', boardId)] }) };
   if (!includeInactive) {
     query.isActive = true;
   }

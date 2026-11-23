@@ -8,6 +8,8 @@ import { buildContext } from '../authz/context.js';
 import { loadAssignments } from '../authz/loaders.js';
 import { projectAccessFilter, scopeFilter } from '../authz/engine.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
+import { assignedWorkOnly } from '../../shared/assignedWorkAccess.mjs';
+import { legacyAssignedWorkContext } from './assignedWorkContext.js';
 
 const idFields = new Set(['_id', 'workspaceId', 'board', 'card', 'task', 'subtask', 'nanoSubtask', 'comment', 'contextRef', 'user', 'createdBy', 'uploadedBy', 'owner', 'members', 'managers', 'assignees', 'department', 'team']);
 export function castResourceFilter(value, field) {
@@ -24,11 +26,12 @@ async function boundedIds(query) {
 /** Lists/search/counts must enforce the same grant and deny scope as a direct
  * read. Return a Mongo predicate, including ObjectIds for aggregation callers. */
 export async function resourceReadFilter(req, type = 'task', projectId, {calendarScope=false}={}) {
-  if (process.env.AUTHZ_V2 !== 'enforce') return {};
+  const legacy = process.env.AUTHZ_V2 !== 'enforce';
+  if (legacy && !assignedWorkOnly(req.user)) return {};
   req.readFilters ||= new Map();
   const cacheKey = `${type}:${projectId || 'all'}:${calendarScope}`;
   if (req.readFilters.has(cacheKey)) return req.readFilters.get(cacheKey);
-  req.projectAuthz ||= await buildContext(req.user._id || req.user.id, req.workspaceId);
+  req.projectAuthz ||= legacy ? await legacyAssignedWorkContext(req) : await buildContext(req.user._id || req.user.id, req.workspaceId);
   const ctx = req.projectAuthz;
   const assigned = ctx.restriction?.type === 'assigned_only' || [...Object.values(ctx.grants || {}), ...Object.values(ctx.denies || {})].flat().some(record => record.scope === 'assigned');
   if (ctx.kind !== 'guest' || assigned) await loadAssignments(ctx);
@@ -51,7 +54,7 @@ export async function resourceReadFilter(req, type = 'task', projectId, {calenda
       for (const [key, child] of Object.entries(value)) {
         if (key !== 'board') { output[key] = await rewrite(child); continue; }
         const serialized = JSON.stringify(child);
-        if (!cache.has(serialized)) cache.set(serialized, await boundedIds(Card.find({ board: child })));
+        if (!cache.has(serialized)) cache.set(serialized, await boundedIds(Card.find({ board: child, ...(assignedWorkOnly(ctx) ? { _id: { $in: ctx.assignedTaskIds || [] } } : {}) })));
         output.card = { $in: cache.get(serialized) };
       }
       return output;

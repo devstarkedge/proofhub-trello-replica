@@ -9,6 +9,7 @@ import PermissionOverride from '../models/PermissionOverride.js';
 import { contextFromRecords } from '../authz/context.js';
 import { can } from '../authz/engine.js';
 import { canUserAccessBoard } from '../utils/boardAccess.js';
+import { assignedWorkOnly } from '../../shared/assignedWorkAccess.mjs';
 import { assigneeEmails } from './taskImportWorkbook.js';
 import { ErrorResponse } from '../middleware/errorHandler.js';
 
@@ -58,9 +59,16 @@ export async function taskImportOptions(project, workspaceId, { assigneesValue }
     const roleKey = role?.key || role?.slug || membership.role;
     if (['admin', 'manager', 'hr', 'guest'].includes(membership.role) || ['admin', 'manager', 'hr', 'guest'].includes(roleKey) || role?.kind === 'guest') continue;
     if (role?.isSystem ? roleKey !== 'employee' : !role && membership.role !== 'employee') continue;
-    const allowed = v2
-      ? can(contextFromRecords({ userId: user._id, workspace, membership, role, departments, overrides: overridesByUser.get(id(user._id)) || [] }), 'project.view', project)
-      : await canUserAccessBoard(project, { ...user, ...membership, _id: user._id, id: id(user._id), workspaceId });
+    // Recipient eligibility evaluates the assignment this import would create.
+    // Explicit project members must be able to receive their first task; this
+    // local context never grants them access before the task is persisted.
+    let allowed;
+    if (v2) {
+      const ctx = contextFromRecords({ userId: user._id, workspace, membership, role, departments, overrides: overridesByUser.get(id(user._id)) || [] });
+      if (assignedWorkOnly(ctx)) ctx.assignedProjectIds = [id(project._id)];
+      allowed = can(ctx, 'project.view', project);
+    } else allowed = await canUserAccessBoard(project, { ...user, ...membership, _id: user._id, id: id(user._id), workspaceId },
+      assignedWorkOnly(membership) ? { activeAssignedBoardIds: new Set([id(project._id)]) } : null);
     if (!allowed) continue;
     options.assignees.push({ id: id(user._id), email: user.email.toLowerCase(), label: `${(user.name || user.email).replaceAll(';', ',')} <${user.email}>` });
   }

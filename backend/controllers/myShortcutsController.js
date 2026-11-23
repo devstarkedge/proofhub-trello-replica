@@ -1,4 +1,7 @@
 import { DateTime } from 'luxon';
+import { resourceReadFilter } from '../services/resourceReadFilter.js';
+import { boardAccessFilter } from '../utils/boardAccess.js';
+import { assignedWorkOnly } from '../../shared/assignedWorkAccess.mjs';
 import Workspace from '../models/Workspace.js';
 import { getWorkspaceTimezone } from '../modules/leave/leaveTimezone.util.js';
 
@@ -23,11 +26,15 @@ const asyncHandler = (fn) => (req, res, next) =>
  */
 export const getMyDashboardSummary = asyncHandler(async (req, res, next) => {
   const userId = req.user._id;
+  const strict = assignedWorkOnly(req.user);
+  const taskScope = strict ? await resourceReadFilter(req, 'task') : {};
+  const projectScope = strict ? await boardAccessFilter(req.user) : { members: userId };
 
   // Run all queries in parallel for performance
   const [taskCount, loggedTimeData, activityCount, projectCount, announcementCount] = await Promise.all([
     // 1. Count tasks assigned to user (check both assignees and members)
     Card.countDocuments({
+      $and: [taskScope],
       $or: [
         { assignees: userId },
         { members: userId }
@@ -46,7 +53,7 @@ export const getMyDashboardSummary = asyncHandler(async (req, res, next) => {
 
     // 4. Count projects where user is assigned
     Board.countDocuments({
-      members: userId,
+      ...projectScope,
       isArchived: { $ne: true }
     }),
 
@@ -86,6 +93,10 @@ export const getMyActivities = asyncHandler(async (req, res, next) => {
   
   // Build query
   const query = { user: userId };
+  if (assignedWorkOnly(req.user)) {
+    const tasks = await Card.distinct('_id', await resourceReadFilter(req, 'task'));
+    query.$or = [{ card: { $in: tasks } }, { card: null, board: null, subtask: null, nanoSubtask: null }];
+  }
   
   if (type && type !== 'all') {
     query.type = type;
@@ -181,9 +192,11 @@ export const getMyActivities = asyncHandler(async (req, res, next) => {
  */
 export const getMyTasksGrouped = asyncHandler(async (req, res, next) => {
   const userId = req.user._id;
+  const taskScope = assignedWorkOnly(req.user) ? await resourceReadFilter(req, 'task') : {};
 
   // Get all tasks assigned to user with project context (check both assignees and members)
   const tasks = await Card.find({
+    $and: [taskScope],
     $or: [
       { assignees: userId },
       { members: userId }
@@ -301,10 +314,11 @@ export const getMyProjects = asyncHandler(async (req, res, next) => {
   const userId = req.user._id;
   const { page = 1, limit = 20 } = req.query;
   const skip = (parseInt(page) - 1) * parseInt(limit);
+  const projectScope = assignedWorkOnly(req.user) ? await boardAccessFilter(req.user) : { members: userId };
 
   const [projects, total] = await Promise.all([
     Board.find({
-      members: userId,
+      ...projectScope,
       isArchived: { $ne: true }
     })
       .populate('department', 'name')
@@ -314,7 +328,7 @@ export const getMyProjects = asyncHandler(async (req, res, next) => {
       .limit(parseInt(limit))
       .lean(),
     Board.countDocuments({
-      members: userId,
+      ...projectScope,
       isArchived: { $ne: true }
     })
   ]);

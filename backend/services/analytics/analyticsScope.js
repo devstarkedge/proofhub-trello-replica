@@ -3,6 +3,8 @@ import Department from '../../models/Department.js';
 import Board from '../../models/Board.js';
 import Card from '../../models/Card.js';
 import { ErrorResponse } from '../../middleware/errorHandler.js';
+import { assignedWorkOnly } from '../../../shared/assignedWorkAccess.mjs';
+import { boardAccessFilter } from '../../utils/boardAccess.js';
 
 const objectId = (value) => new mongoose.Types.ObjectId(value);
 const idString = (value) => value?._id?.toString() || value?.toString();
@@ -79,7 +81,7 @@ export const resolveAnalyticsScope = async (user) => {
     boardQuery._id = { $in: (user.allowedProjects || []).map((id) => objectId(idString(id))) };
   }
 
-  const boards = await Board.find(boardQuery)
+  const boards = await Board.find(assignedWorkOnly(user) ? { $and: [boardQuery, await boardAccessFilter(user)] } : boardQuery)
     .select('_id name department team owner members status priority projectType billingCycle clientDetails startDate dueDate createdAt updatedAt')
     .sort({ name: 1 })
     .lean();

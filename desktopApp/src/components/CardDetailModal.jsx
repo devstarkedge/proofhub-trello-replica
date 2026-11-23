@@ -1,4 +1,5 @@
 import { cardRefreshPlan } from '../../../shared/realtimeInvalidation.mjs';
+import { responseStatus } from '../../../shared/readFailure.mjs';
 import { useLocation } from 'react-router-dom';
 import React, { useState, useEffect, useContext, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -468,6 +469,10 @@ const CardDetailModal = React.memo(({
         }
       } catch (error) {
         console.error("Error loading fresh card data:", error);
+        if (!disposed && version === refreshVersion && [403, 404].includes(responseStatus(error))) {
+          commentService.invalidateCache('card', card._id);
+          onClose();
+        }
       } finally {
         if (!disposed && version === refreshVersion) setCardDataLoading(false);
       }
@@ -550,7 +555,7 @@ const CardDetailModal = React.memo(({
       const plan = cardRefreshPlan(event.detail, { workspaceId: localStorage.getItem('workspaceId'), boardId: card.board?._id || card.board, cardId: card._id });
       if (!plan || disposed) return;
       if (plan.card) void loadFreshCardData(false);
-      if (plan.comments) { if (event.detail?.recovery || !event.detail?.types) commentService.invalidateCache('card', card._id); void loadComments(); }
+      if (plan.comments) { if (event.detail?.recovery || event.detail?.reauthorizeTasks || !event.detail?.types) commentService.invalidateCache('card', card._id); void loadComments(); }
       if (plan.activities) void loadActivities();
       if (plan.lists) void loadAvailableStatuses();
       if (plan.project) void loadProjectName();

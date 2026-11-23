@@ -1,5 +1,6 @@
 import { boardAccessFilter } from '../utils/boardAccess.js';
-import { castResourceFilter } from '../services/resourceReadFilter.js';
+import { castResourceFilter, resourceReadFilter } from '../services/resourceReadFilter.js';
+import { assignedWorkOnly } from '../../shared/assignedWorkAccess.mjs';
 import ProjectDropdownOption from '../models/ProjectDropdownOption.js';
 import { updateMemberAccess } from '../authz/accessAdminService.js';
 import { assignedDepartmentIds } from '../modules/attendance/attendanceReportingDepartment.service.js';
@@ -55,7 +56,7 @@ export const getDepartments = asyncHandler(async (req, res, next) => {
   const departments = await Department.find(query)
     .populate("managers", "name email avatar")
     .populate("members", "name email avatar")
-    .populate("projects", "name description background members status")
+    .populate({ path: 'projects', select: 'name description background members status', ...(assignedWorkOnly(user) ? { match: await boardAccessFilter(user) } : {}) })
     .sort("name");
 
   // Add projects count to each department
@@ -182,12 +183,13 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
     ['assigned_only', 'assigned_tasks'].includes(accessType)
     || userHasCapability(user, CAPABILITIES.FORCE_ASSIGNMENT_SCOPE)
   );
+  const taskScope = assignedWorkOnly(user) ? await resourceReadFilter(req, 'task') : {};
   const prioritizeOwnAndDirectProjects = user.role !== 'admin' && !assignedOnly && accessType !== 'selected_projects';
   const projectMatchFilter = {
     workspaceId,
     $expr: { $eq: ['$department', '$$deptId'] },
     isArchived: { $ne: true },
-    $and: [castResourceFilter(await boardAccessFilter(user)), ...(prioritizeOwnAndDirectProjects ? [{ $or: [
+    $and: [castResourceFilter(await boardAccessFilter(user, req.projectAuthz)), ...(prioritizeOwnAndDirectProjects ? [{ $or: [
       { department: { $in: ownDepartments } }, { owner: userId }, { members: userId }, { managers: userId }, { visibility: 'private' }
     ] }] : [])]
   };
@@ -247,9 +249,9 @@ export const getDepartmentsWithAssignments = asyncHandler(async (req, res, next)
           } } }, as: 'project', in: '$$project._id'
         } } },
         pipeline: [
-          { $match: { workspaceId, $expr: { $and: [
+          { $match: { $and: [taskScope], workspaceId, $expr: { $and: [
             { $in: ['$board', '$$projectIds'] },
-            ...(assignedOnly
+            ...(assignedOnly && !assignedWorkOnly(user)
               ? [{ $or: [
                 { $in: [userId, { $ifNull: ['$assignees', []] }] },
                 { $in: ['$board', '$$memberProjectIds'] }
@@ -653,6 +655,10 @@ export const getDepartment = asyncHandler(async (req, res, next) => {
     return next(new ErrorResponse("Department not found", 404));
   }
 
+  if (assignedWorkOnly(req.user) && department.projects?.length) department.projects = await Board.distinct('_id', {
+    $and: [{ _id: { $in: department.projects } }, await boardAccessFilter(req.user)]
+  });
+
   res.status(200).json({
     success: true,
     data: department,
@@ -948,13 +954,13 @@ export const getMembersWithAssignments = asyncHandler(async (req, res, next) => 
   }
 
   // Get all projects in this department
-  const projects = await Board.find({ department: req.params.id, isArchived: false })
+  const projects = await Board.find({ department: req.params.id, isArchived: false, ...(assignedWorkOnly(req.user) ? { $and: [await boardAccessFilter(req.user)] } : {}) })
     .populate('members', 'name email')
     .select('_id name members');
 
   // Get all cards (tasks) in these projects
   const projectIds = projects.map(p => p._id);
-  const cards = await Card.find({ board: { $in: projectIds } })
+  const cards = await Card.find({ board: { $in: projectIds }, ...(assignedWorkOnly(req.user) ? { $and: [await resourceReadFilter(req, 'task')] } : {}) })
     .populate('assignees', 'name email')
     .populate('members', 'name email')
     .select('_id board assignees members subtaskStats');
@@ -1019,6 +1025,7 @@ export const getProjectsWithMemberAssignments = asyncHandler(async (req, res, ne
   // Get all projects in this department
   const allProjects = await Board.find({
     department: departmentId,
+    ...(assignedWorkOnly(req.user) ? { $and: [await boardAccessFilter(req.user)] } : {}),
     isArchived: false
   }).select('_id name description background members status');
 

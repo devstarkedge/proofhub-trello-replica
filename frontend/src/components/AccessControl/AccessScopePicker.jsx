@@ -7,7 +7,7 @@ import PermissionCheckbox from './PermissionCheckbox';
 const SCOPES = [
   { key: 'full_department', label: 'Department projects', description: 'All projects in the assigned departments.' },
   { key: 'selected_projects', label: 'Selected projects', description: 'Only the projects selected below.' },
-  { key: 'assigned_tasks', label: 'Assigned work', description: 'Projects containing work assigned to this member.' }
+  { key: 'assigned_tasks', label: 'Assigned work', description: 'Only assigned tasks, within projects containing this member’s work.' }
 ];
 const theme = { backgroundColor: 'var(--color-bg-base)', borderColor: 'var(--color-border-default)', color: 'var(--color-text-primary)' };
 

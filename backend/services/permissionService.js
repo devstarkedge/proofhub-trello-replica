@@ -88,7 +88,7 @@ export const userHasCapability = (user, capability) => {
  * Uses Model.distinct() for efficiency — single aggregation per collection.
  * All three schemas store `board` as a direct ObjectId ref on the document.
  */
-export const getAssignmentBasedBoardIds = async (userId) => {
+export const getAssignmentBasedBoardIds = async (userId, { assignedWorkOnly = false } = {}) => {
   const userObjectId = mongoose.Types.ObjectId.isValid(userId)
     ? new mongoose.Types.ObjectId(userId)
     : null;
@@ -101,7 +101,7 @@ export const getAssignmentBasedBoardIds = async (userId) => {
   const { default: SubtaskNano } = await import('../models/SubtaskNano.js');
 
   const [cardBoards, subtaskBoards, nanoBoards] = await Promise.all([
-    Card.distinct('board', { $or: [{ assignees: userObjectId }, { members: userObjectId }], isArchived: { $ne: true } }),
+    Card.distinct('board', { ...(assignedWorkOnly ? { assignees: userObjectId } : { $or: [{ assignees: userObjectId }, { members: userObjectId }] }), isArchived: { $ne: true } }),
     Subtask.distinct('board', { assignees: userObjectId }),
     SubtaskNano.distinct('board', { assignees: userObjectId }),
   ]);

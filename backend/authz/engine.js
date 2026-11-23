@@ -1,4 +1,5 @@
 import { CATALOG } from './catalog.js';
+import { assignedWorkOnly, assignedWorkTask } from '../../shared/assignedWorkAccess.mjs';
 
 export const id = value => String(value?._id || value || '');
 const includes = (values, value) => (values || []).some(item => id(item) === id(value));
@@ -40,6 +41,7 @@ export function canViewProject(ctx, project, { includeDeleted = false } = {}) {
   const now = ctx?.now ?? Date.now();
   if (!ctx || ctx.status !== 'active' || !project || id(project.workspaceId) !== id(ctx.workspaceId) || ctx.kind === 'guest' && !current({ expiresAt: ctx.guestExpiresAt }, now)) return false;
   if (project.isDeleted && !includeDeleted) return false;
+  if (assignedWorkOnly(ctx)) return includes(ctx.assignedProjectIds, project._id);
   const directMember = ctx.kind !== 'guest' && directProjectMember(ctx, project);
   const member = directMember || includes(project.managers, ctx.userId);
   let visible;
@@ -70,6 +72,8 @@ export function explain(ctx, permission, resource) {
   if (ctx.kind === 'guest' && !entry.guestAllowed) return stop('guest_not_allowed');
   const project = projectOf(resource);
   const directory = ['project.view_private_directory', 'project.join_private'].includes(permission);
+  if (resource && assignedWorkOnly(ctx) && ['task', 'comment', 'attachment'].includes(entry.resourceType) && !resource.visibility &&
+      !(resource.resourceType === 'list' && permission === 'task.view') && !assignedWorkTask(ctx, resource.taskResource || resource)) return stop('restricted');
   if (resource && ['project', 'task', 'comment', 'attachment'].includes(entry.resourceType) && !directory) {
     if (!project || !canViewProject(ctx, project, { includeDeleted: permission === 'project.restore' || permission === 'project.purge' })) return stop('not_visible');
   }
@@ -81,7 +85,7 @@ export function explain(ctx, permission, resource) {
   for (const dependency of entry.dependsOn) if (!can(ctx, dependency, resource)) return stop('missing_dependency');
   const matching = grants.filter(g => (ctx.kind !== 'guest' || g.scope === 'project') && (!resource || scopeMatches(ctx, g, resource, permission)));
   if (!matching.length) return stop('out_of_scope');
-  if (resource && ctx.restriction?.type === 'assigned_only' && ['task', 'comment', 'attachment'].includes(entry.resourceType) && !resource.visibility &&
+  if (resource && !assignedWorkOnly(ctx) && ctx.restriction?.type === 'assigned_only' && ['task', 'comment', 'attachment'].includes(entry.resourceType) && !resource.visibility &&
       !(permission === 'task.view' && ctx.kind !== 'guest' && (directProjectMember(ctx, project) || explicitPrivateAccess(ctx, project))) &&
       !assigned(ctx, resource.taskResource || resource)) return stop('restricted');
   if (ctx.kind === 'guest' && resource) {
@@ -110,6 +114,7 @@ function calendarProjectAccess(ctx, project) {
 export function projectVisibilityFilter(ctx, {calendarScope=false}={}) {
   if (!ctx || ctx.status !== 'active' || ctx.kind === 'guest' && !current({ expiresAt: ctx.guestExpiresAt }, ctx.now ?? Date.now())) return { _id: { $in: [] }, workspaceId: ctx?.workspaceId };
   const now = new Date(ctx.now ?? Date.now());
+  if (assignedWorkOnly(ctx)) return { workspaceId: ctx.workspaceId, isDeleted: { $ne: true }, _id: { $in: ctx.assignedProjectIds || [] } };
   let alternatives;
   if (ctx.kind === 'guest') alternatives = [{ visibility: 'private', guests: { $elemMatch: { user: ctx.userId, $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }] } } }];
   else alternatives = [{ owner: ctx.userId }, { members: ctx.userId }, { managers: ctx.userId }, { visibility: 'workspace' }, { visibility: 'department', ...(records(mapGet(ctx.grants, 'project.view')).some(g => g.scope === 'workspace' && current(g, now.getTime())) || ctx.isOwner ? {} : { department: { $in: [...(ctx.departments || []), ...(ctx.managedDepartments || [])] } }) }];
@@ -183,7 +188,10 @@ export function scopeFilter(ctx, permission, resourceType, visibleProjects = [],
     ? [...grants,{scope:'assigned'}] : grants;
   const filters = [{ workspaceId: ctx.workspaceId }, { $or: readGrants.map(relation) }];
   if (!ctx.isOwner) for (const deny of records(mapGet(ctx.denies, permission)).filter(d => current(d, ctx.now ?? Date.now()))) filters.push({ $nor: [relation(deny)] });
-  if (ctx.restriction?.type === 'assigned_only') {
+  if (assignedWorkOnly(ctx)) {
+    const root = { $in: ctx.assignedTaskIds || [] };
+    filters.push(resourceType === 'task' ? { $or: [{ assignees: ctx.userId }, { _id: root }] } : assignment());
+  } else if (ctx.restriction?.type === 'assigned_only') {
     const memberBoards = permission === 'task.view' && ctx.kind !== 'guest'
       ? projects.filter(project => directProjectMember(ctx, project) || explicitPrivateAccess(ctx, project)).map(project => project._id) : [];
     filters.push(memberBoards.length ? { $or: [assignment(), { board: { $in: memberBoards } }] } : assignment());

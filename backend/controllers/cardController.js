@@ -1,5 +1,6 @@
 import { createProjectTask } from '../services/taskCreation.js';
 import { resourceReadFilter } from '../services/resourceReadFilter.js';
+import { assignedWorkOnly } from '../../shared/assignedWorkAccess.mjs';
 import { workspaceMembershipDepartmentStages, scopeWorkspaceLookups } from '../utils/workspaceAggregation.js';
 import { copyTaskHierarchy } from '../services/taskCopy.js';
 import { authorizeDestination, moveTaskHierarchy } from '../services/taskMovement.js';
@@ -391,7 +392,7 @@ export const getCardsByDepartment = asyncHandler(async (req, res, next) => {
   const readScope = await resourceReadFilter(req, 'task');
 
   if (departmentId !== 'all' && !mongoose.isValidObjectId(departmentId)) throw new ErrorResponse('Invalid department', 400);
-  const boardFilter = await boardAccessFilter(user);
+  const boardFilter = await boardAccessFilter(user, req.projectAuthz);
   const visibleBoards = await Board.distinct('_id', {
     $and: [boardFilter, departmentId === 'all' ? {} : { department: departmentId }],
     workspaceId: req.workspaceId
@@ -1740,12 +1741,13 @@ export const restoreCard = asyncHandler(async (req, res, next) => {
 // @route   GET /api/cards/list/:listId/archived
 // @access  Private
 export const getArchivedCards = asyncHandler(async (req, res, next) => {
-  await authorizeProjectResource(req, 'list', req.params.listId, 'task.view');
+  await authorizeProjectResource(req, 'list', req.params.listId, assignedWorkOnly(req.user) ? 'project.view' : 'task.view');
   const { listId } = req.params;
   const { boardId } = req.query;
   const { page = 1, limit = 50 } = req.query;
 
   const now = new Date();
+  const readScope = await resourceReadFilter(req, 'task');
 
   const pageNum = pageNumber(page);
   const limitNum = boundedInteger(limit, 20, 100);
@@ -1753,6 +1755,7 @@ export const getArchivedCards = asyncHandler(async (req, res, next) => {
 
   // Use aggregation pipeline for archived cards
   const pipeline = [
+    { $match: readScope },
     { 
       $match: { 
         ...(listId && listId !== 'all' ? { list: new mongoose.Types.ObjectId(listId) } : {}),
@@ -1843,7 +1846,7 @@ export const getArchivedCards = asyncHandler(async (req, res, next) => {
 
   const [cards, countResult] = await Promise.all([
     Card.aggregate(scopeWorkspaceLookups(pipeline, req.workspaceId)),
-    Card.countDocuments(countFilter)
+    Card.countDocuments({ $and: [countFilter, readScope] })
   ]);
 
   res.status(200).json({

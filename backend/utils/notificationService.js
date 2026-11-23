@@ -6,6 +6,7 @@ import { emitNotification } from '../realtime/index.js';
 import { sendEmail } from './email.js';
 import { getUserPushSubscriptions, sendPushNotification } from './pushNotification.js';
 import { userCanAccessEntity } from './entityAccess.js';
+import { assignedWorkOnly } from '../../shared/assignedWorkAccess.mjs';
 import WorkspaceMembership from '../models/WorkspaceMembership.js';
 import Workspace from '../models/Workspace.js';
 import { getActiveWorkspaceId } from '../modules/workspaces/workspaceContext.js';
@@ -77,7 +78,7 @@ class NotificationService {
       const priority = explicitPriority || this.getPriorityForType(type);
       const targetType = entityType || (relatedCard ? 'Card' : relatedBoard ? 'Board' : relatedTeam ? 'Team' : null);
       const targetId = entityId || relatedCard || relatedBoard || relatedTeam;
-      if (!type.endsWith('_deleted') && !await userCanAccessEntity({ userId: user, entityType: targetType, entityId: targetId })) return null;
+      if ((!type.endsWith('_deleted') || assignedWorkOnly(membership)) && !await userCanAccessEntity({ userId: user, entityType: targetType, entityId: targetId })) return null;
 
       // Create the notification
       const notification = await Notification.create({
